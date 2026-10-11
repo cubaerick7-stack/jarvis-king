@@ -59,3 +59,32 @@ entao rodam em qualquer PC e tambem no GitHub a cada push.
 LOG
 Toda acao executada fica registrada em G:\Jarvis\logs\acoes.log
 (horario, acao e detalhe), inclusive as escolhidas pelo Qwen.
+
+O QUE O JARVIS SABE FAZER
+Digite "o que voce sabe fazer" (ou "ajuda") com o Jarvis aberto.
+
+ROTINAS
+"modo estudo", "modo relaxar" e "modo foco" ja vem prontas.
+Para criar as suas, crie G:\Jarvis\config\rotinas.json assim:
+
+{
+  "jogo": [
+    {"name": "set_volume", "args": {"percent": 70}},
+    {"name": "close_app", "args": {"name": "chrome"}},
+    {"name": "open_target", "args": {"target": "omori"}}
+  ]
+}
+
+e diga "modo jogo". Os nomes das acoes sao os da lista TOOLS.
+
+COMO CRIAR UMA FERRAMENTA NOVA
+1. Escreva a funcao em windows\ferramentas.py. Ela imprime o resultado
+   e devolve True (deu certo) ou False (falhou).
+2. Adicione uma entrada em TOOLS (windows\jarvis_ai.py):
+   {"name": "minha_ferramenta", "args": '{"x":"..."}', "group": "sistema",
+    "desc": "o que ela faz", "examples": ["como o usuario pede"],
+    "run": lambda a: F.minha_ferramenta(a.get("x", ""))},
+   So isso ja coloca ela no prompt do Qwen e na ajuda.
+3. (Opcional) Para responder sem IA, adicione uma regra em
+   fast_local_router chamando tool("minha_ferramenta", x=...).
+4. Adicione um teste em tests\ e rode python -m pytest -q.

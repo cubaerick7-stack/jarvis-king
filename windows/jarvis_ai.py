@@ -9,12 +9,16 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
 import time
 import unicodedata
 import webbrowser
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote_plus
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ferramentas as F  # noqa: E402
 
 try:
     import pyautogui
@@ -514,9 +518,23 @@ def take_screenshot():
 ORDINAL = r"(primeir[oa]|segund[oa]|terceir[oa]|quart[oa]|quint[oa]|sext[oa]|setim[oa]|oitav[oa]|non[oa]|decim[oa]|\d+)"
 
 
+def tool(tool_name, /, **args):
+    """Roda uma ferramenta do catálogo pelo nome (usado pelo roteador rápido)."""
+    log_action(tool_name, json.dumps(args, ensure_ascii=False))
+    return TOOLS_BY_NAME[tool_name]["run"](args)
+
+
 def act(name, fn, *args):
     log_action(name, " ".join(str(a) for a in args))
     return fn(*args)
+
+
+def number_ref(text):
+    """'primeiro' -> '1', 'o 2' -> '2', resto fica como está."""
+    text = text.strip()
+    if re.fullmatch(rf"(?:o |a )?{ORDINAL}", text):
+        return str(ordinal_to_number(text))
+    return text
 
 
 def fast_local_router(user_text):
@@ -546,11 +564,11 @@ def fast_local_router(user_text):
         act("get_volume", get_volume)
         return True
 
-    if any(x in clean for x in ["desmuta", "tira do mudo", "ativa o som", "liga o som"]):
+    if re.search(r"\b(desmuta|tira do mudo|ativa o som|liga o som)\b", clean):
         act("mute_audio", mute_audio, False)
         return True
 
-    if any(x in clean for x in ["muta o volume", "muta o som", "mute o volume", "mute o som", "sem som", "silencia o som"]):
+    if any(x in clean for x in ["muta o volume", "muta o som", "mute o volume", "mute o som", "sem som", "silencia o som", "desliga o som"]):
         act("mute_audio", mute_audio, True)
         return True
 
@@ -624,6 +642,99 @@ def fast_local_router(user_text):
     m = re.match(r"^(?:abre|abra|abrir|mostra)\s+(?:a\s+)?(?:pasta|minha pasta|meus|minhas)\s+(?:de\s+|do\s+|da\s+)?(.+)$", clean)
     if m:
         act("open_folder", open_folder, m.group(1).strip())
+        return True
+
+    # ---- ferramentas extras
+    m = re.match(r"^(?:abre|abra|abrir|mostra|vai em|vai nas)\s+(?:as\s+)?configurac\w*(?:\s+(?:de|do|da|das|dos)\s+(.+))?$", clean)
+    if m:
+        tool("open_settings", page=m.group(1) or "")
+        return True
+    if re.search(r"\bbateria\b", clean):
+        tool("battery_status")
+        return True
+    m = re.search(r"\bbrilho\b.*?\b(\d{1,3})\b", clean)
+    if m:
+        tool("set_brightness", percent=int(m.group(1)))
+        return True
+    if re.search(r"\b(cancela|cancelar|cancele)\s+(o\s+)?(desligamento|reinicio)\b|\bnao desliga\b", clean):
+        tool("power_action", action="cancelar")
+        return True
+    m = re.search(r"\b(desliga|desligar|desligue|reinicia|reiniciar|reinicie)\s+(?:o\s+)?(?:pc|computador|notebook)\b"
+                  r"(?:.*?\b(\d+)\s*(min|minuto|minutos|h|hora|horas)\b)?", clean)
+    if m:
+        minutes = int(m.group(2)) * (60 if m.group(3) and m.group(3).startswith("h") else 1) if m.group(2) else 1
+        tool("power_action", action="desligar" if m.group(1).startswith("deslig") else "reiniciar", minutes=minutes)
+        return True
+    if re.search(r"\b(bloqueia|bloquear|bloqueie|trava|travar)\s+(?:o\s+|a\s+)?(pc|computador|notebook|tela)\b", clean):
+        tool("power_action", action="bloquear")
+        return True
+    if re.search(r"\b(suspende|suspender|hiberna|hibernar)\b", clean):
+        tool("power_action", action="suspender")
+        return True
+    m = re.match(r"^(?:fecha|feche|fechar|encerra|encerre|mata)\s+(?:o\s+|a\s+)?(.+?)(?:\s+pra mim)?$", clean)
+    if m:
+        target = m.group(1).strip()
+        if target in {"janela", "essa janela", "esta janela", "isso", "isto"}:
+            act("window_control", window_control, "fechar")
+        else:
+            tool("close_app", name=target)
+        return True
+    if re.search(r"\b(cancela|cancelar|para|parar)\s+(?:o\s+|os\s+)?(timer|timers|alarme|alarmes|lembrete|lembretes)\b", clean):
+        tool("cancel_timers")
+        return True
+    m = re.search(r"\b(?:me lembra|me lembre|me avisa|me avise|lembra|timer|alarme|cronometro)\b.*?\b(\d+)\s*"
+                  r"(seg|segundo|segundos|min|minuto|minutos|h|hora|horas)\b(?:\s+(?:de|pra|para|que)\s+(.+))?", clean)
+    if m:
+        n, unit = int(m.group(1)), m.group(2)
+        minutes = n / 60 if unit.startswith("seg") else n * 60 if unit.startswith("h") else n
+        tool("start_timer", minutes=minutes, message=(m.group(3) or "Tempo esgotado!").strip())
+        return True
+    m = re.search(r"\b(?:clima|previsao do tempo|como (?:esta|ta) o tempo|temperatura|vai chover)\b(?:.*?\b(?:em|de|no|na)\s+(.+?))?\??$", clean)
+    if m:
+        tool("weather", city=(m.group(1) or "").strip())
+        return True
+    m = re.match(r"^(?:calcula|calcule|quanto e|quanto da|quanto que e|conta)\s+(.+?)\??$", clean)
+    if m and re.search(r"\d", m.group(1)):
+        tool("calculate", expression=m.group(1))
+        return True
+    m = re.match(r"^(?:resume|resuma|resumir|faz um resumo d[oea]|faca um resumo d[oea])\s+(?:o\s+|a\s+)?(?:arquivo\s+)?(.+)$", clean)
+    if m:
+        tool("summarize_file", path=number_ref(m.group(1)))
+        return True
+    m = re.match(r"^(?:le|leia|ler)\s+(?:o\s+|a\s+)?(?:arquivo\s+)?(.+)$", clean)
+    if m:
+        tool("read_file", path=number_ref(m.group(1)))
+        return True
+    m = re.match(r"^(?:apaga|apague|exclui|exclua|deleta|delete|joga na lixeira|manda pra lixeira)\s+(?:o\s+|a\s+)?(?:arquivo\s+)?(.+)$", clean)
+    if m:
+        tool("delete_item", path=number_ref(m.group(1)))
+        return True
+    m = re.match(r"^(?:digita|digite|escreve|escreva)\s+(.+)$", text, flags=re.I)
+    if m:
+        tool("type_text", text=m.group(1))
+        return True
+    m = re.match(r"^(?:modo|rotina|ativa o modo|ativar modo|ativa a rotina)\s+(.+)$", clean)
+    if m:
+        tool("run_routine", name=m.group(1).strip())
+        return True
+    if re.search(r"\b(quais|lista as|mostra as) rotinas\b", clean):
+        tool("list_routines")
+        return True
+    if re.search(r"\b(meu ip|tem internet|to com internet|tou com internet|estou com internet|wifi conectado|como ta a internet)\b", clean):
+        tool("network_info")
+        return True
+    if re.search(r"\b(o que (?:ta|esta) pesando|(?:pc|computador) (?:ta|esta) lento|processos)\b", clean):
+        tool("list_processes")
+        return True
+    if re.search(r"\b(quais|lista as|mostra as) janelas\b", clean):
+        tool("list_windows")
+        return True
+    if re.search(r"\bo que (eu )?copiei\b|\barea de transferencia\b", clean):
+        tool("read_clipboard")
+        return True
+    m = re.match(r"^(?:vai para o|vai pro|vai para a|vai pra|muda para o|muda pro|foca no|foca na)\s+(.+)$", clean)
+    if m:
+        tool("focus_window", title=m.group(1).strip())
         return True
 
     # abrir apps/sites
@@ -713,6 +824,54 @@ def tell_time():
     return True
 
 
+def resolve_path(ref):
+    """'2' ou 2 = resultado 2 da última busca; 'ele'/'esse' = o primeiro; senão é caminho."""
+    text = str(ref).strip()
+    if re.fullmatch(r"\d{1,2}", text) and last_results:
+        i = int(text)
+        if 1 <= i <= len(last_results):
+            return Path(last_results[i - 1])
+    if normalize(text) in {"", "ele", "ela", "esse", "essa", "isso", "o arquivo"} and last_results:
+        return Path(last_results[0])
+    n = ordinal_to_number(text) if last_results and re.fullmatch(rf"(?:o |a )?{ORDINAL}", normalize(text)) else None
+    if n and 1 <= n <= len(last_results):
+        return Path(last_results[n - 1])
+    return Path(os.path.expandvars(text)).expanduser()
+
+
+def confirm(question):
+    try:
+        answer = input(f"Jarvis > {question} (s/n) ")
+    except (EOFError, KeyboardInterrupt):
+        return False
+    return normalize(answer) in {"s", "sim", "pode", "confirmo", "y", "yes"}
+
+
+def summarize_file(ref):
+    path = resolve_path(ref)
+    text = F.read_file(path, show_chars=0) if path.is_file() else False
+    if not text:
+        if not path.is_file():
+            print(f"Jarvis > Arquivo não encontrado: {path}")
+        return False
+    if chat is None:
+        print("Jarvis > Para resumir preciso do Ollama.")
+        return False
+    print("Jarvis > Resumindo...")
+    response = chat(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": "Resuma o texto em português do Brasil, em até 6 tópicos curtos."},
+            {"role": "user", "content": text[:6000]},
+        ],
+        think=False,
+        stream=False,
+        options={"temperature": 0.2, "num_ctx": 4096, "num_predict": 300},
+    )
+    print(response.message.content.strip())
+    return True
+
+
 def show_help():
     print("Jarvis > Eu sei fazer isto (fale do seu jeito, são só exemplos):")
     for group in TOOL_GROUPS:
@@ -724,7 +883,8 @@ def show_help():
     return True
 
 
-TOOL_GROUPS = ["som", "programas e sites", "arquivos e pastas", "mídia", "janelas", "sistema"]
+TOOL_GROUPS = ["som", "programas e sites", "arquivos e pastas", "ler e resumir", "mídia", "janelas e teclado",
+               "sistema", "energia", "informação", "rotinas"]
 
 TOOLS = [
     {"name": "set_volume", "args": '{"percent":0-100}', "group": "som",
@@ -767,7 +927,7 @@ TOOLS = [
     {"name": "media_control", "args": '{"action":"play|pause|next|previous|stop"}', "group": "mídia",
      "desc": "tocar, pausar, pular música", "examples": ["pausa a música", "próxima música"],
      "run": lambda a: media_control(a.get("action", ""))},
-    {"name": "window_control", "args": '{"action":"minimizar|maximizar|fechar|trocar|desktop|menu"}', "group": "janelas",
+    {"name": "window_control", "args": '{"action":"minimizar|maximizar|fechar|trocar|desktop|menu"}', "group": "janelas e teclado",
      "desc": "minimizar, maximizar, fechar ou trocar janela", "examples": ["minimiza", "fecha essa janela"],
      "run": lambda a: window_control(a.get("action", ""))},
     {"name": "take_screenshot", "args": "{}", "group": "sistema",
@@ -779,6 +939,91 @@ TOOLS = [
     {"name": "tell_time", "args": "{}", "group": "sistema",
      "desc": "dizer hora e data", "examples": ["que horas são"],
      "run": lambda a: tell_time()},
+    # ---- sistema
+    {"name": "battery_status", "args": "{}", "group": "sistema",
+     "desc": "dizer a bateria", "examples": ["quanto de bateria tem"],
+     "run": lambda a: F.battery_status()},
+    {"name": "list_processes", "args": "{}", "group": "sistema",
+     "desc": "mostrar o que está pesando no PC", "examples": ["o que tá pesando o pc"],
+     "run": lambda a: F.list_processes()},
+    {"name": "close_app", "args": '{"name":"programa"}', "group": "programas e sites",
+     "desc": "fechar um programa", "examples": ["fecha o chrome"],
+     "run": lambda a: F.close_app(a.get("name", ""))},
+    {"name": "open_settings", "args": '{"page":"bluetooth|wifi|tela|som|atualizacao|apps|energia|bateria|..."}',
+     "group": "sistema", "desc": "abrir uma tela das Configurações", "examples": ["abre as configurações de bluetooth"],
+     "run": lambda a: F.open_settings(a.get("page", ""))},
+    {"name": "set_brightness", "args": '{"percent":0-100}', "group": "sistema",
+     "desc": "mudar o brilho da tela", "examples": ["brilho em 70"],
+     "run": lambda a: F.set_brightness(a.get("percent", 50))},
+    {"name": "network_info", "args": "{}", "group": "sistema",
+     "desc": "ver IP, Wi-Fi e se tem internet", "examples": ["tô com internet?"],
+     "run": lambda a: F.network_info()},
+    # ---- energia
+    {"name": "power_action", "args": '{"action":"bloquear|suspender|desligar|reiniciar|cancelar","minutes":1}',
+     "group": "energia", "desc": "bloquear, suspender, desligar ou reiniciar (com tempo)",
+     "examples": ["desliga o pc em 30 minutos", "bloqueia o pc", "cancela o desligamento"],
+     "run": lambda a: F.power_action(a.get("action", ""), a.get("minutes", 1))},
+    # ---- informação
+    {"name": "weather", "args": '{"city":"cidade"}', "group": "informação",
+     "desc": "ver o clima de agora", "examples": ["clima em São Paulo"],
+     "run": lambda a: F.weather(a.get("city", ""))},
+    {"name": "calculate", "args": '{"expression":"conta"}', "group": "informação",
+     "desc": "fazer contas", "examples": ["quanto é 15% de 320", "calcula 12 vezes 7"],
+     "run": lambda a: F.calculate(a.get("expression", ""))},
+    {"name": "start_timer", "args": '{"minutes":5,"message":"texto"}', "group": "informação",
+     "desc": "timer e lembrete", "examples": ["me lembra em 10 minutos de tirar o bolo"],
+     "run": lambda a: F.start_timer(a.get("minutes", 5), a.get("message", "Tempo esgotado!"))},
+    {"name": "cancel_timers", "args": "{}", "group": "informação",
+     "desc": "cancelar os timers", "examples": ["cancela os timers"],
+     "run": lambda a: F.cancel_timers()},
+    # ---- arquivos
+    {"name": "read_file", "args": '{"path":"caminho ou número do resultado"}', "group": "ler e resumir",
+     "desc": "ler TXT, PDF ou DOCX", "examples": ["lê o primeiro", "lê o arquivo 2"],
+     "run": lambda a: F.read_file(resolve_path(a.get("path", "1")))},
+    {"name": "summarize_file", "args": '{"path":"caminho ou número do resultado"}', "group": "ler e resumir",
+     "desc": "resumir um documento com a IA", "examples": ["resume o primeiro"],
+     "run": lambda a: summarize_file(a.get("path", "1"))},
+    {"name": "file_info", "args": '{"path":"caminho ou número"}', "group": "arquivos e pastas",
+     "desc": "tamanho e data de um arquivo", "examples": ["qual o tamanho do primeiro"],
+     "run": lambda a: F.file_info(resolve_path(a.get("path", "1")))},
+    {"name": "create_folder", "args": '{"path":"caminho"}', "group": "arquivos e pastas",
+     "desc": "criar pasta", "examples": ["cria a pasta G:\\Jarvis\\projetos"],
+     "run": lambda a: F.create_folder(a.get("path", ""))},
+    {"name": "copy_item", "args": '{"src":"caminho ou número","dest":"pasta"}', "group": "arquivos e pastas",
+     "desc": "copiar arquivo ou pasta", "examples": ["copia o primeiro para G:\\backup"],
+     "run": lambda a: F.copy_item(resolve_path(a.get("src", "1")), a.get("dest", ""))},
+    {"name": "move_item", "args": '{"src":"caminho ou número","dest":"pasta"}', "group": "arquivos e pastas",
+     "desc": "mover arquivo ou pasta", "examples": ["move o segundo para documentos"],
+     "run": lambda a: F.move_item(resolve_path(a.get("src", "1")), FOLDERS.get(normalize(a.get("dest", "")), a.get("dest", "")))},
+    {"name": "rename_item", "args": '{"src":"caminho ou número","new_name":"novo nome"}', "group": "arquivos e pastas",
+     "desc": "renomear", "examples": ["renomeia o primeiro para contrato final"],
+     "run": lambda a: F.rename_item(resolve_path(a.get("src", "1")), a.get("new_name", ""))},
+    {"name": "delete_item", "args": '{"path":"caminho ou número"}', "group": "arquivos e pastas",
+     "desc": "mandar para a Lixeira (sempre pergunta antes)", "examples": ["apaga o terceiro"],
+     "run": lambda a: F.send_to_recycle_bin(resolve_path(a.get("path", "")), confirm)},
+    # ---- teclado e janelas
+    {"name": "type_text", "args": '{"text":"texto"}', "group": "janelas e teclado",
+     "desc": "digitar um texto no programa da frente", "examples": ["digita bom dia a todos"],
+     "run": lambda a: F.type_text(a.get("text", ""))},
+    {"name": "press_keys", "args": '{"keys":"ctrl+c"}', "group": "janelas e teclado",
+     "desc": "apertar teclas e atalhos", "examples": ["aperta ctrl+s"],
+     "run": lambda a: F.press_keys(a.get("keys", ""))},
+    {"name": "read_clipboard", "args": "{}", "group": "janelas e teclado",
+     "desc": "mostrar o que está copiado", "examples": ["o que eu copiei"],
+     "run": lambda a: F.read_clipboard()},
+    {"name": "focus_window", "args": '{"title":"parte do título"}', "group": "janelas e teclado",
+     "desc": "trazer uma janela para a frente", "examples": ["vai para o chrome"],
+     "run": lambda a: F.focus_window(a.get("title", ""))},
+    {"name": "list_windows", "args": "{}", "group": "janelas e teclado",
+     "desc": "listar janelas abertas", "examples": ["quais janelas estão abertas"],
+     "run": lambda a: F.list_windows()},
+    # ---- rotinas
+    {"name": "run_routine", "args": '{"name":"estudo|relaxar|foco|..."}', "group": "rotinas",
+     "desc": "rodar uma rotina com vários passos", "examples": ["modo estudo"],
+     "run": lambda a: F.run_routine(a.get("name", ""), execute_ai_action)},
+    {"name": "list_routines", "args": "{}", "group": "rotinas",
+     "desc": "listar as rotinas", "examples": ["quais rotinas tem"],
+     "run": lambda a: F.list_routines()},
     {"name": "show_help", "args": "{}", "group": "sistema",
      "desc": "mostrar tudo o que eu sei fazer", "examples": ["o que você sabe fazer"],
      "run": lambda a: show_help()},
@@ -792,7 +1037,12 @@ AI_EXAMPLES = [
     ("bota uma música lofi pra mim", '{"actions":[{"name":"search_web","args":{"query":"lofi","site":"youtube"}}],"reply":"Procurando lofi no YouTube."}'),
     ("cadê aquele pdf do FO 1102", '{"actions":[{"name":"search_files","args":{"query":"FO 1102"}}],"reply":"Procurando."}'),
     ("me mostra meus downloads", '{"actions":[{"name":"open_folder","args":{"name":"downloads"}}],"reply":"Abrindo Downloads."}'),
-    ("modo estudo", '{"actions":[{"name":"set_volume","args":{"percent":25}},{"name":"open_target","args":{"target":"notepad"}}],"reply":"Modo estudo: volume 25 e bloco de notas."}'),
+    ("modo estudo", '{"actions":[{"name":"run_routine","args":{"name":"estudo"}}],"reply":"Modo estudo ativado."}'),
+    ("abre o bloco de notas e escreve lista de compras", '{"actions":[{"name":"open_target","args":{"target":"notepad"}},{"name":"type_text","args":{"text":"lista de compras"}}],"reply":"Feito."}'),
+    ("vai chover hoje em recife?", '{"actions":[{"name":"weather","args":{"city":"Recife"}}],"reply":"Olha o clima em Recife."}'),
+    ("o pc tá lento", '{"actions":[{"name":"list_processes","args":{}},{"name":"system_info","args":{}}],"reply":"Esses são os programas que mais pesam."}'),
+    ("joga esse arquivo na lixeira", '{"actions":[{"name":"delete_item","args":{"path":"1"}}],"reply":"Vou pedir confirmação."}'),
+    ("faz um resumo do segundo", '{"actions":[{"name":"summarize_file","args":{"path":"2"}}],"reply":"Resumindo."}'),
     ("oi jarvis, tudo bem?", '{"actions":[],"reply":"Tudo certo! Diga o que precisa."}'),
     ("faz um bolo pra mim", '{"actions":[],"reply":"Isso eu não consigo fazer. Diga \\"o que você sabe fazer\\" para ver a lista."}'),
 ]
@@ -875,7 +1125,7 @@ def ask_ai_router(user_text):
             format="json",
             think=False,
             stream=False,
-            options={"temperature": 0, "num_ctx": 3072, "num_predict": 200},
+            options={"temperature": 0, "num_ctx": 4096, "num_predict": 220},
         )
         raw = (response.message.content or "").strip()
         data = json.loads(raw)

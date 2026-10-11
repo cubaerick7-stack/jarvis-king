@@ -3,3 +3,6 @@ pycaw
 pyautogui
 mss
 pypdf
+psutil
+pyperclip
+pygetwindow
