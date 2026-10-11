@@ -1,0 +1,47 @@
+JARVIS LITE V2
+
+Essa versão corrige o problema em que o Qwen 1.7B escrevia:
+    mute_audio mute
+    search_files query="FO 1102"
+mas não executava nada.
+
+AGORA:
+- volume, mute, arquivos, abrir programas, mídia etc. rodam direto no Python;
+- o Qwen só é usado como fallback para pedidos mais difíceis;
+- isso reduz bastante o uso de CPU.
+
+PASSO A PASSO
+
+1. Extraia o ZIP.
+
+2. Copie:
+   windows\jarvis_ai.py
+
+para:
+   G:\Jarvis\cozmo-esp32\windows\jarvis_ai.py
+
+Substitua o anterior.
+
+3. No PowerShell:
+
+   G:
+   cd G:\Jarvis\cozmo-esp32
+   python -m pip install ollama pycaw pyautogui mss pypdf
+
+4. Rode:
+
+   python windows\jarvis_ai.py
+
+TESTE:
+   mn muta o volume
+   desmuta
+   coloca o volume em 50
+   deixa o volume na metade
+   qual o volume
+   procura um pdf
+   procura o arquivo FO 1102
+   abre o primeiro
+   procura o arquivo FO 1102
+   mostra o primeiro na pasta
+   abre a calculadora
+   abre youtube

@@ -1,0 +1,5 @@
+ollama
+pycaw
+pyautogui
+mss
+pypdf

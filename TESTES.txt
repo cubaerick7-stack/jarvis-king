@@ -1,0 +1,14 @@
+TESTES
+
+mn muta o volume
+desmuta
+coloca o volume em 50
+deixa o volume na metade
+qual o volume
+procura um pdf
+procura o arquivo FO 1102
+abre o primeiro
+procura o arquivo FO 1102
+mostra o primeiro na pasta
+abre a calculadora
+abre youtube
