@@ -153,3 +153,23 @@ def test_tool_accepts_arg_called_name(monkeypatch):
     monkeypatch.setattr(F, "close_app", lambda name: got.append(name) or True)
     monkeypatch.setattr(j, "log_action", lambda *a: None)
     assert j.tool("close_app", name="chrome") is True and got == ["chrome"]
+
+
+@pytest.mark.parametrize("text", ["oi", "Oi Jarvis!", "bom dia", "valeu", "tudo bem?", "quem é você"])
+def test_small_talk_skips_ai(jarvis, text):
+    assert jarvis.fast_local_router(text) is True and jarvis.calls == []
+
+
+def test_ai_calls_share_options_and_keep_alive(jarvis, monkeypatch):
+    seen = []
+
+    class Resp:
+        class message:
+            content = '{"actions":[],"reply":"ok"}'
+
+    monkeypatch.setattr(jarvis, "chat", lambda **kw: seen.append(kw) or Resp())
+    jarvis.warm_up_ai()
+    jarvis.ask_ai_router("organiza minha semana")
+    assert seen[0]["messages"][0] == seen[1]["messages"][0]  # mesmo prompt => cache do Ollama
+    assert all(k["keep_alive"] == jarvis.KEEP_ALIVE for k in seen)
+    assert seen[0]["options"]["num_ctx"] == seen[1]["options"]["num_ctx"]

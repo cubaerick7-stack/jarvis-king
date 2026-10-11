@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import unicodedata
 import webbrowser
@@ -31,6 +32,9 @@ except ImportError:
     chat = None
 
 MODEL = "qwen3:1.7b"
+# Mesmas opções em todas as chamadas: mudar num_ctx faz o Ollama recarregar o modelo.
+AI_OPTIONS = {"temperature": 0, "num_ctx": 4096, "num_predict": 220}
+KEEP_ALIVE = "30m"  # mantém o modelo na RAM entre pedidos
 MAX_RESULTS = 20
 MAX_SCAN = 400  # quantos achados juntar antes de ordenar
 SCREENSHOT_DIR = Path(r"G:\Jarvis\screenshots")
@@ -541,6 +545,9 @@ def fast_local_router(user_text):
     text = clean_prefix(user_text)
     clean = normalize(text)
 
+    if small_talk(normalize(user_text)) or small_talk(clean):
+        return True
+
     # volume relativo ("aumenta o volume em 10") vem antes do volume exato
     up = re.search(r"\b(aumenta|sobe|aumente|suba)\b.*\b(volume|som)\b", clean)
     down = re.search(r"\b(abaixa|diminui|reduz|abaixe|diminua|reduza)\b.*\b(volume|som)\b", clean)
@@ -866,7 +873,8 @@ def summarize_file(ref):
         ],
         think=False,
         stream=False,
-        options={"temperature": 0.2, "num_ctx": 4096, "num_predict": 300},
+        keep_alive=KEEP_ALIVE,
+        options={**AI_OPTIONS, "temperature": 0.2, "num_predict": 300},
     )
     print(response.message.content.strip())
     return True
@@ -1125,7 +1133,8 @@ def ask_ai_router(user_text):
             format="json",
             think=False,
             stream=False,
-            options={"temperature": 0, "num_ctx": 4096, "num_predict": 220},
+            keep_alive=KEEP_ALIVE,
+            options=AI_OPTIONS,
         )
         raw = (response.message.content or "").strip()
         data = json.loads(raw)
@@ -1149,6 +1158,41 @@ def ask_ai_router(user_text):
         return False
 
 
+def warm_up_ai():
+    """Carrega o Qwen e já processa o prompt do catálogo em segundo plano.
+    O Ollama guarda esse começo em cache, então os pedidos seguintes só processam a frase nova."""
+    if chat is None:
+        return
+    try:
+        chat(
+            model=MODEL,
+            messages=[{"role": "system", "content": AI_PROMPT}, {"role": "user", "content": "oi"}],
+            format="json",
+            think=False,
+            stream=False,
+            keep_alive=KEEP_ALIVE,
+            options={**AI_OPTIONS, "num_predict": 1},
+        )
+    except Exception:
+        pass
+
+
+SMALL_TALK = [
+    (r"^(oi|ola|opa|eai|e ai|fala|salve|bom dia|boa tarde|boa noite|hey)( jarvis)?[!. ]*$", "Oi! Diga o que precisa."),
+    (r"^(oi |ola |e ai |fala )?(jarvis,? )?(tudo bem|tudo certo|como (voce|vc) esta|beleza)( jarvis)?\??$", "Tudo certo por aqui! Em que posso ajudar?"),
+    (r"^(obrigad[oa]|valeu|vlw|brigad[oa]|show|top|massa|perfeito)( jarvis)?[!. ]*$", "Tamo junto!"),
+    (r"^(jarvis,? )?(quem e voce|quem e vc|qual (e )?(o )?seu nome)\??$", "Sou o Jarvis, seu assistente do Windows. Diga \"o que você sabe fazer\"."),
+]
+
+
+def small_talk(clean):
+    for pattern, answer in SMALL_TALK:
+        if re.search(pattern, clean):
+            print(f"Jarvis > {answer}")
+            return True
+    return False
+
+
 def main():
     print("")
     print("==============================================")
@@ -1159,6 +1203,7 @@ def main():
     print("Os comandos comuns agora rodam SEM IA.")
     print("Digite 'sair' para fechar.")
     print("")
+    threading.Thread(target=warm_up_ai, daemon=True).start()
 
     while True:
         try:
