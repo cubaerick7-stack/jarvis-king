@@ -106,6 +106,19 @@ def search(query):
                 links.append((title, href))
     except Exception:
         pass
+    if not links:  # Google pediu "não sou um robô" ou mudou a página: tenta o DuckDuckGo
+        try:
+            p.goto("https://html.duckduckgo.com/html/?q=" + urllib.parse.quote_plus(str(query)),
+                   wait_until="domcontentloaded", timeout=30000)
+            for a in p.locator("a.result__a").all()[:8]:
+                title = _clean(a.inner_text())
+                href = a.get_attribute("href") or ""
+                m = re.search(r"uddg=([^&]+)", href)
+                href = urllib.parse.unquote(m.group(1)) if m else href
+                if title and href.startswith("http"):
+                    links.append((title, href))
+        except Exception:
+            pass
     last_links = links
     if not links:
         _say(f"Pesquisei {query}, mas não consegui ler os resultados.")

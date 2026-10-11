@@ -109,20 +109,24 @@ Se voce repete algo no mesmo horario em 3 dias diferentes, ele sugere ao abrir.
 
 INTERFACE (O REATOR)
 1. python -m pip install pywebview
-2. Ao abrir o Jarvis, o reator aparece no canto da tela, sempre por cima.
+2. Ao abrir o Jarvis, o painel vertical com o reator aparece no canto da tela.
+   Da para digitar o pedido na caixa de baixo. "–" minimiza, "×" fecha o Jarvis.
    Parado ele gira devagar; ouvindo ondula; pensando pulsa; falando pulsa com a voz.
    A ultima resposta aparece embaixo dele, e a musica tocando vira um cartao.
-   Arraste com o mouse para mudar de lugar. Fechar a janela fecha o Jarvis.
+   Arraste pelo titulo ou pelo reator para mudar de lugar.
 Para abrir sem a janela:  python windows\jarvis_ai.py --sem-tela
 
 VOZ ("JARVIS", BIPE, PEDIDO)
 1. python -m pip install vosk sounddevice edge-tts
-2. Baixe o modelo pequeno de portugues "vosk-model-small-pt-0.3" em
-   https://alphacephei.com/vosk/models , descompacte e renomeie a pasta para
-   G:\Jarvis\modelos\vosk-pt   (dentro dela ficam as pastas am, conf, graph...)
+2. Na primeira vez o Jarvis baixa sozinho o modelo de voz (uns 30 MB) para
+   G:\Jarvis\modelos\vosk-pt. Se voce ja tinha baixado, pode deixar a pasta
+   do zip dentro dela: ele acha.
 3. Para entender o pedido ele usa o Whisper do Groq (GROQ_API_KEY) ou o Gemini.
-4. Abra o Jarvis, diga "Jarvis", espere o bipe e fale o pedido.
+4. Diga "Jarvis, toca lofi" de uma vez, ou "Jarvis", espere o bipe e fale.
    Ele responde com a voz Antonio. Digitar continua funcionando junto.
+Microfone mudo? Configuracoes > Privacidade > Microfone > ligue
+"Permitir que aplicativos da area de trabalho acessem o microfone"
+(o Jarvis abre essa tela sozinho quando percebe o microfone mudo).
 Para abrir sem voz:  python windows\jarvis_ai.py --sem-voz
 
 NAVEGADOR DO JARVIS (YOUTUBE, PESQUISA, WHATSAPP)

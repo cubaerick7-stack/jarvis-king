@@ -5,38 +5,71 @@
 <title>J.A.R.V.I.S.</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600&family=Share+Tech+Mono&display=swap">
 <style>
-/* Janela transparente: reator em cima, estado e fala no meio, cartões embaixo */
+/* Painel vertical escuro: título em cima, reator, estado e fala, cartões, caixa de pedido embaixo */
 :root {
-  --panel: rgba(4, 24, 30, .78);
+  --bg: #02080b;
+  --bg-glow: #06222a;
+  --panel: rgba(8, 40, 48, .55);
   --line: #1b6b78;
   --cyan: #5fe6f0;
   --text: #cfeff3;
   --muted: #6fa6ad;
   --display: "Rajdhani", "Segoe UI", system-ui, sans-serif;
   --mono: "Share Tech Mono", Consolas, monospace;
+  color-scheme: dark;
 }
-html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
-body { color: var(--text); font-family: var(--display); display: flex; flex-direction: column; align-items: center; user-select: none; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body {
+  background: radial-gradient(ellipse at 50% 38%, var(--bg-glow) 0%, var(--bg) 62%) var(--bg);
+  color: var(--text); font-family: var(--display); user-select: none;
+  display: flex; flex-direction: column; border: 1px solid var(--line);
+}
+header {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 12px 14px 10px; border-bottom: 1px solid var(--line); cursor: move;
+}
+h1 { margin: 0; font-weight: 400; letter-spacing: .45em; font-size: 22px; }
+.botoes { display: flex; gap: 4px; }
+.botoes button {
+  width: 28px; height: 24px; border: 1px solid var(--line); background: transparent; color: var(--cyan);
+  font: 16px/1 var(--mono); cursor: pointer;
+}
+.botoes button:hover { background: rgba(95, 230, 240, .12); }
 .reator { position: relative; width: 100%; aspect-ratio: 1; flex: none; }
 canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-.estado { font-family: var(--mono); color: var(--cyan); font-size: 12px; letter-spacing: .2em; text-transform: uppercase;
-  text-shadow: 0 0 6px rgba(0,0,0,.9); }
-.fala { margin-top: 6px; width: 92%; text-align: center; font-size: 16px; min-height: 1.3em; text-shadow: 0 0 6px #000, 0 0 2px #000; }
-.cartoes { margin-top: 10px; width: 92%; display: flex; flex-direction: column; gap: 8px; }
+.estado { text-align: center; font-family: var(--mono); color: var(--cyan); font-size: 12px; letter-spacing: .2em; text-transform: uppercase; }
+.fala { margin: 8px 16px 0; text-align: center; font-size: 16px; min-height: 2.6em; overflow-wrap: anywhere; }
+.cartoes { flex: 1; min-height: 0; overflow: hidden; margin: 8px 14px 0; display: flex; flex-direction: column; gap: 8px; }
 .cartao { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--cyan); padding: 8px 12px;
   animation: entra .35s ease-out both; }
 .cartao.sai { animation: sai .4s ease-in forwards; }
 .cartao small { display: block; font-family: var(--mono); color: var(--muted); font-size: 11px; letter-spacing: .15em; text-transform: uppercase; }
-.cartao strong { font-size: 16px; font-weight: 600; color: var(--text); display: block; overflow-wrap: anywhere; }
+.cartao strong { font-size: 16px; font-weight: 600; display: block; overflow-wrap: anywhere; }
 @keyframes entra { from { opacity: 0; transform: translateY(12px); } }
 @keyframes sai { to { opacity: 0; transform: translateY(12px); } }
+form { display: flex; gap: 6px; padding: 10px 14px 14px; border-top: 1px solid var(--line); margin-top: 8px; }
+input {
+  flex: 1; min-width: 0; background: rgba(8, 40, 48, .4); border: 1px solid var(--line); color: var(--text);
+  font: 15px var(--display); padding: 7px 10px; outline: none;
+}
+input:focus { border-color: var(--cyan); }
+input::placeholder { color: var(--muted); }
 </style>
 </head>
-<body class="pywebview-drag-region">
-<div class="reator"><canvas id="c"></canvas></div>
-<span class="estado" id="estado">● em espera</span>
+<body>
+<header class="pywebview-drag-region">
+  <h1>J.A.R.V.I.S.</h1>
+  <div class="botoes">
+    <button id="minimizar" title="Minimizar">–</button>
+    <button id="fechar" title="Fechar o Jarvis">×</button>
+  </div>
+</header>
+<div class="reator pywebview-drag-region"><canvas id="c"></canvas></div>
+<div class="estado" id="estado">● em espera</div>
 <div class="fala" id="fala"></div>
 <div class="cartoes" id="cartoes"></div>
+<form id="form"><input id="pedido" placeholder="Digite um pedido ou diga &quot;Jarvis&quot;" autocomplete="off"></form>
 <script>
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const reduz = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -177,6 +210,17 @@ function cartao(rotulo, valor, ms = 7000) {
 window.setEstado = muda;
 window.mostraFala = (texto) => { elFala.textContent = texto || ''; };
 window.cartao = cartao;
+
+// Botões e caixa de texto falam com o Python (ui.py -> Api)
+const api = () => (window.pywebview && window.pywebview.api) || null;
+document.getElementById('fechar').onclick = () => api() && api().fechar();
+document.getElementById('minimizar').onclick = () => api() && api().minimizar();
+const campo = document.getElementById('pedido');
+document.getElementById('form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const texto = campo.value.trim();
+  if (texto && api()) { api().pedido(texto); campo.value = ''; }
+});
 </script>
 </body>
 </html>

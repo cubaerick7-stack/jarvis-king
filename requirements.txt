@@ -1,4 +1,3 @@
-ollama
 pycaw
 pyautogui
 mss

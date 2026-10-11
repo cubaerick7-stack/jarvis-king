@@ -1532,11 +1532,28 @@ def start_voice():
     global listener
     lacks = V.missing()
     if lacks:
-        print("Voz desligada. Falta: " + ", ".join(lacks) + " (veja o LEIA-ME).")
+        print("Voz desligada. Instale: python -m pip install " + " ".join(lacks))
         return
-    listener = V.Listener(commands.put, set_state)
-    listener.start()
-    print('Voz ligada: diga "Jarvis" e faça o pedido depois do bipe.')
+    model = V.find_model()
+    if model is None:
+        try:
+            model = V.download_model()
+        except Exception as e:
+            print(f"Voz desligada: não consegui baixar o modelo de voz ({e}).")
+            return
+    if model is None:
+        print(f"Voz desligada: a pasta {V.VOSK_MODEL} não tem o modelo do Vosk (pastas am, conf...).")
+        return
+    candidate = V.Listener(commands.put, set_state, model)
+    candidate.start()
+    candidate.ready.wait(30)
+    if candidate.error is not None or not candidate.ready.is_set():
+        print("Voz desligada. Confira se o microfone está conectado e liberado no Windows.")
+        V.open_mic_settings()
+        return
+    listener = candidate
+    mic = V.mic_name()
+    print(f'Voz ligada{" (" + mic + ")" if mic else ""}: diga "Jarvis" e faça o pedido depois do bipe.')
 
 
 def run():
@@ -1561,8 +1578,8 @@ def run():
         user_text = (user_text or "").strip()
         if not user_text:
             continue
-        if origin == "voz":
-            print(f"Você (voz) > {user_text}")
+        if origin in ("voz", "janela"):
+            print(f"Você ({origin}) > {user_text}")
         if origin == "lembrete":
             announce(f"Senhor, lembrete: {user_text}", "Lembrete")
             continue
@@ -1586,7 +1603,7 @@ def main():
     print("")
     print("Digite o pedido e Enter. 'sair' fecha.")
     if "--sem-tela" not in sys.argv and U.available():
-        U.start(run)  # o reator fica na thread principal; o Jarvis roda ao lado
+        U.start(run, lambda text: commands.put(("janela", text)))  # o reator fica na thread principal
         os._exit(0)  # fechou a janela: fecha tudo (voz e teclado ficam em threads)
     if "--sem-tela" not in sys.argv:
         print("Sem interface: python -m pip install pywebview")

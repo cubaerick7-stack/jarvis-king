@@ -103,3 +103,31 @@ def test_reator_html_has_python_hooks():
     html = (ROOT / "windows" / "interface" / "reator.html").read_text(encoding="utf-8")
     for hook in ("window.setEstado", "window.mostraFala", "window.cartao", "background: transparent"):
         assert hook in html
+
+
+def test_model_found_inside_extra_folder(tmp_path):
+    inner = tmp_path / "vosk-pt" / "vosk-model-small-pt-0.3"
+    (inner / "am").mkdir(parents=True)
+    (inner / "conf").mkdir()
+    assert V.find_model(tmp_path / "vosk-pt") == inner
+    assert V.find_model(tmp_path / "vazio") is None
+
+
+def test_wake_word_spelled_in_many_ways():
+    for heard in ("jarvis", "jarbas toca lofi", "já vis", "javis", "jervis abre o chrome"):
+        assert V.is_wake(heard), heard
+    for heard in ("jardim", "chaves", "jardins", "o jarro"):
+        assert not V.is_wake(heard), heard
+
+
+def test_command_said_in_one_breath_uses_audio_before_wake():
+    before = [block(3000)] * 15  # "Jarvis, toca lofi" já falado
+    pcm = V.record_command(lambda: block(0), before=before)
+    assert len(pcm) / 2 / V.SAMPLE_RATE >= 1.5  # manda o áudio de antes, sem esperar 5 s
+
+
+def test_strip_wake_word():
+    assert V.strip_wake("Jarvis, toca lofi.") == "toca lofi"
+    assert V.strip_wake("Já vis toca lofi") == "toca lofi"
+    assert V.strip_wake("Jarvis.") == ""
+    assert V.strip_wake("toca jarvis") == "toca jarvis"
