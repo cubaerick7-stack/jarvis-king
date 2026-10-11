@@ -320,7 +320,12 @@ def search_files(query):
     found, seen, close = [], set(), []
     print(f"Jarvis > Procurando: {query_original}")
 
-    for root in SEARCH_ROOTS:
+    indexed = F.everything_search(query_original, MAX_SCAN, extension)
+    if indexed:  # Everything: o PC inteiro em milissegundos
+        found = indexed
+    roots = [] if indexed else SEARCH_ROOTS  # sem Everything (ou sem achado), varre as pastas de sempre
+
+    for root in roots:
         if not root.exists():
             continue
         try:
@@ -958,7 +963,7 @@ TOOLS = [
      "desc": "pesquisar no Google ou ver resultados do YouTube", "examples": ["pesquisa receita de bolo", "procura no youtube lofi"],
      "run": lambda a: search_web(a.get("query", ""), a.get("site", "google"))},
     {"name": "search_files", "args": '{"query":"nome ou extensão"}', "group": "arquivos e pastas",
-     "desc": "procurar arquivo ou pasta no PC", "examples": ["procura o arquivo omori", "procura um pdf"],
+     "desc": "procurar arquivo ou pasta em todos os discos do PC", "examples": ["procura o arquivo omori", "procura um pdf"],
      "run": lambda a: search_files(a.get("query", ""))},
     {"name": "open_search_result", "args": '{"index":1}', "group": "arquivos e pastas",
      "desc": "abrir um resultado da última busca", "examples": ["abre o segundo", "2"],

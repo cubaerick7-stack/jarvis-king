@@ -262,3 +262,47 @@ def test_play_youtube_reuses_open_tab(monkeypatch):
     monkeypatch.setattr(F, "_navigate_same_tab", lambda w, url: navigated.append((w, url)))
     F.play_youtube("x", open_url=opened.append)
     assert navigated == [("janela", "https://www.youtube.com/watch?v=abc")] and opened == []
+
+
+class FakeRun:
+    def __init__(self, out=b"", code=0):
+        self.out, self.code, self.args = out, code, None
+
+    def __call__(self, args, **kw):
+        self.args = args
+        return type("R", (), {"stdout": self.out, "returncode": self.code})()
+
+
+def test_everything_search_excludes_system(monkeypatch):
+    run = FakeRun("G:\\Escola\\Relatório.pdf\r\nC:\\Users\\joao\\Desktop\\relatorio.docx\r\n".encode("utf-8"))
+    monkeypatch.setattr(F, "find_es", lambda: "es.exe")
+    monkeypatch.setattr(F.subprocess, "run", run)
+    assert F.everything_search("relatorio") == ["G:\\Escola\\Relatório.pdf", "C:\\Users\\joao\\Desktop\\relatorio.docx"]
+    assert run.args[:4] == ["es.exe", "-n", "400", "relatorio"]
+    assert '!"C:\\Windows\\"' in run.args
+
+
+def test_everything_by_extension(monkeypatch):
+    run = FakeRun(b"G:\\a.pdf\n")
+    monkeypatch.setattr(F, "find_es", lambda: "es.exe")
+    monkeypatch.setattr(F.subprocess, "run", run)
+    F.everything_search("pdf", extension=".pdf")
+    assert "ext:pdf" in run.args
+
+
+def test_everything_closed_means_fallback(monkeypatch):
+    monkeypatch.setattr(F, "find_es", lambda: "es.exe")
+    monkeypatch.setattr(F.subprocess, "run", FakeRun(code=8))
+    assert F.everything_search("x") is None
+    monkeypatch.setattr(F, "find_es", lambda: None)
+    assert F.everything_search("x") is None
+
+
+def test_search_files_uses_everything_whole_pc(monkeypatch, tmp_path):
+    spec = importlib.util.spec_from_file_location("jarvis_real", ROOT / "windows" / "jarvis_ai.py")
+    real = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(real)
+    monkeypatch.setattr(real.F, "everything_search", lambda q, n, ext: ["D:\\Fotos\\viagem.jpg", "C:\\Users\\j\\viagem.txt"])
+    monkeypatch.setattr(real, "SEARCH_ROOTS", [tmp_path / "nao-deve-varrer"])
+    found = real.search_files("viagem")
+    assert set(found) == {"D:\\Fotos\\viagem.jpg", "C:\\Users\\j\\viagem.txt"}

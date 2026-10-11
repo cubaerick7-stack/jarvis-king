@@ -474,6 +474,56 @@ def send_to_recycle_bin(path, confirm):
     return True
 
 
+# ------------------------- EVERYTHING (busca no PC inteiro) -------------------------
+# O Everything (voidtools.com) mantém um índice de todos os discos; o es.exe pergunta a ele.
+ES_CANDIDATES = [
+    Path(r"G:\Jarvis\tools\es.exe"),
+    Path(r"C:\Program Files\Everything\es.exe"),
+    Path(r"C:\Program Files (x86)\Everything\es.exe"),
+]
+# Pastas do sistema ficam de fora: o Jarvis não deve mexer nelas.
+EVERYTHING_EXCLUDE = [
+    "C:\\Windows\\", "C:\\Program Files\\", "C:\\Program Files (x86)\\", "C:\\ProgramData\\",
+    "\\AppData\\", "\\$Recycle.Bin\\", "\\System Volume Information\\",
+]
+
+
+def find_es():
+    custom = os.environ.get("JARVIS_ES", "").strip()
+    if custom and Path(custom).exists():
+        return custom
+    for path in ES_CANDIDATES:
+        if path.exists():
+            return str(path)
+    return shutil.which("es")
+
+
+def _decode(raw):
+    for enc in ("utf-8", "mbcs", "cp1252"):
+        try:
+            return raw.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return raw.decode("utf-8", "replace")
+
+
+def everything_search(query, limit=400, extension=None):
+    """Caminhos achados pelo Everything, ou None se ele não estiver instalado/aberto."""
+    exe = find_es()
+    if not exe:
+        return None
+    terms = [f"ext:{extension.lstrip('.')}"] if extension else str(query).split()
+    terms += [f'!"{p}"' for p in EVERYTHING_EXCLUDE]
+    try:
+        r = subprocess.run([exe, "-n", str(limit), *terms], capture_output=True, timeout=10,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0:  # Everything fechado: o es.exe não consegue perguntar
+        return None
+    return [line.strip() for line in _decode(r.stdout).splitlines() if line.strip()]
+
+
 # ========================= TEXTO E TECLADO =========================
 
 def type_text(text):

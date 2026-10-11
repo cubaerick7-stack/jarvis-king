@@ -89,6 +89,14 @@ COMO CRIAR UMA FERRAMENTA NOVA
    fast_local_router chamando tool("minha_ferramenta", x=...).
 4. Adicione um teste em tests\ e rode python -m pytest -q.
 
+BUSCA NO PC INTEIRO (EVERYTHING)
+1. Instale o Everything (voidtools.com) e deixe ele aberto (fica perto do relogio).
+2. Baixe o ES (Everything command line) no mesmo site e coloque o es.exe em
+   G:\Jarvis\tools\es.exe
+Pronto: "procura o arquivo X" acha em todos os discos na hora.
+Pastas do sistema (Windows, Program Files, AppData) ficam de fora.
+Sem o Everything, o Jarvis volta a procurar so no G:, Desktop, Documentos e Downloads.
+
 IA NA NUVEM (GEMINI + GROQ)
 O Jarvis pensa na nuvem: Gemini primeiro e, se ele falhar ou bater no limite,
 o Groq responde. Nao pesa a CPU. Os comandos rapidos funcionam sem internet.
