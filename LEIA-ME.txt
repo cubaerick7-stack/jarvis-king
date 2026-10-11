@@ -97,6 +97,14 @@ Pronto: "procura o arquivo X" acha em todos os discos na hora.
 Pastas do sistema (Windows, Program Files, AppData) ficam de fora.
 Sem o Everything, o Jarvis volta a procurar so no G:, Desktop, Documentos e Downloads.
 
+INTERFACE (O REATOR)
+1. python -m pip install pywebview
+2. Ao abrir o Jarvis, o reator aparece no canto da tela, sempre por cima.
+   Parado ele gira devagar; ouvindo ondula; pensando pulsa; falando pulsa com a voz.
+   A ultima resposta aparece embaixo dele, e a musica tocando vira um cartao.
+   Arraste com o mouse para mudar de lugar. Fechar a janela fecha o Jarvis.
+Para abrir sem a janela:  python windows\jarvis_ai.py --sem-tela
+
 VOZ ("JARVIS", BIPE, PEDIDO)
 1. python -m pip install vosk sounddevice edge-tts
 2. Baixe o modelo pequeno de portugues "vosk-model-small-pt-0.3" em

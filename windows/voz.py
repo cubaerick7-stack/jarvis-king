@@ -119,7 +119,20 @@ def say(text, on_state=None):
         return
     import edge_tts
     path = Path(tempfile.gettempdir()) / "jarvis_fala.mp3"
-    asyncio.run(edge_tts.Communicate(text, VOICE, rate=RATE, pitch=PITCH).save(str(path)))
+    # Thread própria: o asyncio do edge-tts não se mistura com o loop do navegador (Playwright).
+    errors = []
+
+    def synth():
+        try:
+            asyncio.run(edge_tts.Communicate(text, VOICE, rate=RATE, pitch=PITCH).save(str(path)))
+        except Exception as e:
+            errors.append(e)
+
+    t = threading.Thread(target=synth)
+    t.start()
+    t.join()
+    if errors:
+        raise errors[0]
     speaking.set()
     if on_state:
         on_state("falando")

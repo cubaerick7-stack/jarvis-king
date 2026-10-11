@@ -83,3 +83,23 @@ def test_confirm_waits_for_typed_or_spoken_answer(monkeypatch):
     assert j.confirm("Mando oi para Ana?") is True
     j.commands.put(("teclado", "não"))
     assert j.confirm("Mando oi para Ana?") is False
+
+
+def test_reator_shows_reply_and_playing_card(monkeypatch):
+    j = load_jarvis()
+    shown, cards = [], []
+    monkeypatch.setattr(j.U, "speech", shown.append)
+    monkeypatch.setattr(j.U, "card", lambda t, x: cards.append((t, x)))
+    monkeypatch.setattr(j.B, "available", lambda: True)
+    monkeypatch.setattr(j.B, "play_youtube", lambda q: "Tocando: Evidências")
+    j.respond("toca evidências")
+    assert cards == [("Tocando agora", "Evidências")]
+    monkeypatch.setattr(j, "think", lambda *a, **k: json.dumps({"actions": [], "reply": "Às suas ordens, senhor."}))
+    j.respond("me conta uma coisa")
+    assert shown[-1] == "Às suas ordens, senhor."
+
+
+def test_reator_html_has_python_hooks():
+    html = (ROOT / "windows" / "interface" / "reator.html").read_text(encoding="utf-8")
+    for hook in ("window.setEstado", "window.mostraFala", "window.cartao", "background: transparent"):
+        assert hook in html

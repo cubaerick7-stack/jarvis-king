@@ -24,6 +24,7 @@ from urllib.parse import quote_plus
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ferramentas as F  # noqa: E402
 import navegador as B  # noqa: E402
+import ui as U  # noqa: E402
 import voz as V  # noqa: E402
 import nuvem as N  # noqa: E402
 
@@ -886,10 +887,16 @@ def play_youtube(query):
     """Com o Playwright, clica no vídeo de verdade na aba do Jarvis; sem ele, o jeito antigo."""
     if B.available():
         try:
-            return B.play_youtube(query)
+            return _show_playing(B.play_youtube(query))
         except Exception as e:
             print(f"Jarvis > Navegador do Jarvis falhou ({e}); abrindo do jeito antigo.")
     return F.play_youtube(query)
+
+
+def _show_playing(result):
+    if isinstance(result, str) and result.startswith("Tocando: "):
+        U.card("Tocando agora", result[len("Tocando: "):])
+    return result
 
 
 def youtube_control(action):
@@ -1420,7 +1427,8 @@ def small_talk(clean):
 
 
 def set_state(state):
-    """parado | ouvindo | pensando | falando. A interface do reator se liga aqui."""
+    """parado | ouvindo | pensando | falando: o reator muda junto."""
+    U.state(state)
 
 
 def speak(text):
@@ -1438,18 +1446,23 @@ def handle(text):
     ask_ai_router(text)
 
 
-def handle_spoken(text):
-    """Executa o pedido falado e responde em voz com a última fala do Jarvis."""
+def respond(text, spoken=False):
+    """Executa o pedido; mostra a última fala do Jarvis no reator e, se foi por voz, fala em voz alta."""
     set_state("pensando")
     tee = _Tee(sys.stdout)
     with contextlib.redirect_stdout(tee):
         handle(text)
     said = [line[len("Jarvis > "):] for line in tee.getvalue().splitlines() if line.startswith("Jarvis > ")]
     said = [x for x in said if not x.startswith("(")]
-    if said:
+    U.speech(said[-1] if said else "")
+    if said and spoken:
         speak(said[-1])
     else:
         set_state("parado")
+
+
+def handle_spoken(text):
+    respond(text, spoken=True)
 
 
 def keyboard_reader():
@@ -1473,15 +1486,9 @@ def start_voice():
     print('Voz ligada: diga "Jarvis" e faça o pedido depois do bipe.')
 
 
-def main():
+def run():
+    """Laço do Jarvis: executa, um de cada vez, os pedidos digitados e falados."""
     global queue_mode
-    print("")
-    print("==============================================")
-    print("              J.A.R.V.I.S.")
-    print("     comandos rápidos + IA: " + (" -> ".join(n for n, _ in ai_backends()) or "nenhuma (configure a chave)"))
-    print("==============================================")
-    print("")
-    print("Digite o pedido e Enter. 'sair' fecha.")
     threading.Thread(target=warm_up_ai, daemon=True).start()
     if "--sem-voz" not in sys.argv:
         start_voice()
@@ -1503,13 +1510,27 @@ def main():
             print("Jarvis > Até mais.")
             break
         try:
-            if origin == "voz":
-                handle_spoken(user_text)
-            else:
-                handle(user_text)
+            respond(user_text, spoken=origin == "voz")
         except Exception as e:
             print(f"Jarvis > Erro: {e}")
             set_state("parado")
+    U.close()
+
+
+def main():
+    print("")
+    print("==============================================")
+    print("              J.A.R.V.I.S.")
+    print("     comandos rápidos + IA: " + (" -> ".join(n for n, _ in ai_backends()) or "nenhuma (configure a chave)"))
+    print("==============================================")
+    print("")
+    print("Digite o pedido e Enter. 'sair' fecha.")
+    if "--sem-tela" not in sys.argv and U.available():
+        U.start(run)  # o reator fica na thread principal; o Jarvis roda ao lado
+        os._exit(0)  # fechou a janela: fecha tudo (voz e teclado ficam em threads)
+    if "--sem-tela" not in sys.argv:
+        print("Sem interface: python -m pip install pywebview")
+    run()
 
 
 if __name__ == "__main__":

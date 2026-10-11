@@ -10,3 +10,4 @@ playwright
 vosk
 sounddevice
 edge-tts
+pywebview

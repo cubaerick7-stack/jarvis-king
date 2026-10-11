@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>J.A.R.V.I.S.</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600&family=Share+Tech+Mono&display=swap">
+<style>
+/* Janela transparente: reator em cima, estado e fala no meio, cartões embaixo */
+:root {
+  --panel: rgba(4, 24, 30, .78);
+  --line: #1b6b78;
+  --cyan: #5fe6f0;
+  --text: #cfeff3;
+  --muted: #6fa6ad;
+  --display: "Rajdhani", "Segoe UI", system-ui, sans-serif;
+  --mono: "Share Tech Mono", Consolas, monospace;
+}
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+body { color: var(--text); font-family: var(--display); display: flex; flex-direction: column; align-items: center; user-select: none; }
+.reator { position: relative; width: 100%; aspect-ratio: 1; flex: none; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.estado { font-family: var(--mono); color: var(--cyan); font-size: 12px; letter-spacing: .2em; text-transform: uppercase;
+  text-shadow: 0 0 6px rgba(0,0,0,.9); }
+.fala { margin-top: 6px; width: 92%; text-align: center; font-size: 16px; min-height: 1.3em; text-shadow: 0 0 6px #000, 0 0 2px #000; }
+.cartoes { margin-top: 10px; width: 92%; display: flex; flex-direction: column; gap: 8px; }
+.cartao { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--cyan); padding: 8px 12px;
+  animation: entra .35s ease-out both; }
+.cartao.sai { animation: sai .4s ease-in forwards; }
+.cartao small { display: block; font-family: var(--mono); color: var(--muted); font-size: 11px; letter-spacing: .15em; text-transform: uppercase; }
+.cartao strong { font-size: 16px; font-weight: 600; color: var(--text); display: block; overflow-wrap: anywhere; }
+@keyframes entra { from { opacity: 0; transform: translateY(12px); } }
+@keyframes sai { to { opacity: 0; transform: translateY(12px); } }
+</style>
+</head>
+<body class="pywebview-drag-region">
+<div class="reator"><canvas id="c"></canvas></div>
+<span class="estado" id="estado">● em espera</span>
+<div class="fala" id="fala"></div>
+<div class="cartoes" id="cartoes"></div>
+<script>
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const reduz = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let W, H, dpr;
+function tam() {
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  const r = cv.getBoundingClientRect(); W = r.width; H = r.height;
+  cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', tam); tam();
+
+// Partículas do anel de onda
+// 6 membranas onduladas sobrepostas + poeira solta em volta
+const CAMADAS = 6, N = 5200, parts = [];
+const fases = Array.from({ length: CAMADAS }, (_, k) => ({ f1: 2 + k % 3, f2: 5 + k, ph: k * 1.7, v: .6 + k * .15, r: .96 + k * .025 }));
+for (let i = 0; i < N; i++) {
+  const poeira = Math.random() < .18;
+  parts.push({ a: Math.random() * Math.PI * 2, k: i % CAMADAS, j: (Math.random() - .5) * (poeira ? .22 : .025),
+    poeira, s: poeira ? Math.random() * .9 + .4 : Math.random() * 1.1 + .5, o: Math.random() });
+}
+// Pontos espalhados na superfície da esfera
+// Esfera de Fibonacci: pontos distribuídos por igual na superfície
+const NE = 2600, ouro = Math.PI * (3 - Math.sqrt(5));
+const pontosEsfera = Array.from({ length: NE }, (_, i) => {
+  const y = 1 - 2 * (i + .5) / NE, q = Math.sqrt(1 - y * y), th = i * ouro;
+  const lon = Math.atan2(Math.sin(th), Math.cos(th));
+  const guia = Math.abs(Math.sin(lon * 3)) < .12 || Math.random() < .06;
+  return [q * Math.cos(th), y, q * Math.sin(th), Math.random(), guia];
+});
+function ondaAnel(ang, k) {
+  const F = fases[k];
+  return Math.sin(ang * F.f1 + t * F.v + F.ph) * .55 + Math.sin(ang * F.f2 - t * F.v * 1.6 + F.ph) * .3
+       + Math.sin(ang * 13 + t * 5 + F.ph) * voz * .8;
+}
+
+const ESTADOS = {
+  // amp: onda do anel · esf: quanto a esfera ondula · pulso: respiração ritmada · fala: pulso que segue a voz
+  parado:   { txt: '● em espera', amp: .02, esf: 0,   pulso: 0,   fala: 0,   giro: .6,  cor: [95, 230, 240], brilho: .55 },
+  ouvindo:  { txt: '● ouvindo',   amp: .04, esf: 1,   pulso: 0,   fala: 0,   giro: .3,  cor: [80, 170, 255], brilho: .8 },
+  pensando: { txt: '● pensando',  amp: .03, esf: 0,   pulso: .08, fala: 0,   giro: 1.2, cor: [95, 230, 240], brilho: .9 },
+  falando:  { txt: '● falando',   amp: .06, esf: 1,   pulso: 0,   fala: .12, giro: .4,  cor: [120, 245, 230], brilho: 1 },
+};
+let estado = 'parado', atual = { ...ESTADOS.parado }, voz = 0, t = 0, angulo = 0;
+
+function mistura(alvo, k) {
+  for (const c of ['amp', 'esf', 'pulso', 'fala']) atual[c] += (alvo[c] - atual[c]) * k;
+  atual.giro += (alvo.giro - atual.giro) * k;
+  atual.brilho += (alvo.brilho - atual.brilho) * k;
+  atual.cor = atual.cor.map((c, i) => c + (alvo.cor[i] - c) * k);
+}
+
+function rgba(a) { const [r, g, b] = atual.cor; return `rgba(${r|0},${g|0},${b|0},${a})`; }
+
+let par = false;
+function quadro() {
+  par = !par;
+  if (par) { requestAnimationFrame(quadro); return; }  // 30 quadros por segundo poupam a CPU
+  t += reduz ? 0.004 : 0.032;
+  mistura(ESTADOS[estado], .06);
+  // Voz simulada: sílabas irregulares quando "falando"
+  // Voz simulada: a sua (ouvindo) ou a dele (falando), em sílabas irregulares
+  const alvoVoz = estado === 'falando' ? Math.abs(Math.sin(t * 9) * Math.sin(t * 3.7 + 1))
+                : estado === 'ouvindo' ? Math.abs(Math.sin(t * 7) * Math.sin(t * 2.3 + .5)) : 0;
+  voz += (alvoVoz - voz) * .25;
+  // Escala geral: respira ao pensar, pulsa com a voz ao falar
+  const escala = 1 + atual.pulso * (.5 + .5 * Math.sin(t * 5)) + atual.fala * voz;
+
+  ctx.clearRect(0, 0, W, H);
+  const cx = W / 2, cy = H / 2, R = Math.min(W, H) * .3;
+
+  // Brilho de fundo
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 1.6);
+  g.addColorStop(0, rgba(.10 * atual.brilho)); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  // Anel de blocos segmentados
+  const seg = 36, rot = t * .2 * atual.giro;
+  for (let i = 0; i < seg; i++) {
+    const a0 = rot + i * 2 * Math.PI / seg, a1 = a0 + 2 * Math.PI / seg * .7;
+    const acesso = .25 + .35 * (0.5 + 0.5 * Math.sin(i * 1.3 + t * (estado === 'pensando' ? 6 : 1.5)));
+    ctx.beginPath(); ctx.arc(cx, cy, R * .78, a0, a1); ctx.arc(cx, cy, R * .62, a1, a0, true); ctx.closePath();
+    ctx.fillStyle = `rgba(40,120,200,${acesso * atual.brilho})`; ctx.fill();
+  }
+  ctx.strokeStyle = rgba(.35); ctx.lineWidth = 1;
+  [.6, .8].forEach(k => { ctx.beginPath(); ctx.arc(cx, cy, R * k, 0, Math.PI * 2); ctx.stroke(); });
+
+  // Esfera de pontos: gira e ondula com a mesma onda do anel de fora
+  angulo += (reduz ? .004 : .032) * atual.giro;
+  const rs = R * .46, ay = angulo, ax = .35;
+
+  // Anel de partículas em onda (reage à voz)
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of parts) {
+    const F = fases[p.k];
+    const onda = Math.sin(p.a * F.f1 + t * F.v + F.ph) * .55 + Math.sin(p.a * F.f2 - t * F.v * 1.6 + F.ph) * .3
+               + Math.sin(p.a * 13 + t * 5 + F.ph) * voz * .8;
+    const r = R * escala * (F.r + (atual.amp + voz * .12 * atual.esf) * onda + p.j);
+    const a = p.a + t * .04 * atual.giro * (p.k % 2 ? 1 : -1);
+    ctx.fillStyle = rgba((p.poeira ? .18 + p.o * .3 : .22 + p.o * .45) * atual.brilho);
+    ctx.fillRect(cx + Math.cos(a) * r, cy + Math.sin(a) * r, p.s, p.s);
+  }
+  // Pontinhos na esfera
+  const forca = atual.esf * (.03 + voz * .22);
+  for (const [x, y, z, o, guia] of pontosEsfera) {
+    const X = x * Math.cos(ay) + z * Math.sin(ay), Z0 = -x * Math.sin(ay) + z * Math.cos(ay);
+    const Y = y * Math.cos(ax) - Z0 * Math.sin(ax), Z = y * Math.sin(ax) + Z0 * Math.cos(ax);
+    // mesma onda do anel (pela direção na tela) + caroços 3D que andam
+    const ang = Math.atan2(Y, X);
+    const def = (ondaAnel(ang, 0) + ondaAnel(ang, 3)) * .5 * forca * 1.3
+              + Math.sin(x * 3 + t * .9) * Math.sin(y * 3 - t * .7) * forca * .6;
+    const k = rs * escala * (1 + def);
+    const base = guia ? .55 + .45 * Z : .2 + .35 * Z;
+    ctx.fillStyle = rgba((Z > 0 ? base : (guia ? .14 : .06) + .08 * o) * atual.brilho);
+    const sz = guia && Z > 0 ? 2 : Z > .3 ? 1.5 : 1.1;
+    ctx.fillRect(cx + X * k, cy + Y * k, sz, sz);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  requestAnimationFrame(quadro);
+}
+requestAnimationFrame(quadro);
+
+// Estados e cartões
+const elEstado = document.getElementById('estado'), elFala = document.getElementById('fala'), elCartoes = document.getElementById('cartoes');
+function muda(s) {
+  if (!ESTADOS[s]) return;
+  estado = s; elEstado.textContent = ESTADOS[s].txt;
+}
+function cartao(rotulo, valor, ms = 7000) {
+  const d = document.createElement('div'); d.className = 'cartao';
+  d.innerHTML = `<small></small><strong></strong>`;
+  d.querySelector('small').textContent = rotulo; d.querySelector('strong').textContent = valor;
+  elCartoes.prepend(d);
+  while (elCartoes.children.length > 3) elCartoes.lastChild.remove();
+  setTimeout(() => { d.classList.add('sai'); setTimeout(() => d.remove(), 400); }, ms);
+}
+
+// Chamado pelo Python (ui.py)
+window.setEstado = muda;
+window.mostraFala = (texto) => { elFala.textContent = texto || ''; };
+window.cartao = cartao;
+</script>
+</body>
+</html>
