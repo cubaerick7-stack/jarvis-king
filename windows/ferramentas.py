@@ -582,3 +582,105 @@ def run_routine(name, execute):
         if execute(step.get("name", ""), step.get("args", {}) or {}) is False:
             ok = False
     return ok
+
+
+# ========================= YOUTUBE =========================
+# Toca o primeiro vídeo direto (sem a página de resultados) e reaproveita a mesma aba
+# do YouTube nos próximos pedidos, em vez de abrir uma aba nova a cada música.
+
+YOUTUBE_KEYS = {
+    "pausar": "k", "pause": "k", "play": "k", "continuar": "k",
+    "proximo": "shift+n", "next": "shift+n",
+    "anterior": "shift+p", "previous": "shift+p",
+    "tela cheia": "f", "fullscreen": "f",
+    "avancar": "l", "voltar": "j",
+    "mudo": "m", "mute": "m",
+    "legenda": "c",
+    "mais rapido": "shift+.", "mais devagar": "shift+,",
+}
+
+
+def youtube_first_video(query):
+    """URL do primeiro vídeo da busca do YouTube, ou None (sem chave de API)."""
+    url = "https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus(str(query))
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Language": "pt-BR,pt;q=0.9"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            html = r.read().decode("utf-8", errors="ignore")
+    except Exception:
+        return None
+    m = re.search(r'"videoRenderer":\{"videoId":"([\w-]{11})"', html) or re.search(r'"videoId":"([\w-]{11})"', html)
+    return f"https://www.youtube.com/watch?v={m.group(1)}" if m else None
+
+
+def _youtube_window():
+    try:
+        import pygetwindow
+        for w in pygetwindow.getAllWindows():
+            if "youtube" in (w.title or "").lower():
+                return w
+    except Exception:
+        pass
+    return None
+
+
+def _focus(w):
+    try:
+        if w.isMinimized:
+            w.restore()
+        w.activate()
+    except Exception:
+        pass
+
+
+def _navigate_same_tab(window, url):
+    import time
+    import pyautogui
+    import pyperclip
+    _focus(window)
+    time.sleep(0.4)
+    pyautogui.hotkey("ctrl", "l")
+    pyperclip.copy(url)
+    pyautogui.hotkey("ctrl", "v")
+    pyautogui.press("enter")
+
+
+def play_youtube(query, open_url=None):
+    """Toca o primeiro vídeo. Se o YouTube já está aberto, troca o vídeo na mesma aba."""
+    import webbrowser
+    open_url = open_url or webbrowser.open
+    url = youtube_first_video(query)
+    if not url:
+        url = "https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus(str(query))
+        _say(f"Não achei o vídeo direto; abrindo a busca de {query}.")
+    window = _youtube_window()
+    if window is not None:
+        try:
+            _navigate_same_tab(window, url)
+            _say(f"Tocando {query} (na mesma aba do YouTube).")
+            return True
+        except Exception:
+            pass
+    open_url(url)
+    _say(f"Tocando {query} no YouTube.")
+    return True
+
+
+def youtube_control(action):
+    """Controla o vídeo aberto: pausar, próximo, tela cheia, avançar, voltar, mudo, legenda..."""
+    import pyautogui
+    key = YOUTUBE_KEYS.get(_norm(action))
+    if key is None:
+        _say(f"Não sei fazer '{action}' no YouTube.")
+        return False
+    window = _youtube_window()
+    if window is None:
+        _say("Não tem YouTube aberto.")
+        return False
+    _focus(window)
+    import time
+    time.sleep(0.3)
+    pyautogui.hotkey(*key.split("+"))
+    _say(f"YouTube: {action}.")
+    return True

@@ -1,5 +1,6 @@
 """Testes das ferramentas extras e das rotas novas do roteador rápido."""
 import importlib.util
+import io
 import sys
 import zipfile
 from pathlib import Path
@@ -214,3 +215,48 @@ def test_ai_waits_for_window_before_typing(jarvis, monkeypatch):
     monkeypatch.setattr(jarvis.time, "sleep", lambda s: order.append(f"sleep{s}"))
     jarvis.ask_ai_router("abre o bloco de notas e escreve oi")
     assert order == ["open", "sleep1.5", "type"]
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("abre a música p do pecado no youtube", [("play_youtube", {"query": "p do pecado"})]),
+    ("toca evidências", [("play_youtube", {"query": "evidencias"})]),
+    ("quero ouvir a música bohemian rhapsody", [("play_youtube", {"query": "bohemian rhapsody"})]),
+    ("coloca o vídeo em tela cheia", [("youtube_control", {"action": "tela cheia"})]),
+    ("avança o vídeo", [("youtube_control", {"action": "avancar"})]),
+    ("pula esse vídeo", [("youtube_control", {"action": "proximo"})]),
+    ("pula o vídeo", [("youtube_control", {"action": "proximo"})]),
+    ("liga a legenda", [("youtube_control", {"action": "legenda"})]),
+])
+def test_youtube_routes(jarvis, text, expected):
+    assert route(jarvis, text) == expected
+
+
+def test_toca_alone_is_play_pause(jarvis, monkeypatch):
+    monkeypatch.setattr(jarvis, "media_control", lambda a: jarvis.calls.append(("media_control", a)))
+    assert route(jarvis, "toca") == [("media_control", "play_pause")]
+
+
+def test_play_youtube_opens_first_video(monkeypatch):
+    html = 'xx "videoRenderer":{"videoId":"dQw4w9WgXcQ","thumb"...'
+
+    class R(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(F.urllib.request, "urlopen", lambda req, timeout=0: R(html.encode()))
+    monkeypatch.setattr(F, "_youtube_window", lambda: None)
+    opened = []
+    assert F.play_youtube("never gonna", open_url=opened.append)
+    assert opened == ["https://www.youtube.com/watch?v=dQw4w9WgXcQ"]
+
+
+def test_play_youtube_reuses_open_tab(monkeypatch):
+    monkeypatch.setattr(F, "youtube_first_video", lambda q: "https://www.youtube.com/watch?v=abc")
+    monkeypatch.setattr(F, "_youtube_window", lambda: "janela")
+    navigated, opened = [], []
+    monkeypatch.setattr(F, "_navigate_same_tab", lambda w, url: navigated.append((w, url)))
+    F.play_youtube("x", open_url=opened.append)
+    assert navigated == [("janela", "https://www.youtube.com/watch?v=abc")] and opened == []

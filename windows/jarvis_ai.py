@@ -672,6 +672,27 @@ def fast_local_router(user_text):
         act("open_folder", open_folder, m.group(1).strip())
         return True
 
+    # ---- YouTube: tocar direto e controlar o vídeo aberto
+    for pattern, action in [
+        (r"\btela cheia\b", "tela cheia"),
+        (r"\b(avanca|adianta)\s+(?:o\s+)?(?:video|10 segundos)\b|\bpula 10 segundos\b", "avancar"),
+        (r"\b(volta|retrocede)\s+(?:o\s+)?(?:video|10 segundos)\b", "voltar"),
+        (r"\b(proximo video|pula esse video|pula o video|outro video)\b", "proximo"),
+        (r"\b(liga|ativa|coloca)\s+(?:a\s+)?legenda\b", "legenda"),
+    ]:
+        if re.search(pattern, clean):
+            tool("youtube_control", action=action)
+            return True
+
+    m = re.match(r"^(?:toca|toque|tocar|bota|coloca|poe|abre|abra|quero ouvir|quero ver)\s+(?:a\s+|o\s+|uma\s+|um\s+)?"
+                 r"(?:musica|video|clipe|cancao)\s+(?:d[aoe]s?\s+)?(.+?)(?:\s+no youtube)?$", clean)
+    if m:
+        tool("play_youtube", query=m.group(1).strip())
+        return True
+    m = re.match(r"^(?:toca|toque|tocar)\s+(.+?)(?:\s+no youtube)?$", clean)
+    if m:
+        tool("play_youtube", query=m.group(1).strip())
+        return True
     # ---- ferramentas extras
     m = re.match(r"^(?:abre|abra|abrir|mostra|vai em|vai nas)\s+(?:as\s+)?configurac\w*(?:\s+(?:de|do|da|das|dos)\s+(.+))?$", clean)
     if m:
@@ -927,8 +948,14 @@ TOOLS = [
     {"name": "open_url", "args": '{"url":"endereço"}', "group": "programas e sites",
      "desc": "abrir um endereço de site", "examples": ["abre o site g1.globo.com"],
      "run": lambda a: open_url(a.get("url", ""))},
+    {"name": "play_youtube", "args": '{"query":"música ou vídeo"}', "group": "mídia",
+     "desc": "tocar música/vídeo no YouTube direto (reusa a mesma aba)", "examples": ["toca a música evidências"],
+     "run": lambda a: F.play_youtube(a.get("query", ""))},
+    {"name": "youtube_control", "args": '{"action":"pausar|proximo|anterior|tela cheia|avancar|voltar|mudo|legenda"}',
+     "group": "mídia", "desc": "controlar o vídeo do YouTube aberto", "examples": ["coloca em tela cheia", "avança o vídeo"],
+     "run": lambda a: F.youtube_control(a.get("action", ""))},
     {"name": "search_web", "args": '{"query":"texto","site":"google|youtube"}', "group": "programas e sites",
-     "desc": "pesquisar no Google ou YouTube", "examples": ["pesquisa receita de bolo", "procura no youtube lofi"],
+     "desc": "pesquisar no Google ou ver resultados do YouTube", "examples": ["pesquisa receita de bolo", "procura no youtube lofi"],
      "run": lambda a: search_web(a.get("query", ""), a.get("site", "google"))},
     {"name": "search_files", "args": '{"query":"nome ou extensão"}', "group": "arquivos e pastas",
      "desc": "procurar arquivo ou pasta no PC", "examples": ["procura o arquivo omori", "procura um pdf"],
@@ -1056,7 +1083,9 @@ AI_EXAMPLES = [
     ("põe o som no talo", '{"actions":[{"name":"set_volume","args":{"percent":100}}],"reply":"Volume no máximo."}'),
     ("tá muito alto", '{"actions":[{"name":"change_volume","args":{"delta":-20}}],"reply":"Abaixei."}'),
     ("quero jogar omori", '{"actions":[{"name":"open_target","args":{"target":"omori"}}],"reply":"Abrindo o Omori."}'),
-    ("bota uma música lofi pra mim", '{"actions":[{"name":"search_web","args":{"query":"lofi","site":"youtube"}}],"reply":"Procurando lofi no YouTube."}'),
+    ("bota uma música lofi pra mim", '{"actions":[{"name":"play_youtube","args":{"query":"lofi"}}],"reply":"Tocando lofi."}'),
+    ("coloca o volume em 70 e abre a música evidências no youtube", '{"actions":[{"name":"set_volume","args":{"percent":70}},{"name":"play_youtube","args":{"query":"evidências"}}],"reply":"Volume 70 e tocando Evidências."}'),
+    ("pula esse vídeo", '{"actions":[{"name":"youtube_control","args":{"action":"proximo"}}],"reply":"Próximo."}'),
     ("cadê aquele pdf do FO 1102", '{"actions":[{"name":"search_files","args":{"query":"FO 1102"}}],"reply":"Procurando."}'),
     ("me mostra meus downloads", '{"actions":[{"name":"open_folder","args":{"name":"downloads"}}],"reply":"Abrindo Downloads."}'),
     ("modo estudo", '{"actions":[{"name":"run_routine","args":{"name":"estudo"}}],"reply":"Modo estudo ativado."}'),
@@ -1090,6 +1119,8 @@ Regras:
 - pode usar várias ações em sequência
 - conversa ou pergunta de conhecimento: actions vazio e a resposta (curta, até 3 frases) em reply
 - se pedir para abrir um programa E escrever/explicar algo, abra e use type_text com o texto
+- tocar/ouvir/abrir uma música ou vídeo = play_youtube (toca direto); search_web youtube só se pedir para ver a lista
+- pausar, pular, tela cheia, avançar no vídeo aberto = youtube_control
 - se nenhuma ferramenta serve, diga isso em reply; nunca finja que fez
 
 Exemplos:
