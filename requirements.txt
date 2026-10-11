@@ -6,3 +6,4 @@ pypdf
 psutil
 pyperclip
 pygetwindow
+playwright

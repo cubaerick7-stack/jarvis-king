@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import contextlib
 import ctypes
 import difflib
+import io
 import json
 import os
 import platform
@@ -20,6 +22,7 @@ from urllib.parse import quote_plus
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ferramentas as F  # noqa: E402
+import navegador as B  # noqa: E402
 import nuvem as N  # noqa: E402
 
 try:
@@ -301,7 +304,11 @@ def search_web(query, site="google"):
     if normalize(site) == "youtube":
         url = "https://www.youtube.com/results?search_query=" + quote_plus(str(query))
     else:
+        if B.available():  # na aba do Jarvis, e a IA consegue ler os resultados
+            return B.search(query)
         url = "https://www.google.com/search?q=" + quote_plus(str(query))
+    if B.available():
+        return B.open_url(url)
     webbrowser.open(url)
     print(f"Jarvis > Pesquisa aberta: {query}")
     return True
@@ -866,9 +873,27 @@ def open_url(url):
     url = str(url).strip()
     if not re.match(r"^https?://", url):
         url = "https://" + url
+    if B.available():
+        return B.open_url(url)
     webbrowser.open(url)
     print(f"Jarvis > Abrindo {url}")
     return True
+
+
+def play_youtube(query):
+    """Com o Playwright, clica no vídeo de verdade na aba do Jarvis; sem ele, o jeito antigo."""
+    if B.available():
+        try:
+            return B.play_youtube(query)
+        except Exception as e:
+            print(f"Jarvis > Navegador do Jarvis falhou ({e}); abrindo do jeito antigo.")
+    return F.play_youtube(query)
+
+
+def youtube_control(action):
+    if B.on_youtube():
+        return B.youtube_control(action, normalize)
+    return F.youtube_control(action)
 
 
 def tell_time():
@@ -927,11 +952,11 @@ def show_help():
         print(f"\n  {group.upper()}")
         for t in tools:
             print(f"    - {t['desc']}: \"{t['examples'][0]}\"")
-    print("\n  Frases que eu não reconheço vão para a IA local (Qwen), que escolhe as ações acima.")
+    print("\n  Frases que eu não reconheço vão para a IA (Gemini ou Groq), que escolhe as ações acima.")
     return True
 
 
-TOOL_GROUPS = ["som", "programas e sites", "arquivos e pastas", "ler e resumir", "mídia", "janelas e teclado",
+TOOL_GROUPS = ["som", "programas e sites", "arquivos e pastas", "ler e resumir", "mídia", "navegador", "janelas e teclado",
                "sistema", "energia", "informação", "rotinas"]
 
 TOOLS = [
@@ -955,10 +980,10 @@ TOOLS = [
      "run": lambda a: open_url(a.get("url", ""))},
     {"name": "play_youtube", "args": '{"query":"música ou vídeo"}', "group": "mídia",
      "desc": "tocar música/vídeo no YouTube direto (reusa a mesma aba)", "examples": ["toca a música evidências"],
-     "run": lambda a: F.play_youtube(a.get("query", ""))},
+     "run": lambda a: play_youtube(a.get("query", ""))},
     {"name": "youtube_control", "args": '{"action":"pausar|proximo|anterior|tela cheia|avancar|voltar|mudo|legenda"}',
      "group": "mídia", "desc": "controlar o vídeo do YouTube aberto", "examples": ["coloca em tela cheia", "avança o vídeo"],
-     "run": lambda a: F.youtube_control(a.get("action", ""))},
+     "run": lambda a: youtube_control(a.get("action", ""))},
     {"name": "search_web", "args": '{"query":"texto","site":"google|youtube"}', "group": "programas e sites",
      "desc": "pesquisar no Google ou ver resultados do YouTube", "examples": ["pesquisa receita de bolo", "procura no youtube lofi"],
      "run": lambda a: search_web(a.get("query", ""), a.get("site", "google"))},
@@ -1071,6 +1096,26 @@ TOOLS = [
     {"name": "list_windows", "args": "{}", "group": "janelas e teclado",
      "desc": "listar janelas abertas", "examples": ["quais janelas estão abertas"],
      "run": lambda a: F.list_windows()},
+    # ---- navegador do Jarvis (a IA vê o resultado e decide o próximo passo)
+    {"name": "web_search", "args": '{"query":"texto"}', "group": "navegador",
+     "desc": "pesquisar no Google e LER os resultados (para escolher, comparar, responder)",
+     "examples": ["pesquisa a melhor receita de bolo de cenoura"],
+     "run": lambda a: B.search(a.get("query", ""))},
+    {"name": "web_read", "args": "{}", "group": "navegador",
+     "desc": "ler o texto da página aberta no navegador do Jarvis", "examples": ["lê essa página"],
+     "run": lambda a: B.read_page()},
+    {"name": "web_click", "args": '{"target":"texto do link/botão ou número do resultado"}', "group": "navegador",
+     "desc": "clicar num link/botão ou abrir o resultado N da pesquisa", "examples": ["abre o segundo resultado"],
+     "run": lambda a: B.click(a.get("target", ""))},
+    {"name": "web_fill", "args": '{"field":"nome do campo (ou vazio)","text":"texto","enter":true}', "group": "navegador",
+     "desc": "escrever num campo da página", "examples": ["escreve meu email no campo de login"],
+     "run": lambda a: B.fill(a.get("field", ""), a.get("text", ""), bool(a.get("enter")))},
+    {"name": "web_key", "args": '{"key":"Enter|Escape|PageDown|..."}', "group": "navegador",
+     "desc": "apertar uma tecla na página", "examples": ["desce a página"],
+     "run": lambda a: B.press(a.get("key", "Enter"))},
+    {"name": "whatsapp_send", "args": '{"contact":"nome","message":"texto"}', "group": "navegador",
+     "desc": "mandar mensagem no WhatsApp Web (pede confirmação)", "examples": ["manda oi pra mãe no zap"],
+     "run": lambda a: B.whatsapp_send(a.get("contact", ""), a.get("message", ""), confirm)},
     # ---- rotinas
     {"name": "run_routine", "args": '{"name":"estudo|relaxar|foco|..."}', "group": "rotinas",
      "desc": "rodar uma rotina com vários passos", "examples": ["modo estudo"],
@@ -1100,6 +1145,9 @@ AI_EXAMPLES = [
     ("joga esse arquivo na lixeira", '{"actions":[{"name":"delete_item","args":{"path":"1"}}],"reply":"Vou pedir confirmação."}'),
     ("faz um resumo do segundo", '{"actions":[{"name":"summarize_file","args":{"path":"2"}}],"reply":"Resumindo."}'),
     ("abre o bloco de notas e me explica quem foi Tiradentes", '{"actions":[{"name":"open_target","args":{"target":"notepad"}},{"name":"type_text","args":{"text":"Tiradentes (Joaquim José da Silva Xavier) foi um dos líderes da Inconfidência Mineira, movimento contra o domínio português em 1789. Foi enforcado em 1792 e hoje é considerado herói nacional."}}],"reply":"Escrevi no Bloco de Notas."}'),
+    ("escolhe a melhor receita de bolo de cenoura", '{"actions":[{"name":"web_search","args":{"query":"melhor receita bolo de cenoura"}}],"reply":"Pesquisando receitas.","continue":true}'),
+    ("(depois de ver os resultados) 1. Bolo de cenoura fofinho - tudogostoso... 2. ...", '{"actions":[{"name":"web_click","args":{"target":"1"}},{"name":"web_read","args":{}}],"reply":"Vou ler a mais bem avaliada.","continue":true}'),
+    ("manda pra Ana que eu chego às 8", '{"actions":[{"name":"whatsapp_send","args":{"contact":"Ana","message":"Chego às 8"}}],"reply":"Pronto."}'),
     ("me explica o que é fotossíntese", '{"actions":[],"reply":"É o processo em que as plantas usam luz, água e gás carbônico para produzir açúcar e liberar oxigênio."}'),
     ("oi jarvis, tudo bem?", '{"actions":[],"reply":"Tudo certo! Diga o que precisa."}'),
     ("faz um bolo pra mim", '{"actions":[],"reply":"Isso eu não consigo fazer. Diga \\"o que você sabe fazer\\" para ver a lista."}'),
@@ -1111,7 +1159,7 @@ def build_ai_prompt():
     examples = "\n".join(f"Usuário: {u}\nJSON: {j}" for u, j in AI_EXAMPLES)
     return f"""Você é o JARVIS, assistente do Windows do usuário. Fala português do Brasil, curto e direto.
 Responda SOMENTE JSON válido, sem explicações, neste formato:
-{{"actions":[{{"name":"acao","args":{{}}}}],"reply":"frase curta"}}
+{{"actions":[{{"name":"acao","args":{{}}}}],"reply":"frase curta","continue":false}}
 
 Ferramentas disponíveis (use só estas, com estes nomes):
 {tools}
@@ -1126,6 +1174,11 @@ Regras:
 - se pedir para abrir um programa E escrever/explicar algo, abra e use type_text com o texto
 - tocar/ouvir/abrir uma música ou vídeo = play_youtube (toca direto); search_web youtube só se pedir para ver a lista
 - pausar, pular, tela cheia, avançar no vídeo aberto = youtube_control
+- MODO CICLO: se precisar VER o resultado antes de decidir (pesquisar na web, ler página, procurar arquivo,
+  escolher entre opções), faça essa ação e coloque "continue":true. Você recebe o resultado e decide o
+  próximo passo. Quando terminar, "continue":false e a resposta final em reply (até 5 frases)
+- pesquisar para escolher/comparar/responder = web_search, depois web_click no melhor e web_read
+- mandar mensagem no WhatsApp = whatsapp_send (ele mesmo pede confirmação)
 - se nenhuma ferramenta serve, diga isso em reply; nunca finja que fez
 
 Exemplos:
@@ -1243,27 +1296,70 @@ def parse_json(raw):
     return json.loads(raw)
 
 
-def ask_ai_router(user_text):
-    try:
-        data = parse_json(think(AI_PROMPT, ai_context() + user_text))
-    except Exception as e:
-        print(f"Jarvis > Não consegui falar com a IA: {e}")
-        return False
+MAX_STEPS = 6  # teto do modo ciclo, para não gastar o limite grátis da nuvem
+MAX_SEEN = 2500  # quanto do resultado de cada ação volta para a IA
 
-    failed = []
-    actions = data.get("actions", []) or []
+
+class _Tee(io.StringIO):
+    """Mostra na tela e guarda o que a ferramenta escreveu, para a IA ver o resultado."""
+
+    def __init__(self, screen):
+        super().__init__()
+        self.screen = screen
+
+    def write(self, text):
+        self.screen.write(text)
+        return super().write(text)
+
+
+def run_actions(actions):
+    """Executa as ações; devolve as que falharam e o que cada uma mostrou."""
+    failed, seen = [], []
     for i, action in enumerate(actions):
         name = action.get("name", "")
-        if execute_ai_action(name, action.get("args", {}) or {}) is False:
+        args = action.get("args", {}) or {}
+        tee = _Tee(sys.stdout)
+        with contextlib.redirect_stdout(tee):
+            result = execute_ai_action(name, args)
+        if result is False:
             failed.append(name)
         elif name in OPENS_WINDOW and i + 1 < len(actions):
             time.sleep(1.5)  # espera a janela abrir antes de digitar/clicar nela
+        shown = tee.getvalue().strip()
+        if isinstance(result, str) and result not in shown:
+            shown = (shown + "\n" + result).strip()
+        status = "FALHOU" if result is False else "ok"
+        seen.append(f"- {name} {json.dumps(args, ensure_ascii=False)} -> {status}\n{shown[:MAX_SEEN]}")
+    return failed, seen
 
-    reply = str(data.get("reply", "")).strip()
-    if failed:
-        print(f"Jarvis > Não deu certo: {', '.join(failed)}.")
-    elif reply:
-        print(f"Jarvis > {reply}")
+
+def ask_ai_router(user_text):
+    """Modo ciclo: a IA age, vê o resultado e decide o próximo passo, até terminar."""
+    history = []
+    for step in range(MAX_STEPS):
+        prompt = ai_context() + user_text
+        if history:
+            prompt += ("\n\nO que você já fez neste pedido e o resultado de cada ação:\n"
+                       + "\n".join(history) + "\n\nDecida o próximo passo ou termine.")
+        try:
+            data = parse_json(think(AI_PROMPT, prompt))
+        except Exception as e:
+            print(f"Jarvis > Não consegui falar com a IA: {e}")
+            return False
+
+        actions = data.get("actions", []) or []
+        failed, seen = run_actions(actions)
+        history += seen
+        reply = str(data.get("reply", "")).strip()
+        if data.get("continue") and actions and step + 1 < MAX_STEPS:
+            if reply:
+                print(f"Jarvis > {reply}")
+            continue
+        if failed and not data.get("continue"):
+            print(f"Jarvis > Não deu certo: {', '.join(failed)}.")
+        elif reply:
+            print(f"Jarvis > {reply}")
+        return True
     return True
 
 

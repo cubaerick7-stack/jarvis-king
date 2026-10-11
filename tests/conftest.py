@@ -18,3 +18,11 @@ def sem_everything(monkeypatch):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "windows"))
     import ferramentas
     monkeypatch.setattr(ferramentas, "find_es", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def sem_navegador(monkeypatch):
+    """Os testes nunca abrem o Edge de verdade; quem testa o navegador usa uma página falsa."""
+    import navegador
+    monkeypatch.setattr(navegador, "available", lambda: False)
+    monkeypatch.setattr(navegador, "_page", None)

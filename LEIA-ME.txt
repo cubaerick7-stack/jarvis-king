@@ -97,6 +97,17 @@ Pronto: "procura o arquivo X" acha em todos os discos na hora.
 Pastas do sistema (Windows, Program Files, AppData) ficam de fora.
 Sem o Everything, o Jarvis volta a procurar so no G:, Desktop, Documentos e Downloads.
 
+NAVEGADOR DO JARVIS (YOUTUBE, PESQUISA, WHATSAPP)
+1. python -m pip install playwright
+   (usa o Edge que ja vem no Windows; nao precisa baixar navegador)
+2. Pronto. O Jarvis abre um Edge so dele (perfil em G:\Jarvis\navegador) e
+   reaproveita a mesma aba: "toca evidencias" clica no video de verdade,
+   "pausa", "pula esse video", "tela cheia" funcionam nessa aba.
+3. WhatsApp: na primeira vez, "manda oi pra Ana no zap" abre o WhatsApp Web;
+   leia o QR code com o celular. Depois fica logado. Ele SEMPRE pergunta antes de enviar.
+Modo ciclo: pedidos como "escolhe a melhor receita de bolo de cenoura" fazem a IA
+pesquisar, abrir, ler e decidir sozinha (no maximo 6 passos por pedido).
+
 IA NA NUVEM (GEMINI + GROQ)
 O Jarvis pensa na nuvem: Gemini primeiro e, se ele falhar ou bater no limite,
 o Groq responde. Nao pesa a CPU. Os comandos rapidos funcionam sem internet.
