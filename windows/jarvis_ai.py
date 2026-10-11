@@ -8,6 +8,7 @@ import io
 import json
 import os
 import platform
+import queue
 import re
 import shutil
 import subprocess
@@ -23,6 +24,7 @@ from urllib.parse import quote_plus
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ferramentas as F  # noqa: E402
 import navegador as B  # noqa: E402
+import voz as V  # noqa: E402
 import nuvem as N  # noqa: E402
 
 try:
@@ -918,12 +920,28 @@ def resolve_path(ref):
     return Path(os.path.expandvars(text)).expanduser()
 
 
+YES = {"s", "sim", "pode", "confirmo", "y", "yes", "isso", "manda", "envia", "pode mandar", "sim senhor", "claro"}
+commands = queue.Queue()  # (origem, texto) vindos do teclado e da voz; um só lugar executa tudo
+queue_mode = False  # ligado no main(); nos testes a confirmação usa input() direto
+listener = None  # voz.Listener quando a voz está ligada
+
+
 def confirm(question):
+    if not queue_mode:
+        try:
+            answer = input(f"Jarvis > {question} (s/n) ")
+        except (EOFError, KeyboardInterrupt):
+            return False
+        return normalize(answer).strip(" .!") in YES
+    print(f"Jarvis > {question} (s/n)")
+    if listener is not None:
+        speak(question)
+        listener.ask_answer()
     try:
-        answer = input(f"Jarvis > {question} (s/n) ")
-    except (EOFError, KeyboardInterrupt):
+        _, answer = commands.get(timeout=60)
+    except queue.Empty:
         return False
-    return normalize(answer) in {"s", "sim", "pode", "confirmo", "y", "yes"}
+    return normalize(answer).strip(" .!") in YES
 
 
 def summarize_file(ref):
@@ -1157,7 +1175,8 @@ AI_EXAMPLES = [
 def build_ai_prompt():
     tools = "\n".join(f"{t['name']} {t['args']} - {t['desc']}" for t in TOOLS)
     examples = "\n".join(f"Usuário: {u}\nJSON: {j}" for u, j in AI_EXAMPLES)
-    return f"""Você é o JARVIS, assistente do Windows do usuário. Fala português do Brasil, curto e direto.
+    return f"""Você é o JARVIS, assistente do Windows do usuário. Fala português do Brasil como um mordomo
+calmo, educado e um pouco espirituoso, chamando o usuário de "senhor". Curto e direto: suas respostas são faladas em voz alta.
 Responda SOMENTE JSON válido, sem explicações, neste formato:
 {{"actions":[{{"name":"acao","args":{{}}}}],"reply":"frase curta","continue":false}}
 
@@ -1400,39 +1419,101 @@ def small_talk(clean):
     return False
 
 
+def set_state(state):
+    """parado | ouvindo | pensando | falando. A interface do reator se liga aqui."""
+
+
+def speak(text):
+    if listener is None:
+        return
+    try:
+        V.say(text, set_state)
+    except Exception as e:
+        print(f"Jarvis > (não consegui falar: {e})")
+
+
+def handle(text):
+    if fast_local_router(text):
+        return
+    ask_ai_router(text)
+
+
+def handle_spoken(text):
+    """Executa o pedido falado e responde em voz com a última fala do Jarvis."""
+    set_state("pensando")
+    tee = _Tee(sys.stdout)
+    with contextlib.redirect_stdout(tee):
+        handle(text)
+    said = [line[len("Jarvis > "):] for line in tee.getvalue().splitlines() if line.startswith("Jarvis > ")]
+    said = [x for x in said if not x.startswith("(")]
+    if said:
+        speak(said[-1])
+    else:
+        set_state("parado")
+
+
+def keyboard_reader():
+    while True:
+        try:
+            text = input()
+        except (EOFError, KeyboardInterrupt):
+            commands.put(("teclado", "sair"))
+            return
+        commands.put(("teclado", text))
+
+
+def start_voice():
+    global listener
+    lacks = V.missing()
+    if lacks:
+        print("Voz desligada. Falta: " + ", ".join(lacks) + " (veja o LEIA-ME).")
+        return
+    listener = V.Listener(commands.put, set_state)
+    listener.start()
+    print('Voz ligada: diga "Jarvis" e faça o pedido depois do bipe.')
+
+
 def main():
+    global queue_mode
     print("")
     print("==============================================")
-    print("              JARVIS LITE V2")
+    print("              J.A.R.V.I.S.")
     print("     comandos rápidos + IA: " + (" -> ".join(n for n, _ in ai_backends()) or "nenhuma (configure a chave)"))
     print("==============================================")
     print("")
-    print("Os comandos comuns agora rodam SEM IA.")
-    print("Digite 'sair' para fechar.")
-    print("")
+    print("Digite o pedido e Enter. 'sair' fecha.")
     threading.Thread(target=warm_up_ai, daemon=True).start()
+    if "--sem-voz" not in sys.argv:
+        start_voice()
+    print("")
+    queue_mode = True
+    threading.Thread(target=keyboard_reader, daemon=True).start()
 
     while True:
         try:
-            user_text = input("Você > ").strip()
-        except KeyboardInterrupt:
-            print("\nJarvis encerrado.")
-            break
-
+            origin, user_text = commands.get(timeout=0.5)  # com timeout o Ctrl+C funciona no Windows
+        except queue.Empty:
+            continue
+        user_text = (user_text or "").strip()
         if not user_text:
             continue
-
+        if origin == "voz":
+            print(f"Você (voz) > {user_text}")
         if normalize(user_text) in {"sair", "exit", "quit"}:
             print("Jarvis > Até mais.")
             break
-
         try:
-            if fast_local_router(user_text):
-                continue
-            ask_ai_router(user_text)
+            if origin == "voz":
+                handle_spoken(user_text)
+            else:
+                handle(user_text)
         except Exception as e:
             print(f"Jarvis > Erro: {e}")
+            set_state("parado")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nJarvis encerrado.")

@@ -97,6 +97,16 @@ Pronto: "procura o arquivo X" acha em todos os discos na hora.
 Pastas do sistema (Windows, Program Files, AppData) ficam de fora.
 Sem o Everything, o Jarvis volta a procurar so no G:, Desktop, Documentos e Downloads.
 
+VOZ ("JARVIS", BIPE, PEDIDO)
+1. python -m pip install vosk sounddevice edge-tts
+2. Baixe o modelo pequeno de portugues "vosk-model-small-pt-0.3" em
+   https://alphacephei.com/vosk/models , descompacte e renomeie a pasta para
+   G:\Jarvis\modelos\vosk-pt   (dentro dela ficam as pastas am, conf, graph...)
+3. Para entender o pedido ele usa o Whisper do Groq (GROQ_API_KEY) ou o Gemini.
+4. Abra o Jarvis, diga "Jarvis", espere o bipe e fale o pedido.
+   Ele responde com a voz Antonio. Digitar continua funcionando junto.
+Para abrir sem voz:  python windows\jarvis_ai.py --sem-voz
+
 NAVEGADOR DO JARVIS (YOUTUBE, PESQUISA, WHATSAPP)
 1. python -m pip install playwright
    (usa o Edge que ja vem no Windows; nao precisa baixar navegador)

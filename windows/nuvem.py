@@ -148,3 +148,63 @@ def groq_generate(system, user, json_mode=False, max_tokens=2048, temperature=0.
             return text
         last = f"{model}: resposta vazia"
     raise CloudError(f"nenhum modelo do Groq respondeu ({last})")
+
+
+# ------------------------- ouvir (voz -> texto) -------------------------
+GROQ_STT = "https://api.groq.com/openai/v1/audio/transcriptions"
+STT_MODEL = "whisper-large-v3-turbo"
+
+
+def _multipart(fields, filename, content, mime):
+    boundary = "----jarvis" + os.urandom(8).hex()
+    parts = []
+    for name, value in fields.items():
+        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode())
+    parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+                 f"Content-Type: {mime}\r\n\r\n".encode() + content + b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode())
+    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+
+def _groq_transcribe(wav, key):
+    body, ctype = _multipart({"model": STT_MODEL, "language": "pt", "response_format": "json"},
+                             "fala.wav", wav, "audio/wav")
+    req = urllib.request.Request(GROQ_STT, data=body, method="POST", headers={
+        "Content-Type": ctype, "Authorization": f"Bearer {key}", "User-Agent": "jarvis/1.0"})
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        return json.loads(r.read().decode("utf-8")).get("text", "")
+
+
+def _gemini_transcribe(wav, key):
+    import base64
+    body = {"contents": [{"role": "user", "parts": [
+        {"text": "Transcreva exatamente o que foi falado neste áudio, em português. Responda só com o texto."},
+        {"inlineData": {"mimeType": "audio/wav", "data": base64.b64encode(wav).decode()}},
+    ]}], "generationConfig": {"temperature": 0}}
+    for model in models():
+        try:
+            data = _post(model, body, key)
+            return "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
+        except urllib.error.HTTPError as e:
+            if _http_fail("Gemini", e):
+                raise
+        except (KeyError, IndexError):
+            continue
+    return ""
+
+
+def transcribe(wav):
+    """Texto falado num WAV: Whisper no Groq; se faltar, o Gemini ouve o áudio."""
+    errors = []
+    for name, key, fn in (("Groq", groq_key(), _groq_transcribe), ("Gemini", api_key(), _gemini_transcribe)):
+        if not key:
+            continue
+        try:
+            text = fn(wav, key).strip()
+            if text:
+                return text
+        except Exception as e:
+            errors.append(f"{name}: {e}")
+    if errors:
+        raise CloudError("não consegui entender o áudio (" + "; ".join(errors) + ")")
+    return ""
