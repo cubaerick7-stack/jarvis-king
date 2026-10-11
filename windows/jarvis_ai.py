@@ -23,6 +23,7 @@ from urllib.parse import quote_plus
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ferramentas as F  # noqa: E402
+import memoria as M  # noqa: E402
 import navegador as B  # noqa: E402
 import ui as U  # noqa: E402
 import voz as V  # noqa: E402
@@ -45,7 +46,7 @@ KEEP_ALIVE = "30m"  # mantém o modelo na RAM entre pedidos
 MAX_RESULTS = 20
 MAX_SCAN = 400  # quantos achados juntar antes de ordenar
 SCREENSHOT_DIR = Path(r"G:\Jarvis\screenshots")
-ACTION_LOG = Path(r"G:\Jarvis\logs\acoes.log")
+ACTION_LOG = Path(os.environ.get("JARVIS_LOG", r"G:\Jarvis\logs\acoes.log"))
 SEARCH_ROOTS = [
     Path(r"G:\\"),
     Path.home() / "Desktop",
@@ -579,6 +580,19 @@ def fast_local_router(user_text):
     if small_talk(normalize(user_text)) or small_talk(clean):
         return True
 
+    # memória
+    if re.fullmatch(r"(?:jarvis,? )?o que (?:voce|vc) sabe (?:sobre|de) mim\??", clean):
+        act("what_i_know", M.what_i_know)
+        return True
+    m = re.fullmatch(r"(?:jarvis,? )?(?:esquece|esqueca|apaga da memoria)\s+(?:que\s+|o\s+|a\s+|sobre\s+)?(.+)", clean)
+    if m:
+        act("forget", M.forget, m.group(1))
+        return True
+    m = re.fullmatch(r"(?:jarvis,? )?meu nome e\s+(.+)", clean)
+    if m:
+        act("set_profile", M.set_profile, "nome", text[-len(m.group(1)):].strip(" .!").title())
+        return True
+
     # pedido com duas partes ("abre o bloco de notas e me explica X") vai inteiro para a IA,
     # que divide em várias ações; o roteador rápido só entende um comando por vez
     if COMPOUND.search(clean):
@@ -981,7 +995,7 @@ def show_help():
     return True
 
 
-TOOL_GROUPS = ["som", "programas e sites", "arquivos e pastas", "ler e resumir", "mídia", "navegador", "janelas e teclado",
+TOOL_GROUPS = ["som", "programas e sites", "arquivos e pastas", "ler e resumir", "mídia", "navegador", "memória", "janelas e teclado",
                "sistema", "energia", "informação", "rotinas"]
 
 TOOLS = [
@@ -1070,7 +1084,7 @@ TOOLS = [
     # ---- informação
     {"name": "weather", "args": '{"city":"cidade"}', "group": "informação",
      "desc": "ver o clima de agora", "examples": ["clima em São Paulo"],
-     "run": lambda a: F.weather(a.get("city", ""))},
+     "run": lambda a: F.weather(a.get("city") or M.load()["perfil"].get("cidade", ""))},
     {"name": "calculate", "args": '{"expression":"conta"}', "group": "informação",
      "desc": "fazer contas", "examples": ["quanto é 15% de 320", "calcula 12 vezes 7"],
      "run": lambda a: F.calculate(a.get("expression", ""))},
@@ -1141,6 +1155,25 @@ TOOLS = [
     {"name": "whatsapp_send", "args": '{"contact":"nome","message":"texto"}', "group": "navegador",
      "desc": "mandar mensagem no WhatsApp Web (pede confirmação)", "examples": ["manda oi pra mãe no zap"],
      "run": lambda a: B.whatsapp_send(a.get("contact", ""), a.get("message", ""), confirm)},
+    # ---- memória
+    {"name": "set_profile", "args": '{"key":"nome|cidade|apelido|musica_favorita|...","value":"valor"}', "group": "memória",
+     "desc": "guardar algo do perfil do usuário", "examples": ["eu moro em Recife"],
+     "run": lambda a: M.set_profile(a.get("key", ""), a.get("value", ""))},
+    {"name": "remember", "args": '{"fact":"texto"}', "group": "memória",
+     "desc": "guardar uma informação que o usuário pediu para lembrar", "examples": ["lembra que eu sou alérgico a camarão"],
+     "run": lambda a: M.remember(a.get("fact", ""))},
+    {"name": "add_reminder", "args": '{"text":"o que lembrar","day":"AAAA-MM-DD","hour":"HH:MM ou vazio"}', "group": "memória",
+     "desc": "marcar um lembrete para um dia (e hora)", "examples": ["me lembra da prova na sexta"],
+     "run": lambda a: M.add_reminder(a.get("text", ""), a.get("day", ""), a.get("hour", ""))},
+    {"name": "forget", "args": '{"text":"assunto"}', "group": "memória",
+     "desc": "apagar da memória o que tiver esse assunto", "examples": ["esquece a prova"],
+     "run": lambda a: M.forget(a.get("text", ""))},
+    {"name": "what_i_know", "args": "{}", "group": "memória",
+     "desc": "mostrar tudo o que eu sei sobre o usuário", "examples": ["o que você sabe sobre mim"],
+     "run": lambda a: M.what_i_know()},
+    {"name": "history", "args": '{"day":"hoje|ontem|AAAA-MM-DD"}', "group": "memória",
+     "desc": "o que o usuário pediu num dia", "examples": ["o que eu te pedi ontem"],
+     "run": lambda a: M.history(a.get("day", "hoje"))},
     # ---- rotinas
     {"name": "run_routine", "args": '{"name":"estudo|relaxar|foco|..."}', "group": "rotinas",
      "desc": "rodar uma rotina com vários passos", "examples": ["modo estudo"],
@@ -1205,6 +1238,10 @@ Regras:
   próximo passo. Quando terminar, "continue":false e a resposta final em reply (até 5 frases)
 - pesquisar para escolher/comparar/responder = web_search, depois web_click no melhor e web_read
 - mandar mensagem no WhatsApp = whatsapp_send (ele mesmo pede confirmação)
+- use o perfil, as coisas lembradas e a conversa recente (no começo do pedido) para entender "e amanhã?", "lá", "ele"
+- clima sem cidade = cidade do perfil. Datas relativas ("sexta", "amanhã") viram AAAA-MM-DD a partir de "Agora"
+- "lembra que tenho prova sexta" = add_reminder; algo sem data ("sou alérgico a camarão") = remember;
+  nome, cidade, gostos = set_profile
 - se nenhuma ferramenta serve, diga isso em reply; nunca finja que fez
 
 Exemplos:
@@ -1240,7 +1277,12 @@ def active_window_title():
 
 
 def ai_context():
-    parts = [f"Agora: {datetime.now():%d/%m/%Y %H:%M}"]
+    dias = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
+    now = datetime.now()
+    parts = [f"Agora: {now:%Y-%m-%d %H:%M} ({dias[now.weekday()]})"]
+    memory = M.context()
+    if memory:
+        parts.append(memory)
     title = active_window_title()
     if title:
         parts.append(f"Janela ativa: {title}")
@@ -1440,6 +1482,13 @@ def speak(text):
         print(f"Jarvis > (não consegui falar: {e})")
 
 
+def announce(text, title):
+    """Aviso que parte do Jarvis (lembrete, sugestão): mostra, vira cartão e fala."""
+    print(f"Jarvis > {text}")
+    U.card(title, text)
+    speak(text)
+
+
 def handle(text):
     if fast_local_router(text):
         return
@@ -1455,6 +1504,10 @@ def respond(text, spoken=False):
     said = [line[len("Jarvis > "):] for line in tee.getvalue().splitlines() if line.startswith("Jarvis > ")]
     said = [x for x in said if not x.startswith("(")]
     U.speech(said[-1] if said else "")
+    try:
+        M.add_talk(text, said[-1] if said else "")
+    except Exception:
+        pass
     if said and spoken:
         speak(said[-1])
     else:
@@ -1495,6 +1548,10 @@ def run():
     print("")
     queue_mode = True
     threading.Thread(target=keyboard_reader, daemon=True).start()
+    M.reminder_watcher(commands.put)
+    hint = M.habit_hint()
+    if hint:
+        announce(hint, "Sugestão")
 
     while True:
         try:
@@ -1506,6 +1563,9 @@ def run():
             continue
         if origin == "voz":
             print(f"Você (voz) > {user_text}")
+        if origin == "lembrete":
+            announce(f"Senhor, lembrete: {user_text}", "Lembrete")
+            continue
         if normalize(user_text) in {"sair", "exit", "quit"}:
             print("Jarvis > Até mais.")
             break

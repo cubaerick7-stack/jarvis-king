@@ -26,3 +26,12 @@ def sem_navegador(monkeypatch):
     import navegador
     monkeypatch.setattr(navegador, "available", lambda: False)
     monkeypatch.setattr(navegador, "_page", None)
+
+
+@pytest.fixture(autouse=True)
+def memoria_temporaria(tmp_path, monkeypatch):
+    """Cada teste tem a própria memória e o próprio log, longe do G:\\Jarvis de verdade."""
+    import memoria
+    monkeypatch.setattr(memoria, "FILE", tmp_path / "memoria.json")
+    monkeypatch.setattr(memoria, "ACTION_LOG", tmp_path / "acoes.log")
+    monkeypatch.setenv("JARVIS_LOG", str(tmp_path / "acoes.log"))

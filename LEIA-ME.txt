@@ -97,6 +97,16 @@ Pronto: "procura o arquivo X" acha em todos os discos na hora.
 Pastas do sistema (Windows, Program Files, AppData) ficam de fora.
 Sem o Everything, o Jarvis volta a procurar so no G:, Desktop, Documentos e Downloads.
 
+MEMORIA
+Fica em G:\Jarvis\config\memoria.json (so no seu PC).
+- "meu nome e Joao", "eu moro em Recife"  -> perfil (o clima ja usa sua cidade)
+- "lembra que sou alergico a camarao"     -> guarda
+- "me lembra da prova na sexta as 7h"     -> lembrete (ele avisa na hora, falando)
+- "o que eu te pedi ontem?"               -> historico
+- "o que voce sabe sobre mim?" / "esquece a prova"
+Ele lembra as ultimas falas, entao "e amanha?" funciona.
+Se voce repete algo no mesmo horario em 3 dias diferentes, ele sugere ao abrir.
+
 INTERFACE (O REATOR)
 1. python -m pip install pywebview
 2. Ao abrir o Jarvis, o reator aparece no canto da tela, sempre por cima.

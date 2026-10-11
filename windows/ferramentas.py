@@ -222,7 +222,8 @@ def network_info():
 
 def weather(city=""):
     city = str(city).strip()
-    url = f"https://wttr.in/{urllib.parse.quote(city)}?format=%l:+%C,+%t+(sensação+%f),+umidade+%h,+vento+%w&lang=pt&m"
+    fmt = urllib.parse.quote("%l: %C, %t (sensação %f), umidade %h, vento %w", safe="%")
+    url = f"https://wttr.in/{urllib.parse.quote(city)}?format={fmt}&lang=pt&m"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "curl/8"})
         with urllib.request.urlopen(req, timeout=8) as r:
