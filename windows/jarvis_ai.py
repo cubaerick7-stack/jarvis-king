@@ -177,6 +177,9 @@ def open_target(target):
     }
     low = aliases.get(low, low)
 
+    if low in FOLDERS:
+        return open_folder(low)
+
     if low in SITES:
         webbrowser.open(SITES[low])
         print(f"Jarvis > Abrindo {low}.")
@@ -609,6 +612,20 @@ def fast_local_router(user_text):
             act("open_search_result", open_search_result, n)
         return True
 
+    # ajuda, hora, pastas
+    if re.fullmatch(r"(ajuda|help|comandos|lista de comandos)\??", clean) or re.search(
+        r"\bo que (voce|vc|tu) (sabe|consegue|pode) fazer\b|\bo que (voce|vc) faz\b", clean
+    ):
+        act("show_help", show_help)
+        return True
+    if re.search(r"\b(que horas sao|que hora e|horas agora|que dia e hoje)\b", clean):
+        act("tell_time", tell_time)
+        return True
+    m = re.match(r"^(?:abre|abra|abrir|mostra)\s+(?:a\s+)?(?:pasta|minha pasta|meus|minhas)\s+(?:de\s+|do\s+|da\s+)?(.+)$", clean)
+    if m:
+        act("open_folder", open_folder, m.group(1).strip())
+        return True
+
     # abrir apps/sites
     m = re.match(r"^(?:abre|abra|abrir|inicia|inicie|executa|execute|roda|rode|joga|jogar)\s+(?:o\s+|a\s+)?(.+?)(?:\s+pra mim|\s+para mim)?$", text, flags=re.I)
     if m:
@@ -651,69 +668,196 @@ def fast_local_router(user_text):
 
 # ========================= IA COMO FALLBACK JSON =========================
 
-AI_PROMPT = r"""
-Você é o roteador do JARVIS no Windows.
-Responda SOMENTE JSON válido, sem explicações.
+# ========================= CATÁLOGO DE FERRAMENTAS =========================
+# Fonte única do que o Jarvis sabe fazer: gera o prompt do Qwen, a tela de ajuda
+# e a execução das ações. Ferramenta nova = uma entrada nova aqui.
 
-Formato:
-{"actions":[{"name":"acao","args":{}}],"reply":"frase curta"}
+FOLDERS = {
+    "downloads": Path.home() / "Downloads",
+    "documentos": Path.home() / "Documents",
+    "desktop": Path.home() / "Desktop",
+    "area de trabalho": Path.home() / "Desktop",
+    "imagens": Path.home() / "Pictures",
+    "fotos": Path.home() / "Pictures",
+    "musicas": Path.home() / "Music",
+    "videos": Path.home() / "Videos",
+    "prints": SCREENSHOT_DIR,
+    "jarvis": Path(r"G:\Jarvis"),
+}
 
-Ações:
-set_volume {"percent":0-100}
-mute_audio {"mute":true/false}
-open_target {"target":"nome"}
-search_files {"query":"nome"}
-open_search_result {"index":1}
-show_search_result {"index":1}
-list_folder {"path":"caminho"}
-search_web {"query":"texto","site":"google ou youtube"}
-media_control {"action":"play, pause, next, previous ou stop"}
-window_control {"action":"minimizar, maximizar, fechar, trocar, desktop ou menu"}
-take_screenshot {}
-system_info {}
+
+def open_folder(name):
+    key = normalize(name)
+    folder = FOLDERS.get(key) or Path(os.path.expandvars(str(name))).expanduser()
+    if not folder.is_dir():
+        print(f"Jarvis > Pasta não encontrada: {name}")
+        return False
+    os.startfile(str(folder))
+    print(f"Jarvis > Pasta aberta: {folder}")
+    return True
+
+
+def open_url(url):
+    url = str(url).strip()
+    if not re.match(r"^https?://", url):
+        url = "https://" + url
+    webbrowser.open(url)
+    print(f"Jarvis > Abrindo {url}")
+    return True
+
+
+def tell_time():
+    dias = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
+    now = datetime.now()
+    print(f"Jarvis > Agora são {now:%H:%M} de {dias[now.weekday()]}, {now:%d/%m/%Y}.")
+    return True
+
+
+def show_help():
+    print("Jarvis > Eu sei fazer isto (fale do seu jeito, são só exemplos):")
+    for group in TOOL_GROUPS:
+        tools = [t for t in TOOLS if t["group"] == group]
+        print(f"\n  {group.upper()}")
+        for t in tools:
+            print(f"    - {t['desc']}: \"{t['examples'][0]}\"")
+    print("\n  Frases que eu não reconheço vão para a IA local (Qwen), que escolhe as ações acima.")
+    return True
+
+
+TOOL_GROUPS = ["som", "programas e sites", "arquivos e pastas", "mídia", "janelas", "sistema"]
+
+TOOLS = [
+    {"name": "set_volume", "args": '{"percent":0-100}', "group": "som",
+     "desc": "deixar o volume num valor", "examples": ["coloca o volume em 30", "deixa na metade"],
+     "run": lambda a: set_volume(a.get("percent", 50))},
+    {"name": "change_volume", "args": '{"delta":-100..100}', "group": "som",
+     "desc": "aumentar ou abaixar o volume", "examples": ["aumenta o volume em 10", "abaixa um pouco o som"],
+     "run": lambda a: change_volume(int(a.get("delta", 10)))},
+    {"name": "get_volume", "args": "{}", "group": "som",
+     "desc": "dizer o volume atual", "examples": ["qual o volume"],
+     "run": lambda a: get_volume()},
+    {"name": "mute_audio", "args": '{"mute":true/false}', "group": "som",
+     "desc": "mutar ou desmutar", "examples": ["muta o som", "desmuta"],
+     "run": lambda a: mute_audio(a.get("mute", True))},
+    {"name": "open_target", "args": '{"target":"nome"}', "group": "programas e sites",
+     "desc": "abrir programa, jogo ou site", "examples": ["abre o omori", "abre o chrome", "abre youtube"],
+     "run": lambda a: open_target(a.get("target", ""))},
+    {"name": "open_url", "args": '{"url":"endereço"}', "group": "programas e sites",
+     "desc": "abrir um endereço de site", "examples": ["abre o site g1.globo.com"],
+     "run": lambda a: open_url(a.get("url", ""))},
+    {"name": "search_web", "args": '{"query":"texto","site":"google|youtube"}', "group": "programas e sites",
+     "desc": "pesquisar no Google ou YouTube", "examples": ["pesquisa receita de bolo", "procura no youtube lofi"],
+     "run": lambda a: search_web(a.get("query", ""), a.get("site", "google"))},
+    {"name": "search_files", "args": '{"query":"nome ou extensão"}', "group": "arquivos e pastas",
+     "desc": "procurar arquivo ou pasta no PC", "examples": ["procura o arquivo omori", "procura um pdf"],
+     "run": lambda a: search_files(a.get("query", ""))},
+    {"name": "open_search_result", "args": '{"index":1}', "group": "arquivos e pastas",
+     "desc": "abrir um resultado da última busca", "examples": ["abre o segundo", "2"],
+     "run": lambda a: open_search_result(a.get("index", 1))},
+    {"name": "show_search_result", "args": '{"index":1}', "group": "arquivos e pastas",
+     "desc": "mostrar um resultado no Explorer", "examples": ["mostra o primeiro na pasta"],
+     "run": lambda a: show_search_result(a.get("index", 1))},
+    {"name": "open_folder", "args": '{"name":"downloads|documentos|desktop|imagens|musicas|videos|prints|jarvis|caminho"}',
+     "group": "arquivos e pastas",
+     "desc": "abrir uma pasta", "examples": ["abre a pasta downloads"],
+     "run": lambda a: open_folder(a.get("name", ""))},
+    {"name": "list_folder", "args": '{"path":"caminho"}', "group": "arquivos e pastas",
+     "desc": "listar o que tem numa pasta", "examples": ["o que tem em G:\\Jarvis"],
+     "run": lambda a: list_folder(a.get("path", ""))},
+    {"name": "media_control", "args": '{"action":"play|pause|next|previous|stop"}', "group": "mídia",
+     "desc": "tocar, pausar, pular música", "examples": ["pausa a música", "próxima música"],
+     "run": lambda a: media_control(a.get("action", ""))},
+    {"name": "window_control", "args": '{"action":"minimizar|maximizar|fechar|trocar|desktop|menu"}', "group": "janelas",
+     "desc": "minimizar, maximizar, fechar ou trocar janela", "examples": ["minimiza", "fecha essa janela"],
+     "run": lambda a: window_control(a.get("action", ""))},
+    {"name": "take_screenshot", "args": "{}", "group": "sistema",
+     "desc": "tirar print da tela", "examples": ["tira um print"],
+     "run": lambda a: take_screenshot()},
+    {"name": "system_info", "args": "{}", "group": "sistema",
+     "desc": "mostrar RAM, CPU e espaço em disco", "examples": ["quanta ram tenho"],
+     "run": lambda a: system_info()},
+    {"name": "tell_time", "args": "{}", "group": "sistema",
+     "desc": "dizer hora e data", "examples": ["que horas são"],
+     "run": lambda a: tell_time()},
+    {"name": "show_help", "args": "{}", "group": "sistema",
+     "desc": "mostrar tudo o que eu sei fazer", "examples": ["o que você sabe fazer"],
+     "run": lambda a: show_help()},
+]
+TOOLS_BY_NAME = {t["name"]: t for t in TOOLS}
+
+AI_EXAMPLES = [
+    ("põe o som no talo", '{"actions":[{"name":"set_volume","args":{"percent":100}}],"reply":"Volume no máximo."}'),
+    ("tá muito alto", '{"actions":[{"name":"change_volume","args":{"delta":-20}}],"reply":"Abaixei."}'),
+    ("quero jogar omori", '{"actions":[{"name":"open_target","args":{"target":"omori"}}],"reply":"Abrindo o Omori."}'),
+    ("bota uma música lofi pra mim", '{"actions":[{"name":"search_web","args":{"query":"lofi","site":"youtube"}}],"reply":"Procurando lofi no YouTube."}'),
+    ("cadê aquele pdf do FO 1102", '{"actions":[{"name":"search_files","args":{"query":"FO 1102"}}],"reply":"Procurando."}'),
+    ("me mostra meus downloads", '{"actions":[{"name":"open_folder","args":{"name":"downloads"}}],"reply":"Abrindo Downloads."}'),
+    ("modo estudo", '{"actions":[{"name":"set_volume","args":{"percent":25}},{"name":"open_target","args":{"target":"notepad"}}],"reply":"Modo estudo: volume 25 e bloco de notas."}'),
+    ("oi jarvis, tudo bem?", '{"actions":[],"reply":"Tudo certo! Diga o que precisa."}'),
+    ("faz um bolo pra mim", '{"actions":[],"reply":"Isso eu não consigo fazer. Diga \\"o que você sabe fazer\\" para ver a lista."}'),
+]
+
+
+def build_ai_prompt():
+    tools = "\n".join(f"{t['name']} {t['args']} - {t['desc']}" for t in TOOLS)
+    examples = "\n".join(f"Usuário: {u}\nJSON: {j}" for u, j in AI_EXAMPLES)
+    return f"""Você é o JARVIS, assistente do Windows do usuário. Fala português do Brasil, curto e direto.
+Responda SOMENTE JSON válido, sem explicações, neste formato:
+{{"actions":[{{"name":"acao","args":{{}}}}],"reply":"frase curta"}}
+
+Ferramentas disponíveis (use só estas, com estes nomes):
+{tools}
 
 Regras:
-- abrir, executar, rodar ou jogar um programa/jogo = open_target
+- abrir, executar, rodar ou jogar um programa/jogo = open_target com o nome do programa
 - um número sozinho ("2") depois de uma busca = open_search_result com esse índice
+- "ele", "esse", "o primeiro" se referem aos resultados da última busca
 - system_info só quando pedirem RAM, CPU ou disco
-- metade do volume = 50
-- pode retornar várias actions
-- não invente ações
+- pode usar várias ações em sequência
+- conversa ou pergunta sem ação: actions vazio e a resposta em reply
+- se nenhuma ferramenta serve, diga isso em reply; nunca finja que fez
+
+Exemplos:
+{examples}
 """
 
 
+AI_PROMPT = build_ai_prompt()
+
+
 def execute_ai_action(name, args):
-    table = {
-        "set_volume": lambda: set_volume(args.get("percent", 50)),
-        "mute_audio": lambda: mute_audio(args.get("mute", True)),
-        "open_target": lambda: open_target(args.get("target", "")),
-        "search_files": lambda: search_files(args.get("query", "")),
-        "open_search_result": lambda: open_search_result(args.get("index", 1)),
-        "show_search_result": lambda: show_search_result(args.get("index", 1)),
-        "list_folder": lambda: list_folder(args.get("path", "")),
-        "search_web": lambda: search_web(args.get("query", ""), args.get("site", "google")),
-        "media_control": lambda: media_control(args.get("action", "")),
-        "window_control": lambda: window_control(args.get("action", "")),
-        "take_screenshot": take_screenshot,
-        "system_info": system_info,
-    }
-    fn = table.get(name)
-    if not fn:
+    tool = TOOLS_BY_NAME.get(name)
+    if not tool:
         print(f"Jarvis > Ação desconhecida: {name}")
         return False
     log_action(f"ia:{name}", json.dumps(args, ensure_ascii=False))
     try:
-        return fn()
+        return tool["run"](args)
     except Exception as e:
         print(f"Jarvis > Erro em {name}: {e}")
         return False
 
 
-def ai_context():
-    if not last_results:
+def active_window_title():
+    try:
+        u32 = ctypes.windll.user32
+        hwnd = u32.GetForegroundWindow()
+        buf = ctypes.create_unicode_buffer(256)
+        u32.GetWindowTextW(hwnd, buf, 256)
+        return buf.value
+    except Exception:
         return ""
-    lines = "\n".join(f"{i}. {Path(p).name}" for i, p in enumerate(last_results[:10], 1))
-    return f"Resultados da última busca:\n{lines}\n\nPedido: "
+
+
+def ai_context():
+    parts = [f"Agora: {datetime.now():%d/%m/%Y %H:%M}"]
+    title = active_window_title()
+    if title:
+        parts.append(f"Janela ativa: {title}")
+    if last_results:
+        lines = "\n".join(f"{i}. {Path(p).name}" for i, p in enumerate(last_results[:10], 1))
+        parts.append(f"Resultados da última busca:\n{lines}")
+    return "\n".join(parts) + "\n\nPedido: "
 
 
 def ask_ai_router(user_text):
@@ -731,7 +875,7 @@ def ask_ai_router(user_text):
             format="json",
             think=False,
             stream=False,
-            options={"temperature": 0, "num_ctx": 2048, "num_predict": 180},
+            options={"temperature": 0, "num_ctx": 3072, "num_predict": 200},
         )
         raw = (response.message.content or "").strip()
         data = json.loads(raw)

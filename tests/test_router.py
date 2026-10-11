@@ -173,3 +173,40 @@ def test_ai_does_not_claim_success_when_action_fails(jarvis, monkeypatch, capsys
     jarvis.ask_ai_router("omori")
     out = capsys.readouterr().out
     assert "Abri o omori" not in out and "Não deu certo: open_target" in out
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("o que você sabe fazer", [("show_help", ())]),
+    ("ajuda", [("show_help", ())]),
+    ("que horas são", [("tell_time", ())]),
+    ("abre a pasta downloads", [("open_folder", ("downloads",))]),
+    ("abre minha pasta de documentos", [("open_folder", ("documentos",))]),
+])
+def test_router_help_time_folders(jarvis, monkeypatch, text, expected):
+    for name in ["show_help", "tell_time", "open_folder"]:
+        monkeypatch.setattr(jarvis, name, lambda *a, _n=name: jarvis.calls.append((_n, a)))
+    assert route(jarvis, text) == expected
+
+
+def test_catalog_drives_prompt_and_help(capsys):
+    real = load_real()
+    for tool in real.TOOLS:
+        assert tool["name"] in real.AI_PROMPT
+        assert tool["group"] in real.TOOL_GROUPS
+    real.show_help()
+    out = capsys.readouterr().out
+    assert "abre o omori" in out and "tira um print" in out
+
+
+def test_ai_runs_catalog_tools(jarvis, monkeypatch):
+    class Msg:
+        content = ('{"actions":[{"name":"set_volume","args":{"percent":25}},'
+                   '{"name":"open_target","args":{"target":"notepad"}}],"reply":"ok"}')
+
+    class Resp:
+        message = Msg()
+
+    monkeypatch.setattr(jarvis, "chat", lambda **kw: Resp())
+    jarvis.calls.clear()
+    jarvis.ask_ai_router("modo estudo")
+    assert jarvis.calls == [("set_volume", (25,)), ("open_target", ("notepad",))]
