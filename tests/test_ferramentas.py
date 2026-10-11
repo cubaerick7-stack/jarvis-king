@@ -173,3 +173,44 @@ def test_ai_calls_share_options_and_keep_alive(jarvis, monkeypatch):
     assert seen[0]["messages"][0] == seen[1]["messages"][0]  # mesmo prompt => cache do Ollama
     assert all(k["keep_alive"] == jarvis.KEEP_ALIVE for k in seen)
     assert seen[0]["options"]["num_ctx"] == seen[1]["options"]["num_ctx"]
+
+
+@pytest.mark.parametrize("text", [
+    "ABRE O BLOCO DE NOTA E ME EXPLIQUE BREVEMENTE QM FOI MARECHAL DEODORO DA FONSECA",
+    "abre o chrome e pesquisa clima",
+    "muta o som e depois abre o youtube",
+])
+def test_compound_goes_to_ai(jarvis, text):
+    assert route(jarvis, text) == "IA"
+
+
+@pytest.mark.parametrize("text", ["procura o arquivo pedra e papel", "abre o bloco de notas"])
+def test_simple_with_e_still_fast(jarvis, monkeypatch, text):
+    monkeypatch.setattr(jarvis, "search_files", lambda q: jarvis.calls.append(("search_files", q)))
+    monkeypatch.setattr(jarvis, "open_target", lambda t: jarvis.calls.append(("open_target", t)))
+    assert route(jarvis, text) != "IA"
+
+
+def test_long_unknown_target_is_not_typed_in_start_menu(monkeypatch):
+    spec = importlib.util.spec_from_file_location("j4", ROOT / "windows" / "jarvis_ai.py")
+    j = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(j)
+    monkeypatch.setattr(j, "find_programs", lambda name: [])
+    monkeypatch.setattr(j, "pyautogui", None)  # se tentasse digitar, quebraria
+    assert j.open_target("bloco de nota e me explique quem foi deodoro") is False
+
+
+def test_ai_waits_for_window_before_typing(jarvis, monkeypatch):
+    order = []
+
+    class Resp:
+        class message:
+            content = ('{"actions":[{"name":"open_target","args":{"target":"notepad"}},'
+                       '{"name":"type_text","args":{"text":"oi"}}],"reply":"ok"}')
+
+    monkeypatch.setattr(jarvis, "chat", lambda **kw: Resp())
+    monkeypatch.setattr(jarvis, "open_target", lambda t: order.append("open") or True)
+    monkeypatch.setattr(F, "type_text", lambda t: order.append("type") or True)
+    monkeypatch.setattr(jarvis.time, "sleep", lambda s: order.append(f"sleep{s}"))
+    jarvis.ask_ai_router("abre o bloco de notas e escreve oi")
+    assert order == ["open", "sleep1.5", "type"]

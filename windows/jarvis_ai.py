@@ -33,7 +33,7 @@ except ImportError:
 
 MODEL = "qwen3:1.7b"
 # Mesmas opções em todas as chamadas: mudar num_ctx faz o Ollama recarregar o modelo.
-AI_OPTIONS = {"temperature": 0, "num_ctx": 4096, "num_predict": 220}
+AI_OPTIONS = {"temperature": 0, "num_ctx": 4096, "num_predict": 400}
 KEEP_ALIVE = "30m"  # mantém o modelo na RAM entre pedidos
 MAX_RESULTS = 20
 MAX_SCAN = 400  # quantos achados juntar antes de ordenar
@@ -181,6 +181,9 @@ def open_target(target):
         "gerenciador de tarefas": "taskmgr",
         "configuracoes": "settings",
         "bloco de notas": "notepad",
+        "bloco de nota": "notepad",
+        "notas": "notepad",
+        "notepad": "notepad",
         "calculadora": "calc",
     }
     low = aliases.get(low, low)
@@ -228,6 +231,10 @@ def open_target(target):
     for program in find_programs(original):
         if launch(program):
             return True
+
+    if len(low.split()) > 4:
+        print(f"Jarvis > Não achei um programa chamado \"{original}\".")
+        return False
 
     need_pyautogui()
     pyautogui.press("win")
@@ -533,6 +540,14 @@ def act(name, fn, *args):
     return fn(*args)
 
 
+COMPOUND = re.compile(
+    r"\s(?:e|depois|e depois|e entao|entao|e tambem)\s+(?:me\s+|pra mim\s+)?"
+    r"(?:abre|abra|explica|explique|fala|fale|diz|diga|conta|conte|digita|digite|escreve|escreva|"
+    r"pesquisa|pesquise|procura|procure|toca|coloca|poe|aumenta|abaixa|fecha|feche|mostra|"
+    r"le|leia|resume|resuma|cria|crie|liga|desliga|muta|tira|faz|faca|manda|copia|move|apaga)\b"
+)
+
+
 def number_ref(text):
     """'primeiro' -> '1', 'o 2' -> '2', resto fica como está."""
     text = text.strip()
@@ -547,6 +562,11 @@ def fast_local_router(user_text):
 
     if small_talk(normalize(user_text)) or small_talk(clean):
         return True
+
+    # pedido com duas partes ("abre o bloco de notas e me explica X") vai inteiro para a IA,
+    # que divide em várias ações; o roteador rápido só entende um comando por vez
+    if COMPOUND.search(clean):
+        return False
 
     # volume relativo ("aumenta o volume em 10") vem antes do volume exato
     up = re.search(r"\b(aumenta|sobe|aumente|suba)\b.*\b(volume|som)\b", clean)
@@ -1051,6 +1071,8 @@ AI_EXAMPLES = [
     ("o pc tá lento", '{"actions":[{"name":"list_processes","args":{}},{"name":"system_info","args":{}}],"reply":"Esses são os programas que mais pesam."}'),
     ("joga esse arquivo na lixeira", '{"actions":[{"name":"delete_item","args":{"path":"1"}}],"reply":"Vou pedir confirmação."}'),
     ("faz um resumo do segundo", '{"actions":[{"name":"summarize_file","args":{"path":"2"}}],"reply":"Resumindo."}'),
+    ("abre o bloco de notas e me explica quem foi Tiradentes", '{"actions":[{"name":"open_target","args":{"target":"notepad"}},{"name":"type_text","args":{"text":"Tiradentes (Joaquim José da Silva Xavier) foi um dos líderes da Inconfidência Mineira, movimento contra o domínio português em 1789. Foi enforcado em 1792 e hoje é considerado herói nacional."}}],"reply":"Escrevi no Bloco de Notas."}'),
+    ("me explica o que é fotossíntese", '{"actions":[],"reply":"É o processo em que as plantas usam luz, água e gás carbônico para produzir açúcar e liberar oxigênio."}'),
     ("oi jarvis, tudo bem?", '{"actions":[],"reply":"Tudo certo! Diga o que precisa."}'),
     ("faz um bolo pra mim", '{"actions":[],"reply":"Isso eu não consigo fazer. Diga \\"o que você sabe fazer\\" para ver a lista."}'),
 ]
@@ -1072,7 +1094,8 @@ Regras:
 - "ele", "esse", "o primeiro" se referem aos resultados da última busca
 - system_info só quando pedirem RAM, CPU ou disco
 - pode usar várias ações em sequência
-- conversa ou pergunta sem ação: actions vazio e a resposta em reply
+- conversa ou pergunta de conhecimento: actions vazio e a resposta (curta, até 3 frases) em reply
+- se pedir para abrir um programa E escrever/explicar algo, abra e use type_text com o texto
 - se nenhuma ferramenta serve, diga isso em reply; nunca finja que fez
 
 Exemplos:
@@ -1118,6 +1141,9 @@ def ai_context():
     return "\n".join(parts) + "\n\nPedido: "
 
 
+OPENS_WINDOW = {"open_target", "open_url", "open_folder", "open_search_result", "focus_window", "open_settings"}
+
+
 def ask_ai_router(user_text):
     if chat is None:
         print("Jarvis > Instale ollama: python -m pip install ollama")
@@ -1140,10 +1166,13 @@ def ask_ai_router(user_text):
         data = json.loads(raw)
 
         failed = []
-        for action in data.get("actions", []):
+        actions = data.get("actions", []) or []
+        for i, action in enumerate(actions):
             name = action.get("name", "")
             if execute_ai_action(name, action.get("args", {}) or {}) is False:
                 failed.append(name)
+            elif name in OPENS_WINDOW and i + 1 < len(actions):
+                time.sleep(1.5)  # espera a janela abrir antes de digitar/clicar nela
 
         reply = str(data.get("reply", "")).strip()
         if failed:
