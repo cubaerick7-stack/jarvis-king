@@ -32,6 +32,9 @@ Substitua o anterior.
 
    python windows\jarvis_ai.py
 
+OU, para iniciar o Ollama e o Jarvis juntos:
+   powershell -ExecutionPolicy Bypass -File iniciar.ps1
+
 TESTE:
    mn muta o volume
    desmuta
