@@ -1194,13 +1194,26 @@ def ask_cloud(system, user, json_mode=True, num_predict=None, temperature=None):
                       max_tokens=max(2048, num_predict or 0))
 
 
+def ask_groq(system, user, json_mode=True, num_predict=None, temperature=None):
+    return N.groq_generate(system, user, json_mode=json_mode, temperature=temperature or 0.0,
+                           max_tokens=max(2048, num_predict or 0))
+
+
+def local_enabled():
+    """O Jarvis é só online; o Qwen local só entra com  setx JARVIS_LOCAL 1."""
+    return os.environ.get("JARVIS_LOCAL", "").strip() == "1"
+
+
 def ai_backends():
-    """Ordem de quem pensa: Gemini e Qwen conforme JARVIS_NUVEM (ver nuvem.py)."""
-    if not N.available():
-        return [("Qwen", ask_local)]
-    if N.mode() == "reserva":
-        return [("Qwen", ask_local), ("Gemini", ask_cloud)]
-    return [("Gemini", ask_cloud), ("Qwen", ask_local)]
+    """Ordem de quem pensa: Gemini, depois Groq (e o Qwen só se JARVIS_LOCAL=1)."""
+    order = []
+    if N.available():
+        order.append(("Gemini", ask_cloud))
+    if N.groq_available():
+        order.append(("Groq", ask_groq))
+    if local_enabled():
+        order.append(("Qwen", ask_local))
+    return order
 
 
 def think(system, user, **kw):
@@ -1215,7 +1228,7 @@ def think(system, user, **kw):
                 return text
         except Exception as e:
             errors.append(f"{name} falhou: {e}")
-    raise RuntimeError("; ".join(errors) or "nenhuma IA disponível")
+    raise RuntimeError("; ".join(errors) or "nenhuma IA configurada (setx GEMINI_API_KEY ou GROQ_API_KEY)")
 
 
 def parse_json(raw):
@@ -1252,8 +1265,9 @@ def ask_ai_router(user_text):
 def warm_up_ai():
     """Carrega o Qwen e já processa o prompt do catálogo em segundo plano.
     O Ollama guarda esse começo em cache, então os pedidos seguintes só processam a frase nova.
-    Com o Gemini na frente, o Qwen fica quieto (sem gastar CPU) até ser preciso."""
-    if chat is None or ai_backends()[0][0] != "Qwen":
+    Com a nuvem na frente, o Qwen fica quieto (sem gastar CPU) até ser preciso."""
+    backends = ai_backends()
+    if chat is None or not backends or backends[0][0] != "Qwen":
         return
     try:
         chat(
@@ -1289,7 +1303,7 @@ def main():
     print("")
     print("==============================================")
     print("              JARVIS LITE V2")
-    print("     comandos rápidos + IA: " + " -> ".join(n for n, _ in ai_backends()))
+    print("     comandos rápidos + IA: " + (" -> ".join(n for n, _ in ai_backends()) or "nenhuma (configure a chave)"))
     print("==============================================")
     print("")
     print("Os comandos comuns agora rodam SEM IA.")

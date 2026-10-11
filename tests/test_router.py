@@ -162,6 +162,7 @@ def test_search_typos_and_folders(tmp_path, monkeypatch, query, first):
 
 
 def test_ai_does_not_claim_success_when_action_fails(jarvis, monkeypatch, capsys):
+    monkeypatch.setenv("JARVIS_LOCAL", "1")  # simula a IA pelo Qwen
     class Msg:
         content = '{"actions":[{"name":"open_target","args":{"target":"omori"}}],"reply":"Abri o omori"}'
 
@@ -199,6 +200,7 @@ def test_catalog_drives_prompt_and_help(capsys):
 
 
 def test_ai_runs_catalog_tools(jarvis, monkeypatch):
+    monkeypatch.setenv("JARVIS_LOCAL", "1")  # simula a IA pelo Qwen
     class Msg:
         content = ('{"actions":[{"name":"set_volume","args":{"percent":25}},'
                    '{"name":"open_target","args":{"target":"notepad"}}],"reply":"ok"}')

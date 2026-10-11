@@ -1,8 +1,17 @@
-# Inicia o Ollama (se ainda nao estiver rodando) e abre o Jarvis.
+# Abre o Jarvis. A IA e na nuvem (Gemini -> Groq).
+# O Ollama/Qwen local so e iniciado se voce tiver ligado com:  setx JARVIS_LOCAL 1
 # Uso: powershell -ExecutionPolicy Bypass -File iniciar.ps1
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 $model = "qwen3:1.7b"
+
+if ($env:JARVIS_LOCAL -ne "1") {
+    if (-not $env:GEMINI_API_KEY -and -not $env:GROQ_API_KEY) {
+        Write-Host "Aviso: sem GEMINI_API_KEY nem GROQ_API_KEY. So os comandos rapidos vao funcionar."
+    }
+    python windows\jarvis_ai.py
+    exit
+}
 
 # Onde procurar o Ollama. Se o seu estiver em outro lugar, coloque o caminho no topo da lista.
 $ollamaCandidates = @(

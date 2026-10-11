@@ -162,6 +162,7 @@ def test_small_talk_skips_ai(jarvis, text):
 
 
 def test_ai_calls_share_options_and_keep_alive(jarvis, monkeypatch):
+    monkeypatch.setenv("JARVIS_LOCAL", "1")  # simula a IA pelo Qwen
     seen = []
 
     class Resp:
@@ -202,6 +203,7 @@ def test_long_unknown_target_is_not_typed_in_start_menu(monkeypatch):
 
 
 def test_ai_waits_for_window_before_typing(jarvis, monkeypatch):
+    monkeypatch.setenv("JARVIS_LOCAL", "1")  # simula a IA pelo Qwen
     order = []
 
     class Resp:
