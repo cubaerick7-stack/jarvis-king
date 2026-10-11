@@ -88,3 +88,15 @@ COMO CRIAR UMA FERRAMENTA NOVA
 3. (Opcional) Para responder sem IA, adicione uma regra em
    fast_local_router chamando tool("minha_ferramenta", x=...).
 4. Adicione um teste em tests\ e rode python -m pytest -q.
+
+IA NA NUVEM (GEMINI)
+Com a chave configurada, o Jarvis pensa com o Gemini (rapido, sem pesar a CPU)
+e usa o Qwen local so se a nuvem falhar ou a internet cair.
+1. No PowerShell (uma vez so):
+   setx GEMINI_API_KEY "sua-chave"
+2. Feche e abra o PowerShell de novo.
+Opcional:
+   setx JARVIS_NUVEM reserva     (Qwen primeiro, Gemini so se falhar)
+   setx JARVIS_NUVEM desligada   (100% local)
+   setx GEMINI_MODEL gemini-3.8-flash   (escolher o modelo)
+A chave NUNCA vai para arquivo nem para o GitHub.

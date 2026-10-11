@@ -20,6 +20,7 @@ from urllib.parse import quote_plus
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ferramentas as F  # noqa: E402
+import nuvem as N  # noqa: E402
 
 try:
     import pyautogui
@@ -881,22 +882,15 @@ def summarize_file(ref):
         if not path.is_file():
             print(f"Jarvis > Arquivo não encontrado: {path}")
         return False
-    if chat is None:
-        print("Jarvis > Para resumir preciso do Ollama.")
-        return False
     print("Jarvis > Resumindo...")
-    response = chat(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": "Resuma o texto em português do Brasil, em até 6 tópicos curtos."},
-            {"role": "user", "content": text[:6000]},
-        ],
-        think=False,
-        stream=False,
-        keep_alive=KEEP_ALIVE,
-        options={**AI_OPTIONS, "temperature": 0.2, "num_predict": 300},
-    )
-    print(response.message.content.strip())
+    limit = 60000 if N.available() else 6000  # o Gemini aguenta textos bem maiores
+    try:
+        summary = think("Resuma o texto em português do Brasil, em até 6 tópicos curtos.", text[:limit],
+                        json_mode=False, num_predict=400, temperature=0.2)
+    except Exception as e:
+        print(f"Jarvis > Não consegui resumir: {e}")
+        return False
+    print(summary.strip())
     return True
 
 
@@ -1144,53 +1138,91 @@ def ai_context():
 OPENS_WINDOW = {"open_target", "open_url", "open_folder", "open_search_result", "focus_window", "open_settings"}
 
 
-def ask_ai_router(user_text):
+def ask_local(system, user, json_mode=True, num_predict=None, temperature=None):
     if chat is None:
-        print("Jarvis > Instale ollama: python -m pip install ollama")
-        return False
+        raise RuntimeError("Ollama não instalado (python -m pip install ollama)")
+    options = dict(AI_OPTIONS)
+    if num_predict:
+        options["num_predict"] = num_predict
+    if temperature is not None:
+        options["temperature"] = temperature
+    response = chat(
+        model=MODEL,
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+        format="json" if json_mode else "",
+        think=False,
+        stream=False,
+        keep_alive=KEEP_ALIVE,
+        options=options,
+    )
+    return (response.message.content or "").strip()
 
+
+def ask_cloud(system, user, json_mode=True, num_predict=None, temperature=None):
+    return N.generate(system, user, json_mode=json_mode, temperature=temperature or 0.0,
+                      max_tokens=max(2048, num_predict or 0))
+
+
+def ai_backends():
+    """Ordem de quem pensa: Gemini e Qwen conforme JARVIS_NUVEM (ver nuvem.py)."""
+    if not N.available():
+        return [("Qwen", ask_local)]
+    if N.mode() == "reserva":
+        return [("Qwen", ask_local), ("Gemini", ask_cloud)]
+    return [("Gemini", ask_cloud), ("Qwen", ask_local)]
+
+
+def think(system, user, **kw):
+    """Pergunta para a primeira IA disponível; se falhar, tenta a próxima."""
+    errors = []
+    for name, fn in ai_backends():
+        try:
+            text = fn(system, user, **kw)
+            if text:
+                if errors:
+                    print(f"Jarvis > ({'; '.join(errors)}; respondi com o {name})")
+                return text
+        except Exception as e:
+            errors.append(f"{name} falhou: {e}")
+    raise RuntimeError("; ".join(errors) or "nenhuma IA disponível")
+
+
+def parse_json(raw):
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw)
+    return json.loads(raw)
+
+
+def ask_ai_router(user_text):
     try:
-        response = chat(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": AI_PROMPT},
-                {"role": "user", "content": ai_context() + user_text},
-            ],
-            format="json",
-            think=False,
-            stream=False,
-            keep_alive=KEEP_ALIVE,
-            options=AI_OPTIONS,
-        )
-        raw = (response.message.content or "").strip()
-        data = json.loads(raw)
-
-        failed = []
-        actions = data.get("actions", []) or []
-        for i, action in enumerate(actions):
-            name = action.get("name", "")
-            if execute_ai_action(name, action.get("args", {}) or {}) is False:
-                failed.append(name)
-            elif name in OPENS_WINDOW and i + 1 < len(actions):
-                time.sleep(1.5)  # espera a janela abrir antes de digitar/clicar nela
-
-        reply = str(data.get("reply", "")).strip()
-        if failed:
-            print(f"Jarvis > Não deu certo: {', '.join(failed)}.")
-        elif reply:
-            print(f"Jarvis > {reply}")
-
-        return True
-
+        data = parse_json(think(AI_PROMPT, ai_context() + user_text))
     except Exception as e:
-        print(f"Jarvis > Erro ao falar com Ollama: {e}")
+        print(f"Jarvis > Não consegui falar com a IA: {e}")
         return False
+
+    failed = []
+    actions = data.get("actions", []) or []
+    for i, action in enumerate(actions):
+        name = action.get("name", "")
+        if execute_ai_action(name, action.get("args", {}) or {}) is False:
+            failed.append(name)
+        elif name in OPENS_WINDOW and i + 1 < len(actions):
+            time.sleep(1.5)  # espera a janela abrir antes de digitar/clicar nela
+
+    reply = str(data.get("reply", "")).strip()
+    if failed:
+        print(f"Jarvis > Não deu certo: {', '.join(failed)}.")
+    elif reply:
+        print(f"Jarvis > {reply}")
+    return True
 
 
 def warm_up_ai():
     """Carrega o Qwen e já processa o prompt do catálogo em segundo plano.
-    O Ollama guarda esse começo em cache, então os pedidos seguintes só processam a frase nova."""
-    if chat is None:
+    O Ollama guarda esse começo em cache, então os pedidos seguintes só processam a frase nova.
+    Com o Gemini na frente, o Qwen fica quieto (sem gastar CPU) até ser preciso."""
+    if chat is None or ai_backends()[0][0] != "Qwen":
         return
     try:
         chat(
@@ -1226,7 +1258,7 @@ def main():
     print("")
     print("==============================================")
     print("              JARVIS LITE V2")
-    print("     comandos rápidos + Qwen3:1.7b fallback")
+    print("     comandos rápidos + IA: " + " -> ".join(n for n, _ in ai_backends()))
     print("==============================================")
     print("")
     print("Os comandos comuns agora rodam SEM IA.")
