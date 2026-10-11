@@ -129,3 +129,47 @@ def test_search_ranks_exact_name_and_programs_first(tmp_path, monkeypatch):
     names = [Path(p).name for p in real.search_files("omori")]
     assert names[:2] == ["OMORI.lnk", "OMORI.exe"]
     assert names[-1] == "OMORI_GAME.ttf"
+
+
+@pytest.mark.parametrize("text", ["2 execute", "executa o 2", "abre 2", "2"])
+def test_number_with_verb(jarvis, text):
+    assert route(jarvis, text) == [("open_search_result", (2,))]
+
+
+def test_broken_shortcut_falls_back_to_exe(tmp_path, monkeypatch):
+    real = load_real()
+    make_omori(tmp_path)
+    monkeypatch.setattr(real, "PROGRAM_ROOTS", [tmp_path])
+    opened = []
+
+    def fake_startfile(path, cwd=None):
+        if path.endswith(".lnk"):
+            raise OSError(1223, "A operação foi cancelada pelo usuário")
+        opened.append((Path(path).name, Path(cwd).name))
+
+    monkeypatch.setattr(real.os, "startfile", fake_startfile, raising=False)
+    assert real.open_target("omori") is True
+    assert opened == [("OMORI.exe", "OMORIES")]  # abre a partir da pasta do jogo
+
+
+@pytest.mark.parametrize("query, first", [("omoir", "OMORI.lnk"), ("omorie", "OMORIES"), ("omories", "OMORIES")])
+def test_search_typos_and_folders(tmp_path, monkeypatch, query, first):
+    real = load_real()
+    make_omori(tmp_path)
+    monkeypatch.setattr(real, "SEARCH_ROOTS", [tmp_path])
+    found = real.search_files(query)
+    assert found and Path(found[0]).name == first
+
+
+def test_ai_does_not_claim_success_when_action_fails(jarvis, monkeypatch, capsys):
+    class Msg:
+        content = '{"actions":[{"name":"open_target","args":{"target":"omori"}}],"reply":"Abri o omori"}'
+
+    class Resp:
+        message = Msg()
+
+    monkeypatch.setattr(jarvis, "chat", lambda **kw: Resp())
+    monkeypatch.setattr(jarvis, "open_target", lambda target: False)
+    jarvis.ask_ai_router("omori")
+    out = capsys.readouterr().out
+    assert "Abri o omori" not in out and "Não deu certo: open_target" in out

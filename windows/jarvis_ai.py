@@ -214,11 +214,9 @@ def open_target(target):
         print("Jarvis > Calculadora aberta.")
         return True
 
-    program = find_program(original)
-    if program:
-        os.startfile(str(program))
-        print(f"Jarvis > Abrindo {program}")
-        return True
+    for program in find_programs(original):
+        if launch(program):
+            return True
 
     need_pyautogui()
     pyautogui.press("win")
@@ -230,13 +228,33 @@ def open_target(target):
     return True
 
 
+def launch(path):
+    """Abre arquivo/programa a partir da pasta dele (jogos costumam precisar disso).
+    Atalho quebrado ou janela cancelada devolve False em vez de travar."""
+    path = Path(path)
+    try:
+        os.startfile(str(path), cwd=str(path.parent))
+    except TypeError:
+        os.startfile(str(path))
+    except OSError as e:
+        print(f"Jarvis > Não consegui abrir {path.name} ({e.strerror or e}). Tentando outro...")
+        return False
+    print(f"Jarvis > Abrindo: {path}")
+    return True
+
+
 def find_program(name):
-    """Procura um atalho (.lnk/.url) ou .exe cujo nome seja igual ou bem parecido com o pedido.
-    Prefere atalho, depois .exe, depois o caminho mais curto."""
+    found = find_programs(name)
+    return found[0] if found else None
+
+
+def find_programs(name):
+    """Atalhos (.lnk/.url) e .exe com nome igual ou bem parecido com o pedido, do melhor pro pior:
+    nome exato antes de parecido, atalho antes de .exe, caminho curto antes de longo."""
     wanted = normalize(re.sub(r"\.(exe|lnk|url)$", "", str(name).strip(), flags=re.I))
     if not wanted:
-        return None
-    best = None
+        return []
+    matches = []
     for root in PROGRAM_ROOTS:
         if not str(root) or not root.exists():
             continue
@@ -254,14 +272,10 @@ def find_program(name):
                     closeness = 1
                 else:
                     continue
-                key = (closeness, PROGRAM_EXTS.index(path.suffix.lower()), len(str(path)))
-                if best is None or key < best[0]:
-                    best = (key, path)
+                matches.append(((closeness, PROGRAM_EXTS.index(path.suffix.lower()), len(str(path))), path))
         except (PermissionError, OSError):
             continue
-        if best and best[0][0] == 0:
-            break
-    return best[1] if best else None
+    return [p for _, p in sorted(matches, key=lambda m: m[0])[:5]]
 
 
 def search_web(query, site="google"):
@@ -284,7 +298,7 @@ def search_files(query):
     if query_low in {"pdf", "docx", "txt", "jpg", "jpeg", "png", "mp3", "mp4"}:
         extension = "." + query_low
 
-    found, seen = [], set()
+    found, seen, close = [], set(), []
     print(f"Jarvis > Procurando: {query_original}")
 
     for root in SEARCH_ROOTS:
@@ -293,9 +307,13 @@ def search_files(query):
         try:
             for path in root.rglob("*"):
                 try:
-                    if not path.is_file():
-                        continue
-                    matched = path.suffix.lower() == extension if extension else query_low in normalize(path.name)
+                    if extension:
+                        matched = path.suffix.lower() == extension and path.is_file()
+                    else:
+                        name = normalize(path.name)
+                        matched = query_low in name
+                        if not matched and len(close) < 50 and is_close(query_low, normalize(path.stem)):
+                            close.append(str(path))
                     if matched:
                         p = str(path)
                         if p not in seen:
@@ -310,6 +328,9 @@ def search_files(query):
         if len(found) >= MAX_SCAN:
             break
 
+    if not found and close:
+        print("Jarvis > Não achei esse nome exato; mostrando os parecidos.")
+        found = close
     found = rank_results(found, query_low)[:MAX_RESULTS]
     last_results = found
 
@@ -323,6 +344,14 @@ def search_files(query):
     return found
 
 
+def is_close(query, stem):
+    """'omorie' ~ 'omori', 'omories' ~ 'omori'."""
+    if len(query) < 4 or not stem:
+        return False
+    m = difflib.SequenceMatcher(None, query, stem)
+    return m.real_quick_ratio() >= 0.8 and m.ratio() >= 0.8
+
+
 def rank_results(paths, query):
     """Nome igual ao pedido primeiro, depois atalhos/programas, depois documentos, depois o resto;
     dentro de cada grupo, os mais perto da raiz."""
@@ -332,7 +361,7 @@ def rank_results(paths, query):
         path = Path(p)
         return (
             0 if normalize(path.stem) == query else 1,
-            kinds.get(path.suffix.lower(), 2),
+            1 if path.is_dir() else kinds.get(path.suffix.lower(), 2),
             len(path.parts),
             p.lower(),
         )
@@ -349,9 +378,7 @@ def open_search_result(index):
     if not path.exists():
         print("Jarvis > O arquivo não existe mais.")
         return False
-    os.startfile(str(path))
-    print(f"Jarvis > Abrindo: {path}")
-    return True
+    return launch(path)
 
 
 def show_search_result(index):
@@ -565,7 +592,8 @@ def fast_local_router(user_text):
         return True
 
     # só "2" ou "o segundo" depois de uma busca
-    if last_results and re.fullmatch(rf"(?:o |a )?{ORDINAL}", clean):
+    RUN = r"(?:abre|abra|abrir|executa|execute|executar|roda|rode|rodar)"
+    if last_results and re.fullmatch(rf"(?:{RUN} )?(?:o |a )?{ORDINAL}(?: {RUN})?", clean):
         act("open_search_result", open_search_result, ordinal_to_number(clean))
         return True
 
@@ -708,11 +736,16 @@ def ask_ai_router(user_text):
         raw = (response.message.content or "").strip()
         data = json.loads(raw)
 
+        failed = []
         for action in data.get("actions", []):
-            execute_ai_action(action.get("name", ""), action.get("args", {}) or {})
+            name = action.get("name", "")
+            if execute_ai_action(name, action.get("args", {}) or {}) is False:
+                failed.append(name)
 
         reply = str(data.get("reply", "")).strip()
-        if reply:
+        if failed:
+            print(f"Jarvis > Não deu certo: {', '.join(failed)}.")
+        elif reply:
             print(f"Jarvis > {reply}")
 
         return True
