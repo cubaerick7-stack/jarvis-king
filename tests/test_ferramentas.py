@@ -306,3 +306,24 @@ def test_search_files_uses_everything_whole_pc(monkeypatch, tmp_path):
     monkeypatch.setattr(real, "SEARCH_ROOTS", [tmp_path / "nao-deve-varrer"])
     found = real.search_files("viagem")
     assert set(found) == {"D:\\Fotos\\viagem.jpg", "C:\\Users\\j\\viagem.txt"}
+
+
+def test_everything_closed_gets_started_once(monkeypatch):
+    calls = []
+
+    class Seq:
+        def __init__(self):
+            self.n = 0
+
+        def __call__(self, args, **kw):
+            self.n += 1
+            code = 8 if self.n == 1 else 0
+            return type("R", (), {"stdout": b"G:\\a.txt\n", "returncode": code})()
+
+    monkeypatch.setattr(F, "find_es", lambda: "es.exe")
+    monkeypatch.setattr(F.subprocess, "run", Seq())
+    monkeypatch.setattr(F, "start_everything", lambda: calls.append(1) or True)
+    import time
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    assert F.everything_search("a") == ["G:\\a.txt"]
+    assert calls == [1]

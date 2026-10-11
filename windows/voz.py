@@ -59,7 +59,8 @@ def missing():
 # ------------------------- modelo do Vosk -------------------------
 
 def _is_model(folder):
-    return (folder / "am").is_dir() and (folder / "conf").is_dir()
+    """Modelo novo (am/final.mdl) ou antigo, como o small-pt-0.3 (final.mdl solto na pasta)."""
+    return (folder / "am" / "final.mdl").is_file() or (folder / "final.mdl").is_file()
 
 
 def find_model(base=None):
@@ -68,9 +69,10 @@ def find_model(base=None):
     if _is_model(base):
         return base
     if base.is_dir():
-        for conf in sorted(base.glob("*/conf")) + sorted(base.glob("*/*/conf")):
-            if _is_model(conf.parent):
-                return conf.parent
+        for mdl in sorted(base.glob("*/final.mdl")) + sorted(base.glob("*/*/final.mdl")):
+            folder = mdl.parent.parent if mdl.parent.name == "am" else mdl.parent
+            if _is_model(folder):
+                return folder
     return None
 
 
@@ -178,13 +180,39 @@ def clean_for_speech(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
+def can_speak():
+    try:
+        import edge_tts  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _mci(command):
+    import ctypes
+    winmm = ctypes.windll.winmm
+    code = winmm.mciSendStringW(command, None, 0, None)
+    if code:
+        buf = ctypes.create_unicode_buffer(256)
+        winmm.mciGetErrorStringW(code, buf, 256)
+        raise RuntimeError(f"o Windows não tocou o áudio ({buf.value or code})")
+
+
 def _play_mp3(path):
     """Toca o MP3 pelo próprio Windows (MCI), sem instalar player."""
-    import ctypes
-    mci = ctypes.windll.winmm.mciSendStringW
-    mci(f'open "{path}" type mpegvideo alias jarvisvoz', None, 0, None)
-    mci("play jarvisvoz wait", None, 0, None)
-    mci("close jarvisvoz", None, 0, None)
+    alias = "jarvisvoz"
+    try:
+        _mci(f"close {alias}")  # se uma fala anterior ficou aberta
+    except RuntimeError:
+        pass
+    _mci(f'open "{path}" type mpegvideo alias {alias}')
+    try:
+        _mci(f"play {alias} wait")
+    finally:
+        try:
+            _mci(f"close {alias}")
+        except RuntimeError:
+            pass
 
 
 def say(text, on_state=None):
@@ -192,7 +220,8 @@ def say(text, on_state=None):
     if not text:
         return
     import edge_tts
-    path = Path(tempfile.gettempdir()) / "jarvis_fala.mp3"
+    # Um arquivo por fala: o anterior pode ainda estar preso pelo Windows.
+    path = Path(tempfile.gettempdir()) / f"jarvis_fala_{int(time.time() * 1000)}.mp3"
     # Thread própria: o asyncio do edge-tts não se mistura com o loop do navegador (Playwright).
     errors = []
 
@@ -217,6 +246,10 @@ def say(text, on_state=None):
         speaking.clear()
         if on_state:
             on_state("parado")
+        try:
+            path.unlink()
+        except OSError:
+            pass
 
 
 def beep():

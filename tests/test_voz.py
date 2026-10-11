@@ -67,7 +67,7 @@ def load_jarvis():
 def test_spoken_request_answers_out_loud(monkeypatch):
     j = load_jarvis()
     said, states = [], []
-    j.listener = object()
+    j.voice_out = True
     monkeypatch.setattr(j.V, "say", lambda text, on_state: said.append(text))
     monkeypatch.setattr(j, "set_state", states.append)
     monkeypatch.setattr(j, "think", lambda *a, **k: json.dumps({"actions": [], "reply": "Pois não, senhor. São 3 horas."}))
@@ -108,7 +108,7 @@ def test_reator_html_has_python_hooks():
 def test_model_found_inside_extra_folder(tmp_path):
     inner = tmp_path / "vosk-pt" / "vosk-model-small-pt-0.3"
     (inner / "am").mkdir(parents=True)
-    (inner / "conf").mkdir()
+    (inner / "am" / "final.mdl").write_bytes(b"x")
     assert V.find_model(tmp_path / "vosk-pt") == inner
     assert V.find_model(tmp_path / "vazio") is None
 
@@ -131,3 +131,27 @@ def test_strip_wake_word():
     assert V.strip_wake("Já vis toca lofi") == "toca lofi"
     assert V.strip_wake("Jarvis.") == ""
     assert V.strip_wake("toca jarvis") == "toca jarvis"
+
+
+def test_old_flat_model_layout_is_found(tmp_path):
+    flat = tmp_path / "vosk-pt"
+    flat.mkdir()
+    (flat / "final.mdl").write_bytes(b"x")
+    assert V.find_model(flat) == flat
+    nested = tmp_path / "outra" / "vosk-model-small-pt-0.3"
+    nested.mkdir(parents=True)
+    (nested / "final.mdl").write_bytes(b"x")
+    assert V.find_model(tmp_path / "outra") == nested
+
+
+def test_typed_request_is_spoken_too(monkeypatch):
+    j = load_jarvis()
+    said = []
+    j.voice_out = True
+    monkeypatch.setattr(j.V, "say", lambda text, on_state: said.append(text))
+    monkeypatch.setattr(j, "think", lambda *a, **k: json.dumps({"actions": [], "reply": "Pois não, senhor."}))
+    j.respond("me conta uma coisa")
+    assert said == ["Pois não, senhor."]
+    j.voice_out = False
+    j.respond("me conta outra")
+    assert said == ["Pois não, senhor."]

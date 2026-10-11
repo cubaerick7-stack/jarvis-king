@@ -945,6 +945,7 @@ YES = {"s", "sim", "pode", "confirmo", "y", "yes", "isso", "manda", "envia", "po
 commands = queue.Queue()  # (origem, texto) vindos do teclado e da voz; um só lugar executa tudo
 queue_mode = False  # ligado no main(); nos testes a confirmação usa input() direto
 listener = None  # voz.Listener quando a voz está ligada
+voice_out = False  # fala as respostas em voz alta (ligado no run() se o edge-tts estiver instalado)
 
 
 def confirm(question):
@@ -1474,7 +1475,8 @@ def set_state(state):
 
 
 def speak(text):
-    if listener is None:
+    """Fala em voz alta (voz Antônio). Desliga com --mudo."""
+    if not voice_out:
         return
     try:
         V.say(text, set_state)
@@ -1495,8 +1497,8 @@ def handle(text):
     ask_ai_router(text)
 
 
-def respond(text, spoken=False):
-    """Executa o pedido; mostra a última fala do Jarvis no reator e, se foi por voz, fala em voz alta."""
+def respond(text):
+    """Executa o pedido; mostra a última fala do Jarvis no reator e fala em voz alta."""
     set_state("pensando")
     tee = _Tee(sys.stdout)
     with contextlib.redirect_stdout(tee):
@@ -1508,14 +1510,14 @@ def respond(text, spoken=False):
         M.add_talk(text, said[-1] if said else "")
     except Exception:
         pass
-    if said and spoken:
+    if said and voice_out:
         speak(said[-1])
     else:
         set_state("parado")
 
 
 def handle_spoken(text):
-    respond(text, spoken=True)
+    respond(text)
 
 
 def keyboard_reader():
@@ -1558,8 +1560,11 @@ def start_voice():
 
 def run():
     """Laço do Jarvis: executa, um de cada vez, os pedidos digitados e falados."""
-    global queue_mode
+    global queue_mode, voice_out
     threading.Thread(target=warm_up_ai, daemon=True).start()
+    voice_out = "--mudo" not in sys.argv and V.can_speak()
+    if not voice_out and "--mudo" not in sys.argv:
+        print("Fala desligada: python -m pip install edge-tts")
     if "--sem-voz" not in sys.argv:
         start_voice()
     print("")
@@ -1587,7 +1592,7 @@ def run():
             print("Jarvis > Até mais.")
             break
         try:
-            respond(user_text, spoken=origin == "voz")
+            respond(user_text)
         except Exception as e:
             print(f"Jarvis > Erro: {e}")
             set_state("parado")

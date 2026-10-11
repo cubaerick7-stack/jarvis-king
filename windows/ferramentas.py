@@ -489,6 +489,30 @@ EVERYTHING_EXCLUDE = [
 ]
 
 
+EVERYTHING_CANDIDATES = [
+    Path(r"G:\Jarvis\tools\Everything\Everything.exe"),
+    Path(r"C:\Program Files\Everything\Everything.exe"),
+    Path(r"C:\Program Files (x86)\Everything\Everything.exe"),
+]
+_everything_started = False
+
+
+def start_everything():
+    """Abre o Everything escondido (perto do relógio) se ele estiver fechado. Só tenta uma vez."""
+    global _everything_started
+    if _everything_started:
+        return False
+    _everything_started = True
+    for exe in EVERYTHING_CANDIDATES:
+        if exe.exists():
+            try:
+                subprocess.Popen([str(exe), "-startup"], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                return True
+            except OSError:
+                return False
+    return False
+
+
 def find_es():
     custom = os.environ.get("JARVIS_ES", "").strip()
     if custom and Path(custom).exists():
@@ -515,12 +539,23 @@ def everything_search(query, limit=400, extension=None):
         return None
     terms = [f"ext:{extension.lstrip('.')}"] if extension else str(query).split()
     terms += [f'!"{p}"' for p in EVERYTHING_EXCLUDE]
-    try:
-        r = subprocess.run([exe, "-n", str(limit), *terms], capture_output=True, timeout=10,
-                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if r.returncode != 0:  # Everything fechado: o es.exe não consegue perguntar
+
+    def ask():
+        try:
+            return subprocess.run([exe, "-n", str(limit), *terms], capture_output=True, timeout=10,
+                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+
+    r = ask()
+    if r is not None and r.returncode != 0 and start_everything():
+        import time
+        for _ in range(8):  # o Everything leva uns segundos para carregar o índice
+            time.sleep(1)
+            r = ask()
+            if r is not None and r.returncode == 0:
+                break
+    if r is None or r.returncode != 0:  # Everything fechado: o es.exe não consegue perguntar
         return None
     return [line.strip() for line in _decode(r.stdout).splitlines() if line.strip()]
 
