@@ -82,3 +82,50 @@ def test_file_search_ignores_accents(jarvis, tmp_path, monkeypatch):
     monkeypatch.setattr(real, "SEARCH_ROOTS", [tmp_path])
     found = real.search_files("relatorio")
     assert [Path(p).name for p in found] == ["Relatório Final.pdf"]
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("2", [("open_search_result", (2,))]),
+    ("o segundo", [("open_search_result", (2,))]),
+    ("executa o 3", [("open_search_result", (3,))]),
+    ("executa o omori.exe", [("open_target", ("omori.exe",))]),
+    ("roda o omori", [("open_target", ("omori",))]),
+])
+def test_router_programs(jarvis, text, expected):
+    assert route(jarvis, text) == expected
+
+
+def load_real():
+    spec = importlib.util.spec_from_file_location("jarvis_real", ROOT / "windows" / "jarvis_ai.py")
+    real = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(real)
+    return real
+
+
+def make_omori(tmp_path):
+    game = tmp_path / "Nova pasta" / "OMORIES"
+    (game / "www" / "fonts").mkdir(parents=True)
+    (game / "www" / "fonts" / "OMORI_GAME.ttf").write_text("x")
+    (game / "OMORIgame.exe").write_text("x")
+    (game / "OMORI.exe").write_text("x")
+    (tmp_path / "Nova pasta" / "A").mkdir()
+    (tmp_path / "Nova pasta" / "A" / "OMORI.lnk").write_text("x")
+    return game
+
+
+def test_find_program_prefers_shortcut_then_exe(tmp_path, monkeypatch):
+    real = load_real()
+    make_omori(tmp_path)
+    monkeypatch.setattr(real, "PROGRAM_ROOTS", [tmp_path])
+    assert real.find_program("omori.exe").name == "OMORI.lnk"
+    assert real.find_program("omorie").name == "OMORI.lnk"  # erro de digitação
+    assert real.find_program("jogo que nao existe") is None
+
+
+def test_search_ranks_exact_name_and_programs_first(tmp_path, monkeypatch):
+    real = load_real()
+    make_omori(tmp_path)
+    monkeypatch.setattr(real, "SEARCH_ROOTS", [tmp_path])
+    names = [Path(p).name for p in real.search_files("omori")]
+    assert names[:2] == ["OMORI.lnk", "OMORI.exe"]
+    assert names[-1] == "OMORI_GAME.ttf"

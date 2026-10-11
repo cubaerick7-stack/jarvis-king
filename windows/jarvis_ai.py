@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import ctypes
+import difflib
 import json
 import os
 import platform
@@ -27,6 +28,7 @@ except ImportError:
 
 MODEL = "qwen3:1.7b"
 MAX_RESULTS = 20
+MAX_SCAN = 400  # quantos achados juntar antes de ordenar
 SCREENSHOT_DIR = Path(r"G:\Jarvis\screenshots")
 ACTION_LOG = Path(r"G:\Jarvis\logs\acoes.log")
 SEARCH_ROOTS = [
@@ -35,6 +37,13 @@ SEARCH_ROOTS = [
     Path.home() / "Downloads",
     Path.home() / "Documents",
 ]
+PROGRAM_ROOTS = [
+    Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs",
+    Path(os.environ.get("PROGRAMDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs",
+    Path.home() / "Desktop",
+    Path(r"G:\\"),
+]
+PROGRAM_EXTS = (".lnk", ".exe", ".url")
 last_results = []
 
 
@@ -205,6 +214,12 @@ def open_target(target):
         print("Jarvis > Calculadora aberta.")
         return True
 
+    program = find_program(original)
+    if program:
+        os.startfile(str(program))
+        print(f"Jarvis > Abrindo {program}")
+        return True
+
     need_pyautogui()
     pyautogui.press("win")
     time.sleep(0.4)
@@ -213,6 +228,40 @@ def open_target(target):
     pyautogui.press("enter")
     print(f"Jarvis > Tentando abrir {original}.")
     return True
+
+
+def find_program(name):
+    """Procura um atalho (.lnk/.url) ou .exe cujo nome seja igual ou bem parecido com o pedido.
+    Prefere atalho, depois .exe, depois o caminho mais curto."""
+    wanted = normalize(re.sub(r"\.(exe|lnk|url)$", "", str(name).strip(), flags=re.I))
+    if not wanted:
+        return None
+    best = None
+    for root in PROGRAM_ROOTS:
+        if not str(root) or not root.exists():
+            continue
+        try:
+            for path in root.rglob("*"):
+                try:
+                    if path.suffix.lower() not in PROGRAM_EXTS or not path.is_file():
+                        continue
+                except OSError:
+                    continue
+                stem = normalize(path.stem)
+                if stem == wanted:
+                    closeness = 0
+                elif difflib.SequenceMatcher(None, stem, wanted).ratio() >= 0.8:
+                    closeness = 1
+                else:
+                    continue
+                key = (closeness, PROGRAM_EXTS.index(path.suffix.lower()), len(str(path)))
+                if best is None or key < best[0]:
+                    best = (key, path)
+        except (PermissionError, OSError):
+            continue
+        if best and best[0][0] == 0:
+            break
+    return best[1] if best else None
 
 
 def search_web(query, site="google"):
@@ -252,15 +301,16 @@ def search_files(query):
                         if p not in seen:
                             seen.add(p)
                             found.append(p)
-                        if len(found) >= MAX_RESULTS:
+                        if len(found) >= MAX_SCAN:
                             break
                 except (PermissionError, OSError):
                     continue
         except (PermissionError, OSError):
             pass
-        if len(found) >= MAX_RESULTS:
+        if len(found) >= MAX_SCAN:
             break
 
+    found = rank_results(found, query_low)[:MAX_RESULTS]
     last_results = found
 
     if not found:
@@ -271,6 +321,23 @@ def search_files(query):
     for i, p in enumerate(found, 1):
         print(f"  {i}. {p}")
     return found
+
+
+def rank_results(paths, query):
+    """Nome igual ao pedido primeiro, depois atalhos/programas, depois documentos, depois o resto;
+    dentro de cada grupo, os mais perto da raiz."""
+    kinds = {".lnk": 0, ".exe": 0, ".url": 0, ".pdf": 1, ".docx": 1, ".doc": 1, ".txt": 1, ".xlsx": 1}
+
+    def key(p):
+        path = Path(p)
+        return (
+            0 if normalize(path.stem) == query else 1,
+            kinds.get(path.suffix.lower(), 2),
+            len(path.parts),
+            p.lower(),
+        )
+
+    return sorted(paths, key=key)
 
 
 def open_search_result(index):
@@ -497,9 +564,14 @@ def fast_local_router(user_text):
             act("show_search_result", show_search_result, n)
         return True
 
+    # só "2" ou "o segundo" depois de uma busca
+    if last_results and re.fullmatch(rf"(?:o |a )?{ORDINAL}", clean):
+        act("open_search_result", open_search_result, ordinal_to_number(clean))
+        return True
+
     # "abre o terceiro", "abre o 2", "abre ele"
     if last_results and (
-        re.match(rf"^(?:abre|abra|abrir)\s+(?:o|a)\s+{ORDINAL}\b", clean)
+        re.match(rf"^(?:abre|abra|abrir|executa|execute|roda|rode)\s+(?:o|a)\s+{ORDINAL}\b", clean)
         or any(x in clean for x in ["abre ele", "abre o arquivo", "abre esse"])
     ):
         n = ordinal_to_number(clean)
@@ -510,7 +582,7 @@ def fast_local_router(user_text):
         return True
 
     # abrir apps/sites
-    m = re.match(r"^(?:abre|abra|abrir|inicia|inicie)\s+(?:o\s+|a\s+)?(.+?)(?:\s+pra mim|\s+para mim)?$", text, flags=re.I)
+    m = re.match(r"^(?:abre|abra|abrir|inicia|inicie|executa|execute|roda|rode|joga|jogar)\s+(?:o\s+|a\s+)?(.+?)(?:\s+pra mim|\s+para mim)?$", text, flags=re.I)
     if m:
         act("open_target", open_target, m.group(1).strip(" ."))
         return True
@@ -573,6 +645,9 @@ take_screenshot {}
 system_info {}
 
 Regras:
+- abrir, executar, rodar ou jogar um programa/jogo = open_target
+- um número sozinho ("2") depois de uma busca = open_search_result com esse índice
+- system_info só quando pedirem RAM, CPU ou disco
 - metade do volume = 50
 - pode retornar várias actions
 - não invente ações
@@ -606,6 +681,13 @@ def execute_ai_action(name, args):
         return False
 
 
+def ai_context():
+    if not last_results:
+        return ""
+    lines = "\n".join(f"{i}. {Path(p).name}" for i, p in enumerate(last_results[:10], 1))
+    return f"Resultados da última busca:\n{lines}\n\nPedido: "
+
+
 def ask_ai_router(user_text):
     if chat is None:
         print("Jarvis > Instale ollama: python -m pip install ollama")
@@ -616,7 +698,7 @@ def ask_ai_router(user_text):
             model=MODEL,
             messages=[
                 {"role": "system", "content": AI_PROMPT},
-                {"role": "user", "content": user_text},
+                {"role": "user", "content": ai_context() + user_text},
             ],
             format="json",
             think=False,
