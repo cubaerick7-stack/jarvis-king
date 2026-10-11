@@ -28,6 +28,7 @@ except ImportError:
 MODEL = "qwen3:1.7b"
 MAX_RESULTS = 20
 SCREENSHOT_DIR = Path(r"G:\Jarvis\screenshots")
+ACTION_LOG = Path(r"G:\Jarvis\logs\acoes.log")
 SEARCH_ROOTS = [
     Path(r"G:\\"),
     Path.home() / "Desktop",
@@ -48,6 +49,16 @@ def clean_prefix(text):
     return re.sub(r"^\s*(jarvis|mn|mano)[\s,:-]*", "", text, flags=re.I).strip()
 
 
+def log_action(name, detail=""):
+    """Registra cada ação executada (horário, ação, detalhe). Nunca interrompe o Jarvis."""
+    try:
+        ACTION_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with ACTION_LOG.open("a", encoding="utf-8") as f:
+            f.write(f"{datetime.now().isoformat(timespec='seconds')}\t{name}\t{detail}\n")
+    except Exception:
+        pass
+
+
 def need_pyautogui():
     if pyautogui is None:
         raise RuntimeError("Instale pyautogui: python -m pip install pyautogui")
@@ -61,6 +72,11 @@ def ordinal_to_number(text):
         "terceiro": 3, "terceira": 3,
         "quarto": 4, "quarta": 4,
         "quinto": 5, "quinta": 5,
+        "sexto": 6, "sexta": 6,
+        "setimo": 7, "setima": 7,
+        "oitavo": 8, "oitava": 8,
+        "nono": 9, "nona": 9,
+        "decimo": 10, "decima": 10,
     }
     m = re.search(r"\b(\d+)\b", clean)
     if m:
@@ -214,7 +230,7 @@ def search_web(query, site="google"):
 def search_files(query):
     global last_results
     query_original = str(query).strip()
-    query_low = query_original.lower()
+    query_low = normalize(query_original)
     extension = None
     if query_low in {"pdf", "docx", "txt", "jpg", "jpeg", "png", "mp3", "mp4"}:
         extension = "." + query_low
@@ -230,7 +246,7 @@ def search_files(query):
                 try:
                     if not path.is_file():
                         continue
-                    matched = path.suffix.lower() == extension if extension else query_low in path.name.lower()
+                    matched = path.suffix.lower() == extension if extension else query_low in normalize(path.name)
                     if matched:
                         p = str(path)
                         if p not in seen:
@@ -343,6 +359,15 @@ def media_control(action):
     return True
 
 
+def is_own_console_in_front():
+    try:
+        k32, u32 = ctypes.windll.kernel32, ctypes.windll.user32
+        own = k32.GetConsoleWindow()
+        return bool(own) and own == u32.GetForegroundWindow()
+    except Exception:
+        return False
+
+
 def window_control(action):
     need_pyautogui()
     action = normalize(action)
@@ -351,6 +376,9 @@ def window_control(action):
     elif action == "maximizar":
         pyautogui.hotkey("win", "up")
     elif action == "fechar":
+        if is_own_console_in_front():
+            print("Jarvis > A janela da frente é o próprio Jarvis; não vou fechá-la.")
+            return False
         pyautogui.hotkey("alt", "f4")
     elif action == "trocar":
         pyautogui.hotkey("alt", "tab")
@@ -386,38 +414,63 @@ def take_screenshot():
 
 # ========================= ROTEADOR LOCAL =========================
 
+ORDINAL = r"(primeir[oa]|segund[oa]|terceir[oa]|quart[oa]|quint[oa]|sext[oa]|setim[oa]|oitav[oa]|non[oa]|decim[oa]|\d+)"
+
+
+def act(name, fn, *args):
+    log_action(name, " ".join(str(a) for a in args))
+    return fn(*args)
+
+
 def fast_local_router(user_text):
     text = clean_prefix(user_text)
     clean = normalize(text)
 
+    # volume relativo ("aumenta o volume em 10") vem antes do volume exato
+    up = re.search(r"\b(aumenta|sobe|aumente|suba)\b.*\b(volume|som)\b", clean)
+    down = re.search(r"\b(abaixa|diminui|reduz|abaixe|diminua|reduza)\b.*\b(volume|som)\b", clean)
+    if up or down:
+        m = re.search(r"\b(\d{1,3})\b", clean)
+        step = int(m.group(1)) if m else 10
+        act("change_volume", change_volume, step if up else -step)
+        return True
+
     # volume exato / metade
     if "metade" in clean and ("volume" in clean or "som" in clean or "deixa" in clean):
-        set_volume(50)
+        act("set_volume", set_volume, 50)
         return True
 
     m = re.search(r"(?:volume|som).{0,20}?\b(\d{1,3})\s*%?", clean)
     if m:
-        set_volume(int(m.group(1)))
+        act("set_volume", set_volume, int(m.group(1)))
         return True
 
     if any(x in clean for x in ["qual o volume", "quanto ta o volume", "quanto esta o volume", "volume atual"]):
-        get_volume()
-        return True
-
-    if any(x in clean for x in ["muta o volume", "muta o som", "mute o volume", "mute o som", "sem som", "silencia o som"]):
-        mute_audio(True)
+        act("get_volume", get_volume)
         return True
 
     if any(x in clean for x in ["desmuta", "tira do mudo", "ativa o som", "liga o som"]):
-        mute_audio(False)
+        act("mute_audio", mute_audio, False)
         return True
 
-    if any(x in clean for x in ["aumenta o volume", "sobe o volume"]):
-        change_volume(10)
+    if any(x in clean for x in ["muta o volume", "muta o som", "mute o volume", "mute o som", "sem som", "silencia o som"]):
+        act("mute_audio", mute_audio, True)
         return True
 
-    if any(x in clean for x in ["abaixa o volume", "diminui o volume", "reduz o volume"]):
-        change_volume(-10)
+    # pesquisa web (antes da busca de arquivos, que também começa com "procura"/"busca")
+    m = re.match(r"^(?:pesquisa|pesquise|procura|procure|busca|busque)\s+no\s+youtube\s+(.+)$", text, flags=re.I)
+    if m:
+        act("search_web", search_web, m.group(1), "youtube")
+        return True
+
+    m = re.match(r"^(?:procura|procure|busca|busque|pesquisa|pesquise)\s+(?:na internet|no google)\s+(.+)$", text, flags=re.I)
+    if m:
+        act("search_web", search_web, m.group(1), "google")
+        return True
+
+    m = re.match(r"^(?:pesquisa|pesquise)\s+(.+)$", text, flags=re.I)
+    if m:
+        act("search_web", search_web, m.group(1), "google")
         return True
 
     # arquivos
@@ -429,71 +482,68 @@ def fast_local_router(user_text):
         if m:
             query = re.sub(r"\s+(pra mim|para mim)$", "", m.group(1).strip()).strip()
             query = re.sub(r"^(um|uma)\s+", "", query).strip()
-            search_files(query)
+            act("search_files", search_files, query)
             return True
 
-    if last_results and any(x in clean for x in ["abre o primeiro", "abra o primeiro", "abre o segundo", "abre o terceiro", "abre ele", "abre o arquivo"]):
+    # resultados da última busca: "mostra o segundo na pasta", "onde ele está"
+    if last_results and (
+        re.search(rf"\bmostra\b.*\b{ORDINAL}\b", clean)
+        or any(x in clean for x in ["mostra na pasta", "mostra ele na pasta", "onde ele esta", "onde esta o arquivo"])
+    ):
         n = ordinal_to_number(clean)
         if n is None:
             print("Jarvis > Qual resultado?")
         else:
-            open_search_result(n)
+            act("show_search_result", show_search_result, n)
         return True
 
-    if last_results and any(x in clean for x in ["mostra o primeiro", "mostra na pasta", "mostra ele na pasta", "onde ele esta", "onde esta o arquivo"]):
+    # "abre o terceiro", "abre o 2", "abre ele"
+    if last_results and (
+        re.match(rf"^(?:abre|abra|abrir)\s+(?:o|a)\s+{ORDINAL}\b", clean)
+        or any(x in clean for x in ["abre ele", "abre o arquivo", "abre esse"])
+    ):
         n = ordinal_to_number(clean)
         if n is None:
             print("Jarvis > Qual resultado?")
         else:
-            show_search_result(n)
+            act("open_search_result", open_search_result, n)
         return True
 
     # abrir apps/sites
     m = re.match(r"^(?:abre|abra|abrir|inicia|inicie)\s+(?:o\s+|a\s+)?(.+?)(?:\s+pra mim|\s+para mim)?$", text, flags=re.I)
     if m:
-        open_target(m.group(1).strip(" ."))
-        return True
-
-    # pesquisa web
-    m = re.match(r"^(?:pesquisa no youtube|procura no youtube|busca no youtube)\s+(.+)$", text, flags=re.I)
-    if m:
-        search_web(m.group(1), "youtube")
-        return True
-
-    m = re.match(r"^(?:pesquisa|pesquise|procura na internet|busca na internet)\s+(.+)$", text, flags=re.I)
-    if m:
-        search_web(m.group(1), "google")
+        act("open_target", open_target, m.group(1).strip(" ."))
         return True
 
     # mídia
-    if clean in {"play", "pause", "pausa", "continua"}:
-        media_control("play_pause")
+    if re.match(r"^(play|pause|pausa|pausar|continua|continuar|despausa|toca)\b", clean):
+        act("media_control", media_control, "play_pause")
         return True
-    if any(x in clean for x in ["proxima musica", "proxima faixa"]):
-        media_control("next")
+    if any(x in clean for x in ["proxima musica", "proxima faixa", "pula a musica", "pula essa"]):
+        act("media_control", media_control, "next")
         return True
-    if any(x in clean for x in ["musica anterior", "faixa anterior"]):
-        media_control("previous")
+    if any(x in clean for x in ["musica anterior", "faixa anterior", "volta a musica"]):
+        act("media_control", media_control, "previous")
         return True
 
     # janelas e sistema
     if "minimiza" in clean:
-        window_control("minimizar")
+        act("window_control", window_control, "minimizar")
         return True
     if "maximiza" in clean:
-        window_control("maximizar")
+        act("window_control", window_control, "maximizar")
         return True
     if any(x in clean for x in ["mostra o desktop", "area de trabalho"]):
-        window_control("desktop")
+        act("window_control", window_control, "desktop")
         return True
     if any(x in clean for x in ["troca de janela", "outra janela"]):
-        window_control("trocar")
+        act("window_control", window_control, "trocar")
         return True
     if any(x in clean for x in ["quanta ram", "quanto de ram", "espaco no disco", "informacoes do pc"]):
-        system_info()
+        act("system_info", system_info)
         return True
     if any(x in clean for x in ["tira um print", "tira print", "captura a tela", "faz um print"]):
-        take_screenshot()
+        act("take_screenshot", take_screenshot)
         return True
 
     return False
@@ -548,6 +598,7 @@ def execute_ai_action(name, args):
     if not fn:
         print(f"Jarvis > Ação desconhecida: {name}")
         return False
+    log_action(f"ia:{name}", json.dumps(args, ensure_ascii=False))
     try:
         return fn()
     except Exception as e:

@@ -45,3 +45,14 @@ TESTE:
    mostra o primeiro na pasta
    abre a calculadora
    abre youtube
+
+TESTES AUTOMATICOS
+   python -m pip install pytest
+   python -m pytest -q
+
+Os testes simulam as acoes (nao mexem no volume nem abrem nada),
+entao rodam em qualquer PC e tambem no GitHub a cada push.
+
+LOG
+Toda acao executada fica registrada em G:\Jarvis\logs\acoes.log
+(horario, acao e detalhe), inclusive as escolhidas pelo Qwen.
