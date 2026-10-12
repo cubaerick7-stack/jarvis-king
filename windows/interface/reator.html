@@ -67,8 +67,8 @@ input::placeholder { color: var(--muted); }
   .reator { position: fixed; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; border-radius: 50%;
     box-shadow: inset 0 0 0 1px rgba(95, 230, 240, .22), inset 0 0 28px rgba(95, 230, 240, .08); }
   .botoes { position: fixed; top: 9%; left: 50%; transform: translateX(-50%); z-index: 2;
-    opacity: 0; transition: opacity .25s; }
-  body:hover .botoes, .botoes:focus-within { opacity: 1; }
+    opacity: 0; transition: opacity .25s; pointer-events: none; }
+  body:hover .botoes, .botoes:focus-within { opacity: 1; pointer-events: auto; }
   .botoes button { width: 24px; height: 20px; font-size: 14px; border-radius: 4px; background: rgba(2, 8, 11, .7); }
 }
 </style>
@@ -244,6 +244,8 @@ window.mostraNome = (nome) => {
 
 // Botões e caixa de texto falam com o Python (ui.py -> Api)
 const api = () => (window.pywebview && window.pywebview.api) || null;
+// Apertar o – ou o × não começa a arrastar a janela (senão, ao soltar depois de arrastar, fecharia o Jarvis)
+document.querySelector('.botoes').addEventListener('mousedown', (e) => e.stopPropagation());
 document.getElementById('fechar').onclick = () => api() && api().fechar();
 document.getElementById('minimizar').onclick = () => api() && api().minimizar();
 const campo = document.getElementById('pedido');
