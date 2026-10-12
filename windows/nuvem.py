@@ -226,6 +226,7 @@ def groq_generate(system, user, json_mode=False, max_tokens=2048, temperature=0.
 # ------------------------- ouvir (voz -> texto) -------------------------
 GROQ_STT = "https://api.groq.com/openai/v1/audio/transcriptions"
 STT_MODEL = "whisper-large-v3-turbo"
+STT_PROMPT = "Bolha"  # o nome do assistente, para o Whisper escrever certo (a voz.py troca)
 
 
 def _multipart(fields, filename, content, mime):
@@ -252,7 +253,7 @@ def _plain(text):
 
 def _groq_transcribe(wav, key):
     body, ctype = _multipart({"model": STT_MODEL, "language": "pt", "temperature": "0",
-                              "response_format": "verbose_json", "prompt": "Jarvis"},
+                              "response_format": "verbose_json", "prompt": STT_PROMPT},
                              "fala.wav", wav, "audio/wav")
     req = urllib.request.Request(GROQ_STT, data=body, method="POST", headers={
         "Content-Type": ctype, "Authorization": f"Bearer {key}", "User-Agent": "jarvis/1.0"})

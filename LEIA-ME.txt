@@ -3,7 +3,7 @@ JARVIS PARA WINDOWS
 Assistente de voz e texto: comandos rapidos rodam direto no Python
 (volume, arquivos, programas, midia) e o resto vai para a IA na nuvem
 (Gemini, com o Groq de reserva). Ele fala com a voz Antonio e acorda
-quando voce diz "Jarvis".
+quando voce diz o nome dele: "Bolha".
 
 PASSO A PASSO (primeira vez)
 
@@ -28,7 +28,7 @@ PASSO A PASSO (primeira vez)
    (ou: powershell -ExecutionPolicy Bypass -File iniciar.ps1)
 
    O reator aparece no canto da tela e o console mostra
-   "Voz ligada (nome do microfone)". Diga "Jarvis, toca lofi".
+   "Voz ligada (nome do microfone)". Diga "Bolha, toca lofi".
 
 ATUALIZAR (quando tiver versao nova no GitHub)
 
@@ -122,23 +122,25 @@ Fica em G:\Jarvis\config\memoria.json (so no seu PC).
 Ele lembra as ultimas falas, entao "e amanha?" funciona.
 Se voce repete algo no mesmo horario em 3 dias diferentes, ele sugere ao abrir.
 
-INTERFACE (O REATOR)
+INTERFACE (A BOLHA)
 1. python -m pip install pywebview
-2. Ao abrir o Jarvis, o painel vertical com o reator aparece no canto da tela.
-   Da para digitar o pedido na caixa de baixo. "–" minimiza, "×" fecha o Jarvis.
+2. Ao abrir, so o circulo do reator aparece no canto da tela, sempre por cima.
    Parado ele gira devagar; ouvindo ondula; pensando pulsa; falando pulsa com a voz.
-   A ultima resposta aparece embaixo dele, e a musica tocando vira um cartao.
-   Arraste pelo titulo ou pelo reator para mudar de lugar.
+   Arraste o circulo para mudar de lugar. Passe o mouse em cima para ver
+   o "–" (minimiza) e o "×" (fecha). As respostas sao faladas e aparecem no console.
+Quer o painel antigo (titulo, respostas escritas, cartoes e caixa de pedido)?
+   setx JARVIS_TELA painel      (e abra o PowerShell de novo)
 Para abrir sem a janela:  python windows\jarvis_ai.py --sem-tela
 
-VOZ ("JARVIS", BIPE, PEDIDO)
+VOZ ("BOLHA", BIPE, PEDIDO)
 1. python -m pip install vosk sounddevice edge-tts
 2. Na primeira vez o Jarvis baixa sozinho o modelo de voz (uns 30 MB) para
    G:\Jarvis\modelos\vosk-pt. Se voce ja tinha baixado, pode deixar a pasta
    do zip dentro dela: ele acha.
 3. Para entender o pedido ele usa o Whisper do Groq (GROQ_API_KEY) ou o Gemini.
-4. Diga "Jarvis, toca lofi" de uma vez, ou "Jarvis", espere o bipe e fale.
+4. Diga "Bolha, toca lofi" de uma vez, ou "Bolha", espere o bipe e fale.
    Ele responde com a voz Antonio. Digitar continua funcionando junto.
+   Outro nome? setx JARVIS_NOME Jarvis   (ou o nome que quiser; abra o PowerShell de novo)
 Microfone mudo? Configuracoes > Privacidade > Microfone > ligue
 "Permitir que aplicativos da area de trabalho acessem o microfone"
 (o Jarvis abre essa tela sozinho quando percebe o microfone mudo).

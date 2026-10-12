@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Voz do Jarvis.
 
-- Ouvir "Jarvis": Vosk, no próprio PC (grátis, leve). O modelo pequeno de português é
-  baixado sozinho na primeira vez para G:\\Jarvis\\modelos\\vosk-pt (uns 30 MB).
+- Ouvir o nome dele ("Bolha"; troque com  setx JARVIS_NOME Jarvis): Vosk, no próprio PC (grátis, leve).
+  O modelo pequeno de português é baixado sozinho na primeira vez para G:\\Jarvis\\modelos\\vosk-pt (uns 30 MB).
 - Entender o pedido: Whisper no Groq (ou o Gemini, se não houver chave do Groq).
 - Falar: edge-tts com a voz Antônio, mais grave e calma, como um mordomo.
 
@@ -37,7 +37,9 @@ RATE, PITCH = "-6%", "-8Hz"  # um pouco mais devagar e mais grave
 SAMPLE_RATE = 16000
 BLOCK = 1600  # 0,1 s de áudio
 # Como o Vosk em português pode escrever "Jarvis" (a palavra em inglês não está no vocabulário dele).
-WAKE_WORDS = ["jarvis", "jarbas", "javis", "jarves", "jervis", "jarvi", "jarve", "garvis", "jarvas", "jabis"]
+JARVIS_VOSK = ["jarvis", "jarbas", "javis", "jarves", "jervis", "jarvi", "jarve", "garvis", "jarvas", "jabis"]
+# O Whisper escreve "Jarvis" certinho; estes são os jeitos que ele ainda erra.
+JARVIS_WHISPER = {"jarvis", "jarbas", "jarbis", "javis", "jarves", "jervis", "jarvi", "jarvas", "garvis"}
 MAX_COMMAND = 10.0  # segundos
 END_SILENCE = 1.2  # segundos de silêncio que encerram o pedido
 NO_SPEECH = 5.0  # desiste se você não falar nada
@@ -168,7 +170,7 @@ def record_command(read_block, noise=300.0, before=(), recalibrate=False):
 
 
 def strip_wake(text):
-    """Tira o "Jarvis" do começo do que foi transcrito."""
+    """Tira o nome ("Bolha, ...") do começo do que foi transcrito."""
     words = (text or "").strip().split()
     if words and is_wake(words[0]):
         words = words[1:]
@@ -177,35 +179,55 @@ def strip_wake(text):
     return " ".join(words).strip(" ,.!?;:-")
 
 
-def _sounds_like_jarvis(word):
-    return word in WAKE_WORDS or (len(word) >= 4 and max(
-        difflib.SequenceMatcher(None, word, w).ratio() for w in ("jarvis", "jarbas")) >= 0.8)
-
-
-def is_wake(text):
-    """True se a frase tem "Jarvis" (ou o jeito que o reconhecedor escreve), junto ou separado."""
-    plain = "".join(c for c in unicodedata.normalize("NFKD", (text or "").lower()) if not unicodedata.combining(c))
-    words = re.findall(r"\w+", plain)
-    pairs = [a + b for a, b in zip(words, words[1:])]  # "já vis" -> "javis"
-    return any(_sounds_like_jarvis(w) for w in words + pairs)
-
-
-# O Whisper escreve "Jarvis" certinho; o Vosk (sem "Jarvis" no vocabulário) só dá um palpite.
-WHISPER_WAKE = {"jarvis", "jarbas", "jarbis", "javis", "jarves", "jervis", "jarvi", "jarvas", "garvis"}
-
-
 def _plain(word):
     return re.sub(r"[^a-z]", "", "".join(
         c for c in unicodedata.normalize("NFKD", word.lower()) if not unicodedata.combining(c)))
 
 
+NAME, WAKE_WORDS, WHISPER_WAKE, FUZZY_WAKE = "", set(), set(), False
+
+
+def set_name(name):
+    """O nome que acorda o assistente. "Jarvis" (inglês) vem escrito de vários jeitos, então é
+    comparado por semelhança; um nome em português ("Bolha") o Vosk e o Whisper escrevem certo, e
+    só vale igualzinho (senão "olha" e "bola", que aparecem toda hora, acordariam ele)."""
+    global NAME, WAKE_WORDS, WHISPER_WAKE, FUZZY_WAKE
+    NAME = str(name or "").strip()
+    key = _plain(NAME)
+    if not key:  # vazio ou sem letras: volta ao padrão
+        NAME, key = "Bolha", "bolha"
+    FUZZY_WAKE = key == "jarvis"
+    if FUZZY_WAKE:
+        WAKE_WORDS, WHISPER_WAKE = set(JARVIS_VOSK), set(JARVIS_WHISPER)
+    else:
+        WAKE_WORDS = WHISPER_WAKE = {key, key + "s"}  # "Bolha" e "Bolhas"
+    N.STT_PROMPT = NAME  # o Whisper escreve o nome do jeito certo
+
+
+set_name(os.environ.get("JARVIS_NOME", "Bolha"))
+
+
+def _sounds_like_name(word):
+    return word in WAKE_WORDS or (FUZZY_WAKE and len(word) >= 4 and max(
+        difflib.SequenceMatcher(None, word, w).ratio() for w in ("jarvis", "jarbas")) >= 0.8)
+
+
+def is_wake(text):
+    """True se a frase tem o nome (ou o jeito que o reconhecedor escreve), junto ou separado."""
+    plain = "".join(c for c in unicodedata.normalize("NFKD", (text or "").lower()) if not unicodedata.combining(c))
+    words = re.findall(r"\w+", plain)
+    pairs = [a + b for a, b in zip(words, words[1:])]  # "já vis" -> "javis"
+    return any(_sounds_like_name(w) for w in words + pairs)
+
+
 def after_wake(text):
-    """O pedido que vem depois do "Jarvis" na transcrição. None se o Whisper não ouviu "Jarvis":
+    """O pedido que vem depois do nome na transcrição. None se o Whisper não ouviu o nome:
     aí foi conversa de fundo, a TV ou o próprio vídeo ("eu já vi esse..."), e não é para obedecer."""
     words = (text or "").split()
     plain = [_plain(w) for w in words]
     for i, p in enumerate(plain):
-        if p in WHISPER_WAKE or (len(p) >= 5 and difflib.SequenceMatcher(None, p, "jarvis").ratio() >= 0.8):
+        if p in WHISPER_WAKE or (FUZZY_WAKE and len(p) >= 5
+                                 and difflib.SequenceMatcher(None, p, "jarvis").ratio() >= 0.8):
             return " ".join(words[i + 1:]).strip(" ,.!?;:-")
         if i + 1 < len(plain) and p + plain[i + 1] in WHISPER_WAKE:  # "Já vis, toca lofi"
             return " ".join(words[i + 2:]).strip(" ,.!?;:-")
@@ -326,7 +348,7 @@ def duck(level=DUCK_LEVEL):
 # ------------------------- ouvir -------------------------
 
 class Listener(threading.Thread):
-    """Fica ouvindo "Jarvis"; depois grava o pedido e manda o texto para put(("voz", texto))."""
+    """Fica ouvindo o nome dele; depois grava o pedido e manda o texto para put(("voz", texto))."""
 
     def __init__(self, put, on_state=None, model_path=None):
         super().__init__(daemon=True)
@@ -381,7 +403,7 @@ class Listener(threading.Thread):
         except Exception:
             pass
         SetLogLevel(-1)
-        # Sem gramática: o modelo escreve o que ouviu e is_wake() reconhece "Jarvis" de vários jeitos.
+        # Sem gramática: o modelo escreve o que ouviu e is_wake() procura o nome nisso.
         rec = KaldiRecognizer(Model(str(self.model_path)), SAMPLE_RATE)
         noise, silent_blocks, warned = 300.0, 0, False
         recent = collections.deque(maxlen=PRE_BUFFER)
@@ -443,12 +465,12 @@ class Listener(threading.Thread):
                 if text is None:
                     continue
                 command = after_wake(text)
-                if command is None:  # o Whisper não ouviu "Jarvis": era conversa, TV ou vídeo
+                if command is None:  # o Whisper não ouviu o nome: era conversa, TV ou vídeo
                     if DEBUG:
-                        print(f"[ignorado, sem \"Jarvis\"] {text}")
+                        print(f"[ignorado, sem \"{NAME}\"] {text}")
                     self.on_state("parado")
                     continue
-                if not command:  # só disse "Jarvis": o pedido vem logo depois (a fila guardou o áudio)
+                if not command:  # só disse o nome: o pedido vem logo depois (a fila guardou o áudio)
                     command = strip_wake(self._hear(read_block, noise) or "")
                 if command:
                     self.put(("voz", command))

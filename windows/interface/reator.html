@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<title>J.A.R.V.I.S.</title>
+<title>Jarvis</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600&family=Share+Tech+Mono&display=swap">
 <style>
 /* Painel vertical escuro: título em cima, reator, estado e fala, cartões, caixa de pedido embaixo */
@@ -56,6 +56,21 @@ input {
 }
 input:focus { border-color: var(--cyan); }
 input::placeholder { color: var(--muted); }
+
+/* Bolha: janela quadrada (recortada em círculo pelo ui.py) = só o reator se mexendo.
+   O – e o × aparecem quando o mouse passa por cima. */
+@media (min-aspect-ratio: 4/5) and (max-aspect-ratio: 5/4) {
+  body { border: none; border-radius: 50%;
+    background: radial-gradient(circle at 50% 50%, var(--bg-glow) 0%, var(--bg) 68%) var(--bg); }
+  header { display: contents; }
+  h1, .estado, .fala, .cartoes, form { display: none; }
+  .reator { position: fixed; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; border-radius: 50%;
+    box-shadow: inset 0 0 0 1px rgba(95, 230, 240, .22), inset 0 0 28px rgba(95, 230, 240, .08); }
+  .botoes { position: fixed; top: 9%; left: 50%; transform: translateX(-50%); z-index: 2;
+    opacity: 0; transition: opacity .25s; }
+  body:hover .botoes, .botoes:focus-within { opacity: 1; }
+  .botoes button { width: 24px; height: 20px; font-size: 14px; border-radius: 4px; background: rgba(2, 8, 11, .7); }
+}
 </style>
 </head>
 <body>
@@ -70,14 +85,16 @@ input::placeholder { color: var(--muted); }
 <div class="estado" id="estado">● em espera</div>
 <div class="fala" id="fala"></div>
 <div class="cartoes" id="cartoes"></div>
-<form id="form"><input id="pedido" placeholder="Digite um pedido ou diga &quot;Jarvis&quot;" autocomplete="off"></form>
+<form id="form"><input id="pedido" placeholder="Digite um pedido ou diga &quot;Bolha&quot;" autocomplete="off"></form>
 <script>
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const reduz = matchMedia('(prefers-reduced-motion: reduce)').matches;
-let W, H, dpr;
+let W, H, dpr, bolha = false;
+const BOLHA = '(min-aspect-ratio: 4/5) and (max-aspect-ratio: 5/4)';  // a mesma regra do CSS
 function tam() {
   dpr = Math.min(devicePixelRatio || 1, 2);
   const r = cv.getBoundingClientRect(); W = r.width; H = r.height;
+  bolha = matchMedia(BOLHA).matches;
   cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 addEventListener('resize', tam); tam();
@@ -145,7 +162,8 @@ function quadro() {
   const escala = 1 + atual.pulso * (.5 + .5 * Math.sin(t * 5)) + atual.fala * voz;
 
   ctx.clearRect(0, 0, W, H);
-  const cx = W / 2, cy = H / 2, R = Math.min(W, H) * .3;
+  // na bolha o reator ocupa o círculo todo (com a voz ele cresce até uns 85% do raio)
+  const cx = W / 2, cy = H / 2, R = Math.min(W, H) * (bolha ? .32 : .3);
 
   // Brilho de fundo
   const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 1.6);
@@ -217,6 +235,12 @@ function cartao(rotulo, valor, ms = 7000) {
 window.setEstado = muda;
 window.mostraFala = (texto) => { elFala.textContent = texto || ''; };
 window.cartao = cartao;
+window.mostraNome = (nome) => {
+  nome = String(nome || '').trim();
+  if (!nome) return;
+  document.querySelector('h1').textContent = nome.toUpperCase();
+  document.getElementById('pedido').placeholder = `Digite um pedido ou diga "${nome}"`;
+};
 
 // Botões e caixa de texto falam com o Python (ui.py -> Api)
 const api = () => (window.pywebview && window.pywebview.api) || null;

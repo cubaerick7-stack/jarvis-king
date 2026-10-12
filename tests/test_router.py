@@ -255,3 +255,19 @@ def test_timer_in_minutes_keeps_the_message():
     real.tool = lambda name, **a: used.append((name, a)) or True
     assert real.fast_local_router("coloca um alarme em 20 minutos pra tirar o bolo") is True
     assert used == [("start_timer", {"minutes": 20, "message": "tirar o bolo"})]
+
+
+def test_name_prefix_is_removed_but_keeps_the_rest():
+    real = load_real()
+    assert real.NAME == "Bolha"
+    assert real.clean_prefix("Bolha, digita Olá Mundo") == "digita Olá Mundo"
+    assert real.clean_prefix("jarvis abre o chrome") == "abre o chrome"  # o nome antigo, digitado, ainda vale
+    assert real.clean_prefix("mn muta o volume") == "muta o volume"
+    assert real.clean_prefix("Manoel ligou?") == "Manoel ligou?"  # "mano" só sozinho
+
+
+def test_assistant_introduces_itself_with_the_name(capsys):
+    real = load_real()
+    assert real.fast_local_router("bolha, quem é você?") is True
+    assert "Meu nome é Bolha" in capsys.readouterr().out
+    assert "Seu nome é Bolha" in real.AI_PROMPT and "oi bolha, tudo bem?" in real.AI_PROMPT

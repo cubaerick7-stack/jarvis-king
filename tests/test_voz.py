@@ -9,12 +9,20 @@ sys.path.insert(0, str(ROOT / "windows"))
 import nuvem as N  # noqa: E402
 import voz as V  # noqa: E402
 
+import pytest  # noqa: E402
+
+
+@pytest.fixture
+def nome_jarvis():
+    """Testes do jeito antigo, com JARVIS_NOME=Jarvis."""
+    V.set_name("Jarvis")
+
 
 def block(level):
     return array.array("h", [level] * V.BLOCK).tobytes()
 
 
-def test_wake_word_variants():
+def test_wake_word_variants(nome_jarvis):
     assert V.is_wake("jarbas")
     assert V.is_wake("ei jarvis toca lofi")
     assert not V.is_wake("jardim")
@@ -113,7 +121,7 @@ def test_model_found_inside_extra_folder(tmp_path):
     assert V.find_model(tmp_path / "vazio") is None
 
 
-def test_wake_word_spelled_in_many_ways():
+def test_wake_word_spelled_in_many_ways(nome_jarvis):
     for heard in ("jarvis", "jarbas toca lofi", "já vis", "javis", "jervis abre o chrome"):
         assert V.is_wake(heard), heard
     for heard in ("jardim", "chaves", "jardins", "o jarro"):
@@ -126,7 +134,7 @@ def test_command_said_in_one_breath_uses_audio_before_wake():
     assert len(pcm) / 2 / V.SAMPLE_RATE >= 1.5  # manda o áudio de antes, sem esperar 5 s
 
 
-def test_strip_wake_word():
+def test_strip_wake_word(nome_jarvis):
     assert V.strip_wake("Jarvis, toca lofi.") == "toca lofi"
     assert V.strip_wake("Já vis toca lofi") == "toca lofi"
     assert V.strip_wake("Jarvis.") == ""
@@ -157,7 +165,7 @@ def test_typed_request_is_spoken_too(monkeypatch):
     assert said == ["Pois não, senhor."]
 
 
-def test_after_wake_only_obeys_when_jarvis_was_said():
+def test_after_wake_only_obeys_when_jarvis_was_said(nome_jarvis):
     assert V.after_wake("Jarvis, toca lofi.") == "toca lofi"
     assert V.after_wake("Jarvis.") == ""  # só chamou: espera o pedido
     assert V.after_wake("Já vis, toca lofi") == "toca lofi"
@@ -175,3 +183,41 @@ def test_recalibrates_after_music_is_lowered():
     assert V.record_command(lambda: next(audio), noise=2000, recalibrate=True) != b""
     audio = iter([block(200)] * (V.ECHO_BLOCKS + 1) + [block(1200)] * 10 + [block(200)] * 50)
     assert V.record_command(lambda: next(audio), noise=2000) == b""  # sem recalibrar, a voz se perdia
+
+
+def test_default_name_is_bolha_and_only_exact():
+    assert V.NAME == "Bolha" and N.STT_PROMPT == "Bolha"
+    for heard in ("bolha", "bolha toca lofi", "ei bolha", "bolhas"):
+        assert V.is_wake(heard), heard
+    for heard in ("olha só", "bola", "jarvis", "folha", "molha a planta", ""):
+        assert not V.is_wake(heard), heard  # palavras do dia a dia não acordam
+
+
+def test_bolha_after_wake_and_strip():
+    assert V.after_wake("Bolha, toca lofi.") == "toca lofi"
+    assert V.after_wake("Bolha.") == ""
+    assert V.after_wake("Olha, toca lofi") is None  # "olha" não é o nome
+    assert V.after_wake("Jarvis, toca lofi") is None  # o nome agora é Bolha
+    assert V.strip_wake("Bolha, abre o chrome") == "abre o chrome"
+
+
+def test_name_can_be_changed_back():
+    V.set_name("Jarvis")
+    assert V.is_wake("jarbas toca lofi") and V.after_wake("Jarvis, oi") == "oi" and N.STT_PROMPT == "Jarvis"
+    V.set_name("   ")  # vazio: volta ao padrão
+    assert V.NAME == "Bolha"
+
+
+def test_reator_becomes_a_circle_when_window_is_square():
+    html = (ROOT / "windows" / "interface" / "reator.html").read_text(encoding="utf-8")
+    rule = "(min-aspect-ratio: 4/5) and (max-aspect-ratio: 5/4)"
+    assert f"@media {rule}" in html and f"const BOLHA = '{rule}'" in html  # CSS e desenho com a mesma regra
+    assert "window.mostraNome" in html
+
+
+def test_ui_mode_and_round_are_safe(monkeypatch):
+    import ui as U
+    assert U.mode() == "bolha"
+    monkeypatch.setenv("JARVIS_TELA", "Painel")
+    assert U.mode() == "painel"
+    assert U._round(object()) is False  # fora do Windows (ou sem janela) não quebra

@@ -14,6 +14,16 @@ def sem_nuvem(monkeypatch):
     import nuvem
     monkeypatch.setattr(nuvem, "_limited", {})
     monkeypatch.setattr(nuvem, "_no_thinking_cfg", set())
+    monkeypatch.delenv("JARVIS_TELA", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def nome_padrao():
+    """Todo teste começa com o nome padrão ("Bolha"), mesmo com JARVIS_NOME no PC."""
+    import voz
+    voz.set_name("Bolha")
+    yield
+    voz.set_name("Bolha")
 
 
 @pytest.fixture(autouse=True)

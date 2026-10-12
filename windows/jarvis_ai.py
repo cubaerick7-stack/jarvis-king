@@ -91,8 +91,15 @@ def normalize(text):
     return re.sub(r"\s+", " ", text)
 
 
+# Nome do assistente (voz.py lê o JARVIS_NOME; o padrão é "Bolha"). "jarvis" continua valendo no texto.
+NAME = V.NAME
+_CALL_NAMES = sorted({"jarvis", NAME.lower(), normalize(NAME)}, key=len, reverse=True)
+CALL = "(?:" + "|".join(re.escape(n) for n in _CALL_NAMES) + ")"
+
+
 def clean_prefix(text):
-    return re.sub(r"^\s*(jarvis|mn|mano)[\s,:-]*", "", text, flags=re.I).strip()
+    """Tira o "Bolha," (ou "Jarvis,", "mn") do começo, mantendo o resto do jeito que veio."""
+    return re.sub(rf"^\s*(?:{CALL}|mn|mano)(?!\w)[\s,:-]*", "", text, flags=re.I).strip()
 
 
 def log_action(name, detail=""):
@@ -674,17 +681,17 @@ def fast_local_router(user_text):
         return True
 
     # memória
-    if re.fullmatch(r"(?:jarvis,? )?o que (?:voce|vc) sabe (?:sobre|de) mim\??", clean):
+    if re.fullmatch(rf"(?:{CALL},? )?o que (?:voce|vc) sabe (?:sobre|de) mim\??", clean):
         act("what_i_know", M.what_i_know)
         return True
-    m = re.fullmatch(r"(?:jarvis,? )?(?:esquece|esqueca|apaga da memoria)\s+(?:que\s+|o\s+|a\s+|sobre\s+)?(.+)", clean)
+    m = re.fullmatch(rf"(?:{CALL},? )?(?:esquece|esqueca|apaga da memoria)\s+(?:que\s+|o\s+|a\s+|sobre\s+)?(.+)", clean)
     if m:
         what = re.sub(r"^(?:meu|minha|meus|minhas)\s+", "", m.group(1)).strip(" .!?")
         if len(what) < 3 or what in {"isso", "isto", "disso", "tudo", "aquilo"}:
             return False  # "esquece isso" = deixa pra lá: a IA decide
         act("forget", M.forget, what)
         return True
-    m = re.fullmatch(r"(?:jarvis,? )?meu nome e\s+(.+)", clean)
+    m = re.fullmatch(rf"(?:{CALL},? )?meu nome e\s+(.+)", clean)
     if m:
         name = re.split(r"[,.!?;]| e | mas ", text[-len(m.group(1)):])[0].strip()
         if not name or len(name.split()) > 4:
@@ -1389,7 +1396,7 @@ AI_EXAMPLES = [
     ("(depois de ver os resultados) 1. Bolo de cenoura fofinho - tudogostoso... 2. ...", '{"actions":[{"name":"web_click","args":{"target":"1"}},{"name":"web_read","args":{}}],"reply":"Vou ler a mais bem avaliada.","continue":true}'),
     ("manda pra Ana que eu chego às 8", '{"actions":[{"name":"whatsapp_send","args":{"contact":"Ana","message":"Chego às 8"}}],"reply":"Pronto."}'),
     ("me explica o que é fotossíntese", '{"actions":[],"reply":"É o processo em que as plantas usam luz, água e gás carbônico para produzir açúcar e liberar oxigênio."}'),
-    ("oi jarvis, tudo bem?", '{"actions":[],"reply":"Tudo certo! Diga o que precisa."}'),
+    (f"oi {NAME.lower()}, tudo bem?", '{"actions":[],"reply":"Tudo certo! Diga o que precisa."}'),
     ("faz um bolo pra mim", '{"actions":[],"reply":"Isso eu não consigo fazer. Diga \\"o que você sabe fazer\\" para ver a lista."}'),
 ]
 
@@ -1397,7 +1404,7 @@ AI_EXAMPLES = [
 def build_ai_prompt():
     tools = "\n".join(f"{t['name']} {t['args']} - {t['desc']}" for t in TOOLS)
     examples = "\n".join(f"Usuário: {u}\nJSON: {j}" for u, j in AI_EXAMPLES)
-    return f"""Você é o JARVIS, assistente do Windows do usuário. Fala português do Brasil como um mordomo
+    return f"""Seu nome é {NAME}: você é o assistente do Windows do usuário. Fala português do Brasil como um mordomo
 calmo, educado e um pouco espirituoso, chamando o usuário de "senhor". Curto e direto: suas respostas são faladas em voz alta.
 Responda SOMENTE JSON válido, sem explicações, neste formato:
 {{"actions":[{{"name":"acao","args":{{}}}}],"reply":"frase curta","continue":false}}
@@ -1668,10 +1675,11 @@ def warm_up_ai():
 
 
 SMALL_TALK = [
-    (r"^(oi|ola|opa|eai|e ai|fala|salve|bom dia|boa tarde|boa noite|hey)( jarvis)?[!. ]*$", "Oi! Diga o que precisa."),
-    (r"^(oi |ola |e ai |fala )?(jarvis,? )?(tudo bem|tudo certo|como (voce|vc) esta|beleza)( jarvis)?\??$", "Tudo certo por aqui! Em que posso ajudar?"),
-    (r"^(obrigad[oa]|valeu|vlw|brigad[oa]|show|top|massa|perfeito)( jarvis)?[!. ]*$", "Tamo junto!"),
-    (r"^(jarvis,? )?(quem e voce|quem e vc|qual (e )?(o )?seu nome)\??$", "Sou o Jarvis, seu assistente do Windows. Diga \"o que você sabe fazer\"."),
+    (rf"^(oi|ola|opa|eai|e ai|fala|salve|bom dia|boa tarde|boa noite|hey),?( {CALL})?[!. ]*$", "Oi! Diga o que precisa."),
+    (rf"^(oi |ola |e ai |fala )?({CALL},? )?(tudo bem|tudo certo|como (voce|vc) esta|beleza)( {CALL})?\??$", "Tudo certo por aqui! Em que posso ajudar?"),
+    (rf"^(obrigad[oa]|valeu|vlw|brigad[oa]|show|top|massa|perfeito),?( {CALL})?[!. ]*$", "Tamo junto!"),
+    (rf"^({CALL},? )?(quem e voce|quem e vc|qual (e )?(o )?seu nome)\??$",
+     f"Meu nome é {NAME}, seu assistente do Windows. Diga \"o que você sabe fazer\"."),
 ]
 
 
@@ -1814,7 +1822,7 @@ def start_voice():
         return
     listener = candidate
     mic = V.mic_name()
-    print(f'Voz ligada{" (" + mic + ")" if mic else ""}: diga "Jarvis" e faça o pedido depois do bipe.')
+    print(f'Voz ligada{" (" + mic + ")" if mic else ""}: diga "{NAME}" e faça o pedido depois do bipe.')
 
 
 def run():
@@ -1883,7 +1891,7 @@ def main():
     disable_quick_edit()
     print("")
     print("==============================================")
-    print("              J.A.R.V.I.S.")
+    print(f"{NAME.upper():^46}")
     print("     comandos rápidos + IA: " + (" -> ".join(n for n, _ in ai_backends()) or "nenhuma (configure a chave)"))
     print("==============================================")
     print("")
@@ -1901,7 +1909,7 @@ def main():
             os._exit(0)
 
         try:
-            U.start(worker, lambda text: commands.put(("janela", text)))  # o reator fica na thread principal
+            U.start(worker, lambda text: commands.put(("janela", text)), NAME)  # o reator fica na thread principal
         except Exception as e:
             print(f"A janela do reator não abriu ({e}). Sigo sem ela.")
             if started.is_set():  # o Jarvis já está rodando na outra thread
