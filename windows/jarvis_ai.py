@@ -603,19 +603,18 @@ def is_own_console_in_front():
 def window_control(action):
     need_pyautogui()
     action = normalize(action)
-    if action in ("minimizar", "maximizar", "fechar") and not F.leave_jarvis_window():
-        # pedido digitado no reator/console: a janela da frente é o Jarvis, e não a do senhor
-        print("Jarvis > Clique na janela que quer mexer e peça de novo; a da frente é a minha.")
-        return False
-    if action == "minimizar":
-        pyautogui.hotkey("win", "down")
-    elif action == "maximizar":
-        pyautogui.hotkey("win", "up")
-    elif action == "fechar":
-        if is_own_console_in_front():
-            print("Jarvis > A janela da frente é o próprio Jarvis; não vou fechá-la.")
+    if action in ("minimizar", "maximizar", "fechar"):
+        # age direto na janela do usuário (nunca na do Jarvis): atalho de teclado podia cair
+        # na tela cheia do Jarvis e fechá-la
+        hwnd = F.user_target_window()
+        if not hwnd:
+            print("Jarvis > Clique na janela que quer mexer e peça de novo; a da frente é a minha.")
             return False
-        pyautogui.hotkey("alt", "f4")
+        u32 = ctypes.windll.user32
+        if action == "fechar":
+            u32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE: igual ao X da janela
+        else:
+            u32.ShowWindow(hwnd, 6 if action == "minimizar" else 3)  # SW_MINIMIZE / SW_MAXIMIZE
     elif action == "trocar":
         pyautogui.hotkey("alt", "tab")
     elif action == "desktop":
@@ -745,11 +744,13 @@ def fast_local_router(user_text):
         return True
 
     # Spotify: "toca evidências no spotify", "abre o spotify e toca evidências"
-    m = (re.match(r"^(?:toca|toque|tocar|bota|coloca|poe|quero ouvir)\s+(?:a\s+|o\s+)?(?:musica\s+)?(.+?)\s+no spotify$", clean)
-         or re.match(r"^(?:abre|abra|abrir)\s+o\s+spotify\s+e\s+(?:toca|toque|tocar|bota|coloca|poe)\s+(?:a\s+|o\s+)?(?:musica\s+)?(.+)$", clean))
-    if m:
-        tool("spotify_play", query=m.group(1).strip())
-        return True
+    if "spotify" in clean and re.search(r"\b(?:toca|toque|tocar|bota|coloca|poe|ouvir|pesquisa|pesquise|procura|busca)\b", clean):
+        query = re.sub(r"\b(?:abre|abra|abrir|o|a|no|na|pelo|e|toca|toque|tocar|bota|coloca|poe|quero|ouvir|"
+                       r"pesquisa|pesquise|procura|busca|musica|spotify)\b", " ", clean)
+        query = re.sub(r"\s+", " ", query).strip(" .,!?")
+        if query:
+            tool("spotify_play", query=query)
+            return True
     # pedido com duas partes ("abre o bloco de notas e me explica X") vai inteiro para a IA,
     # que divide em várias ações; o roteador rápido só entende um comando por vez
     if COMPOUND.search(clean):

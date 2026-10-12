@@ -140,8 +140,16 @@ def open_url(url):
     url = str(url).strip()
     if not re.match(r"^https?://", url):
         url = "https://" + url
-    p = page("midia" if "youtube.com/watch" in url else "web")
-    p.goto(url, wait_until="domcontentloaded", timeout=30000)
+    kind = "midia" if "youtube.com/watch" in url else "web"
+    p = page(kind)
+    try:
+        p.goto(url, wait_until="domcontentloaded", timeout=30000)
+    except Exception as e:
+        if "closed" not in str(e):
+            raise
+        _tabs.pop(kind, None)  # você fechou o navegador no meio: abre de novo e tenta mais uma vez
+        p = page(kind)
+        p.goto(url, wait_until="domcontentloaded", timeout=30000)
     p.bring_to_front()
     _say(f"Abri {p.title() or url}.")
     return f"Página aberta: {p.title()} ({p.url})"

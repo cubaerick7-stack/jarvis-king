@@ -859,6 +859,20 @@ def user_window_title():
     return _title(_last_user_window) if _last_user_window else ""
 
 
+def user_target_window():
+    """A janela do usuário em que uma ação deve agir (nunca uma do próprio Jarvis). None se não sabe."""
+    hwnd = foreground_window()
+    if hwnd and not is_jarvis_window(hwnd):
+        return hwnd
+    try:
+        target = _last_user_window
+        if target and ctypes.windll.user32.IsWindow(target) and not is_jarvis_window(target):
+            return target
+    except Exception:
+        pass
+    return None
+
+
 def leave_jarvis_window():
     """Se a janela da frente é do Jarvis, volta para a do usuário. False se não conseguiu."""
     hwnd = foreground_window()
