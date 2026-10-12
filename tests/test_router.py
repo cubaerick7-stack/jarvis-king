@@ -323,3 +323,27 @@ def test_instagram_opens_in_users_own_browser(monkeypatch):
     monkeypatch.setattr(j.webbrowser, "open", lambda u: own.append(u) or True)
     assert j.open_target("instagram") is True
     assert own == ["https://www.instagram.com"] and opened == []
+
+
+def test_weather_for_my_city_and_another(jarvis, monkeypatch):
+    asked = []
+    monkeypatch.setattr(jarvis.F, "weather", lambda city="": asked.append(city) or True)
+    monkeypatch.setattr(jarvis.M, "load", lambda: {"perfil": {"cidade": ""}})
+    assert jarvis.fast_local_router("Qual a previsão do tempo agora na minha cidade E em São Paulo também")
+    assert asked == ["", "sao paulo"]
+    assert jarvis.weather_cities("de hoje") == [""]
+
+
+def test_weather_falls_back_to_open_meteo(monkeypatch, capsys):
+    import ferramentas as F
+
+    def wttr_down(req, timeout=0):
+        raise OSError("HTTP Error 500: Internal Server Error")
+
+    monkeypatch.setattr(F.urllib.request, "urlopen", wttr_down)
+    pages = {"geocoding": {"results": [{"name": "São Paulo", "latitude": -23.5, "longitude": -46.6}]},
+             "forecast": {"current": {"temperature_2m": 24.4, "apparent_temperature": 25.6,
+                                      "relative_humidity_2m": 60, "wind_speed_10m": 11.2, "weather_code": 61}}}
+    monkeypatch.setattr(F, "_get_json", lambda url, timeout=8: pages["geocoding" if "geocoding" in url else "forecast"])
+    assert F.weather("sao paulo") is True
+    assert "São Paulo: Chuva fraca, +24°C (sensação +26°C), umidade 60%, vento 11km/h" in capsys.readouterr().out

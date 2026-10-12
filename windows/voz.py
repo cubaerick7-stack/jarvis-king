@@ -318,6 +318,7 @@ def _play_mp3(path):
 
 EDGE_RETRY = 600  # a voz do Bing (Edge) recusou: fala pela ElevenLabs e só tenta o Bing de novo depois disso (s)
 _edge_off_until = 0.0
+_told = {}  # último erro avisado de cada voz de reserva
 ELEVEN_API = "https://api.elevenlabs.io/v1/text-to-speech/"
 ELEVEN_VOICE = "Elvis"  # nome (procurado em "Minhas vozes" da conta) ou id; troca com setx ELEVENLABS_VOICE
 ELEVEN_BACKUP_VOICE = "JBFqnCBsd6RMkjVDRZzb"  # George, voz pronta de toda conta: se não achar a Elvis
@@ -363,6 +364,8 @@ def eleven_voice():
     """O id da voz: ELEVENLABS_VOICE (nome como "Elvis" ou o id), procurada nas vozes da conta."""
     wanted = (os.environ.get("ELEVENLABS_VOICE", "") or os.environ.get("ELEVENLABS_VOICE_ID", "")).strip() \
         or ELEVEN_VOICE
+    if wanted.lower() in _eleven_voice_ids:  # já achada (ou trocada pela George porque foi recusada)
+        return _eleven_voice_ids[wanted.lower()]
     if re.fullmatch(r"[A-Za-z0-9]{20}", wanted):
         return wanted
     if wanted.lower() not in _eleven_voice_ids:
@@ -384,11 +387,14 @@ def eleven_voice():
     return _eleven_voice_ids[wanted.lower()]
 
 
-def _eleven_mp3(text, path):
-    """Voz da ElevenLabs (chave só na variável ELEVENLABS_API_KEY; o plano grátis tem créditos limitados)."""
+class ElevenError(RuntimeError):
+    def __init__(self, message, code=0, detail=""):
+        super().__init__(message)
+        self.code, self.detail = code, detail
+
+
+def _eleven_request(text, path, voice, model):
     import urllib.error
-    model = os.environ.get("ELEVENLABS_MODEL", "").strip() or ELEVEN_MODEL
-    voice = eleven_voice()
     body = {"text": text, "model_id": model}
     if model.endswith("_v2_5"):
         body["language_code"] = "pt"
@@ -401,17 +407,43 @@ def _eleven_mp3(text, path):
     except urllib.error.HTTPError as e:
         try:
             detail = json.loads(e.read().decode("utf-8", "replace")).get("detail", {})
-            detail = detail.get("message", "") if isinstance(detail, dict) else str(detail)
+            detail = (detail.get("message") or detail.get("status") or "") if isinstance(detail, dict) else str(detail)
         except Exception:
             detail = ""
-        if e.code == 401:
-            raise RuntimeError(f"a chave da ElevenLabs foi recusada ({detail or 'confira ELEVENLABS_API_KEY'})") from e
-        if e.code in (402, 429) or "quota" in detail.lower() or "credit" in detail.lower():
-            raise RuntimeError("acabaram os créditos da ElevenLabs deste mês") from e
-        raise RuntimeError(f"a ElevenLabs respondeu HTTP {e.code} {detail}".strip()) from e
+        low = detail.lower()
+        if e.code == 401 and "permission" not in low:
+            raise ElevenError(f"a chave foi recusada ({detail or 'confira ELEVENLABS_API_KEY'})", e.code, detail) from e
+        if "quota" in low or "credit" in low:
+            raise ElevenError("acabaram os créditos deste mês", e.code, detail) from e
+        raise ElevenError(f"HTTP {e.code} {detail}".strip(), e.code, detail) from e
     if not audio:
-        raise RuntimeError("a ElevenLabs não mandou áudio")
+        raise ElevenError("não mandou áudio")
     Path(path).write_bytes(audio)
+
+
+def _voice_refused(e):
+    """A voz escolhida não pode ser usada (voz da Library no plano grátis, voz não adicionada, sem permissão)."""
+    low = e.detail.lower()
+    return e.code in (400, 402, 403, 404) and not ("quota" in low or "credit" in low)
+
+
+def _eleven_mp3(text, path):
+    """Voz da ElevenLabs (chave só na variável ELEVENLABS_API_KEY; o plano grátis tem créditos limitados).
+    Se a voz escolhida (Elvis) for recusada, usa a George, que toda conta tem."""
+    model = os.environ.get("ELEVENLABS_MODEL", "").strip() or ELEVEN_MODEL
+    voice = eleven_voice()
+    try:
+        return _eleven_request(text, path, voice, model)
+    except ElevenError as e:
+        if voice == ELEVEN_BACKUP_VOICE or not _voice_refused(e):
+            raise
+        print(f"\nJarvis > (a ElevenLabs não deixou usar essa voz: {e}; uso a George)")
+        for name in list(_eleven_voice_ids):
+            _eleven_voice_ids[name] = ELEVEN_BACKUP_VOICE
+        wanted = (os.environ.get("ELEVENLABS_VOICE", "") or os.environ.get("ELEVENLABS_VOICE_ID", "")).strip() \
+            or ELEVEN_VOICE
+        _eleven_voice_ids[wanted.lower()] = ELEVEN_BACKUP_VOICE
+        return _eleven_request(text, path, ELEVEN_BACKUP_VOICE, model)
 
 
 def _gtts_mp3(text, path):
@@ -448,12 +480,15 @@ def _synth(text, path):
             if backups and not _edge_off_until:
                 print(f"\nJarvis > (a voz do Bing {_short_error(e)}; falo com a {backups[0][0]} por enquanto)")
             _edge_off_until = time.time() + EDGE_RETRY
-    for name, make in backups:
+    for i, (name, make) in enumerate(backups):
         try:
             make(text, path)
             return
         except Exception as e:
             errors.append(f"{name}: {_short_error(e)}")
+            if i + 1 < len(backups) and _told.get(name) != str(e):  # avisa uma vez por erro novo
+                _told[name] = str(e)
+                print(f"\nJarvis > (a {name} falhou: {_short_error(e)}; falo com a {backups[i + 1][0]})")
     if not backups:
         errors.append("para ter voz de reserva: python -m pip install gTTS, ou setx ELEVENLABS_API_KEY (veja VOZ no LEIA-ME)")
     raise RuntimeError("; ".join(errors))

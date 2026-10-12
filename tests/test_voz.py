@@ -521,3 +521,39 @@ def test_elevenlabs_voice_found_by_name(monkeypatch):
     monkeypatch.setattr(V, "_eleven_voice_ids", {})
     monkeypatch.setattr(V, "_eleven_get", lambda url: {"voices": []})
     assert V.eleven_voice() == V.ELEVEN_BACKUP_VOICE  # não achou: usa a George
+
+
+def test_library_voice_refused_uses_george(monkeypatch, capsys):
+    tried = []
+
+    def fake_request(text, path, voice, model):
+        tried.append(voice)
+        if voice != V.ELEVEN_BACKUP_VOICE:
+            raise V.ElevenError("HTTP 402 Free users cannot use library voices via the API", 402,
+                                "Free users cannot use library voices via the API")
+
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "k")
+    monkeypatch.setenv("ELEVENLABS_VOICE", "A" * 20)
+    monkeypatch.setattr(V, "_eleven_request", fake_request)
+    monkeypatch.setattr(V, "_eleven_voice_ids", {})
+    V._eleven_mp3("Olá", "x.mp3")
+    V._eleven_mp3("De novo", "x.mp3")  # não insiste na voz recusada
+    assert tried == ["A" * 20, V.ELEVEN_BACKUP_VOICE, V.ELEVEN_BACKUP_VOICE]
+    assert capsys.readouterr().out.count("uso a George") == 1
+
+
+def test_failed_backup_voice_says_why(monkeypatch, capsys):
+    _fake_edge(monkeypatch, fail=True)
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "k")
+    monkeypatch.setattr(V, "_told", {})
+
+    def broken(text, path):
+        raise V.ElevenError("a chave foi recusada (invalid api key)")
+
+    monkeypatch.setattr(V, "_eleven_mp3", broken)
+    monkeypatch.setattr(V, "_has_gtts", lambda: True)
+    monkeypatch.setattr(V, "_gtts_mp3", lambda text, path: None)
+    V.say("Olá")
+    V.say("De novo")
+    out = capsys.readouterr().out
+    assert out.count("a ElevenLabs falhou: a chave foi recusada") == 1 and "falo com a Google" in out

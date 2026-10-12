@@ -663,6 +663,21 @@ def take_screenshot():
 ORDINAL = r"(primeir[oa]|segund[oa]|terceir[oa]|quart[oa]|quint[oa]|sext[oa]|setim[oa]|oitav[oa]|non[oa]|decim[oa]|\d+)"
 
 
+MY_CITY = re.compile(r"^(?:a |na |da )?(?:minha cidade|minha regiao|aqui|onde eu (?:moro|to|estou)|minha casa)$")
+
+
+def weather_cities(text):
+    """ "minha cidade e em sao paulo tambem" -> ["", "sao paulo"] ("" = a cidade do perfil)."""
+    text = re.sub(r"\b(?:tambem|agora|hoje|amanha|por favor|ai|pra mim)\b", " ", text)
+    cities = []
+    for part in re.split(r"\s+e\s+(?:(?:em|no|na|de|do|da)\s+)?", text.strip()):
+        part = re.sub(r"^(?:em|no|na|de|do|da)(?:\s+|$)", "", re.sub(r"\s+", " ", part).strip(" ?,."))
+        city = "" if MY_CITY.match(part) else part
+        if city not in cities:
+            cities.append(city)
+    return cities or [""]
+
+
 def tool(tool_name, /, **args):
     """Roda uma ferramenta do catálogo pelo nome (usado pelo roteador rápido)."""
     log_action(tool_name, json.dumps(args, ensure_ascii=False))
@@ -964,7 +979,8 @@ def fast_local_router(user_text):
         return True
     m = re.search(r"\b(?:clima|previsao do tempo|como (?:esta|ta) o tempo|temperatura|vai chover)\b(?:.*?\b(?:em|de|no|na)\s+(.+?))?\??$", clean)
     if m:
-        tool("weather", city=(m.group(1) or "").strip())
+        for city in weather_cities(m.group(1) or ""):
+            tool("weather", city=city)
         return True
     m = re.match(r"^(?:calcula|calcule|quanto e|quanto da|quanto que e|conta)\s+(.+?)\??$", clean)
     if m and re.search(r"\d", m.group(1)):
@@ -1882,13 +1898,18 @@ def _tool_lines(out):
 def told(lines):
     """Sem IA: "Verifiquei, senhor. Em Curitiba está chuva fraca, com 17 graus..." direto do resultado."""
     first = lines[0] if lines else ""
-    m = CLIMA.match(first)
-    if m:
+    parts = []
+    for line in lines:
+        m = CLIMA.match(line)
+        if not m:
+            continue
         place, sky, temp, feel, humidity = (g.strip() for g in m.groups())
-        place = place.split(",")[-1].strip() or place
-        text = f"Verifiquei, senhor. Em {place} está {sky.lower()}, com {temp} graus"
+        place = place.split(",")[-1].strip() or place  # "Boqueirão, Curitiba" -> Curitiba
+        text = f"Em {place} está {sky.lower()}, com {temp} graus"
         text += f" e sensação de {feel}." if feel != temp else "."
-        return text + f" A umidade está em {humidity} por cento."
+        parts.append(text + f" A umidade está em {humidity} por cento.")
+    if parts:
+        return "Verifiquei, senhor. " + " ".join(parts)
     return f"Verifiquei, senhor. {first}" if first else ""
 
 

@@ -258,6 +258,41 @@ def network_info():
 
 # ========================= INFORMAÇÃO =========================
 
+WMO = {0: "Céu limpo", 1: "Quase limpo", 2: "Parcialmente nublado", 3: "Nublado", 45: "Neblina", 48: "Neblina",
+       51: "Garoa fraca", 53: "Garoa", 55: "Garoa forte", 61: "Chuva fraca", 63: "Chuva", 65: "Chuva forte",
+       66: "Chuva congelante", 67: "Chuva congelante", 71: "Neve fraca", 73: "Neve", 75: "Neve forte",
+       80: "Pancadas de chuva fracas", 81: "Pancadas de chuva", 82: "Pancadas de chuva fortes",
+       95: "Trovoada", 96: "Trovoada com granizo", 99: "Trovoada com granizo"}
+
+
+def _get_json(url, timeout=8):
+    req = urllib.request.Request(url, headers={"User-Agent": "Jarvis/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def _open_meteo(city):
+    """Reserva do wttr.in: Open-Meteo (grátis, sem chave). Mesmo formato de linha do wttr."""
+    if not city:
+        raise ValueError("sem cidade")
+    found = _get_json("https://geocoding-api.open-meteo.com/v1/search?count=1&language=pt&name="
+                      + urllib.parse.quote(city)).get("results") or []
+    if not found:
+        raise ValueError(f"não achei a cidade {city}")
+    place = found[0]
+    now = _get_json(f"https://api.open-meteo.com/v1/forecast?latitude={place['latitude']}"
+                    f"&longitude={place['longitude']}&current=temperature_2m,apparent_temperature,"
+                    "relative_humidity_2m,wind_speed_10m,weather_code")["current"]
+    name = place.get("name", city)
+
+    def deg(v):
+        return f"{round(v):+d}"
+
+    return (f"{name}: {WMO.get(int(now.get('weather_code', -1)), 'Tempo variável')}, {deg(now['temperature_2m'])}°C "
+            f"(sensação {deg(now['apparent_temperature'])}°C), umidade {round(now['relative_humidity_2m'])}%, "
+            f"vento {round(now['wind_speed_10m'])}km/h")
+
+
 def weather(city=""):
     city = str(city).strip()
     fmt = urllib.parse.quote("%l: %C, %t (sensação %f), umidade %h, vento %w", safe="%")
@@ -266,9 +301,14 @@ def weather(city=""):
         req = urllib.request.Request(url, headers={"User-Agent": "curl/8"})
         with urllib.request.urlopen(req, timeout=8) as r:
             text = r.read().decode("utf-8").strip()
+        if not text or "unknown location" in text.lower() or "<html" in text.lower():
+            raise ValueError("o wttr.in não achou")
     except Exception as e:
-        _say(f"Não consegui ver o clima agora ({e}).")
-        return False
+        try:
+            text = _open_meteo(city)
+        except Exception as e2:
+            _say(f"Não consegui ver o clima agora ({e}; {e2}).")
+            return False
     _say(text)
     return True
 
