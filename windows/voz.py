@@ -220,14 +220,22 @@ def is_wake(text):
     return any(_sounds_like_name(w) for w in words + pairs)
 
 
-def after_wake(text):
+def _near_name(word):
+    key = _plain(NAME)
+    return len(word) >= 4 and difflib.SequenceMatcher(None, word, key).ratio() >= 0.8
+
+
+def after_wake(text, lenient_first=False):
     """O pedido que vem depois do nome na transcrição. None se o Whisper não ouviu o nome:
-    aí foi conversa de fundo, a TV ou o próprio vídeo ("eu já vi esse..."), e não é para obedecer."""
+    aí foi conversa de fundo, a TV ou o próprio vídeo ("eu já vi esse..."), e não é para obedecer.
+    lenient_first: o Vosk já ouviu o nome certinho, então a primeira palavra quase igual
+    ("Bola, toca lofi", "Olha, toca lofi") também vale; no meio da frase, só o nome exato."""
     words = (text or "").split()
     plain = [_plain(w) for w in words]
     for i, p in enumerate(plain):
         if p in WHISPER_WAKE or (FUZZY_WAKE and len(p) >= 5
-                                 and difflib.SequenceMatcher(None, p, "jarvis").ratio() >= 0.8):
+                                 and difflib.SequenceMatcher(None, p, "jarvis").ratio() >= 0.8) \
+                or (lenient_first and i == 0 and _near_name(p)):
             return " ".join(words[i + 1:]).strip(" ,.!?;:-")
         if i + 1 < len(plain) and p + plain[i + 1] in WHISPER_WAKE:  # "Já vis, toca lofi"
             return " ".join(words[i + 2:]).strip(" ,.!?;:-")
@@ -464,7 +472,7 @@ class Listener(threading.Thread):
                 recent.clear()
                 if text is None:
                     continue
-                command = after_wake(text)
+                command = after_wake(text, lenient_first=True)
                 if command is None:  # o Whisper não ouviu o nome: era conversa, TV ou vídeo
                     if DEBUG:
                         print(f"[ignorado, sem \"{NAME}\"] {text}")

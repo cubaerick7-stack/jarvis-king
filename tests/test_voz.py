@@ -221,3 +221,10 @@ def test_ui_mode_and_round_are_safe(monkeypatch):
     monkeypatch.setenv("JARVIS_TELA", "Painel")
     assert U.mode() == "painel"
     assert U._round(object()) is False  # fora do Windows (ou sem janela) não quebra
+
+
+def test_whisper_near_miss_counts_only_as_first_word_after_vosk_heard_the_name():
+    assert V.after_wake("Bola, toca lofi", lenient_first=True) == "toca lofi"
+    assert V.after_wake("Olha, toca lofi", lenient_first=True) == "toca lofi"
+    assert V.after_wake("eu olha toca lofi", lenient_first=True) is None  # no meio da frase, só o nome exato
+    assert V.after_wake("Bola, toca lofi") is None
