@@ -221,6 +221,11 @@ SITES = {
 }
 
 
+# Esses sites desconfiam de navegador controlado por programa (a verificação do login não carrega):
+# abrem no navegador normal do senhor, onde ele já está logado.
+OWN_BROWSER_SITES = ("instagram.com", "facebook.com", "tiktok.com", "x.com", "netflix.com")
+
+
 def open_target(target):
     original = str(target).strip()
     low = normalize(original)
@@ -243,8 +248,13 @@ def open_target(target):
         return open_folder(low)
 
     site = re.sub(r"^(?:o|a)\s+|\s+(?:web|site)$", "", low).strip()
-    if low in SITES or site in SITES:  # sites abrem no navegador do Jarvis (onde ele já está logado)
-        return open_url(SITES.get(low) or SITES[site])
+    if low in SITES or site in SITES:
+        url = SITES.get(low) or SITES[site]
+        if any(d in url for d in OWN_BROWSER_SITES):  # login com verificação: no navegador do senhor
+            webbrowser.open(url)
+            print(f"Jarvis > Abrindo {site or low} no seu navegador.")
+            return True
+        return open_url(url)  # o resto abre no navegador do Jarvis
 
     if low == "chrome":
         p = r"C:\Program Files\Google\Chrome\Application\chrome.exe"

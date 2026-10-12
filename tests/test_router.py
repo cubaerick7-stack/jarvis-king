@@ -301,7 +301,7 @@ def test_spotify_music_stays_in_spotify(jarvis, monkeypatch, text):
     assert asked == ["evidencias"]
 
 
-@pytest.mark.parametrize("text", ["abre o instagram", "abre o whatsapp web"])
+@pytest.mark.parametrize("text", ["abre o chatgpt", "abre o whatsapp web"])
 def test_sites_open_in_jarvis_browser(text, monkeypatch):
     import importlib.util
     spec = importlib.util.spec_from_file_location("jx", ROOT / "windows" / "jarvis_ai.py")
@@ -311,3 +311,15 @@ def test_sites_open_in_jarvis_browser(text, monkeypatch):
     monkeypatch.setattr(j, "open_url", lambda u: opened.append(u) or True)
     assert j.open_target(text.split(" ", 1)[1]) is True
     assert opened and opened[0].startswith("https://")
+
+
+def test_instagram_opens_in_users_own_browser(monkeypatch):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("jx2", ROOT / "windows" / "jarvis_ai.py")
+    j = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(j)
+    opened, own = [], []
+    monkeypatch.setattr(j, "open_url", lambda u: opened.append(u) or True)
+    monkeypatch.setattr(j.webbrowser, "open", lambda u: own.append(u) or True)
+    assert j.open_target("instagram") is True
+    assert own == ["https://www.instagram.com"] and opened == []
