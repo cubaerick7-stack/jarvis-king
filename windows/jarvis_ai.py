@@ -1775,6 +1775,7 @@ def spoken(head, rest):
 
 def respond(text):
     """Executa o pedido; mostra a fala do Jarvis no reator (listas viram cartão) e fala em voz alta."""
+    U.heard(text)  # a bolha abre em tela cheia com o seu pedido na legenda
     set_state("pensando")
     tee = _Tee(sys.stdout)
     with contextlib.redirect_stdout(tee):

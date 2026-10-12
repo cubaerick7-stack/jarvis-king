@@ -228,7 +228,89 @@ def test_ui_mode_and_round_are_safe(monkeypatch):
     assert U.mode() == "bolha"
     monkeypatch.setenv("JARVIS_TELA", "Painel")
     assert U.mode() == "painel"
+    for value, want in (("cheia", "cheia"), ("Tela cheia", "cheia"), ("clique", "clique"), ("qualquer", "bolha")):
+        monkeypatch.setenv("JARVIS_TELA", value)
+        assert U.mode() == want
     assert U._round(object()) is False  # fora do Windows (ou sem janela) não quebra
+    assert U._round(object(), circle=False) is False
+
+
+class FakeWindow:
+    title = "Bolha"
+
+    def __init__(self):
+        self.calls = []
+
+    def restore(self):
+        self.calls.append("restore")
+
+    def toggle_fullscreen(self):
+        self.calls.append("toggle")
+
+    def minimize(self):
+        self.calls.append("minimize")
+
+    def evaluate_js(self, code):
+        self.calls.append(code.split("(")[0])
+
+
+@pytest.fixture
+def janela(monkeypatch):
+    import ui as U
+    w = FakeWindow()
+    monkeypatch.setattr(U, "_window", w)
+    monkeypatch.setattr(U, "_full", False)
+    rounds = []
+    monkeypatch.setattr(U, "_round", lambda window, circle=True: rounds.append(circle) or True)
+    w.rounds = rounds
+    return U, w
+
+
+def test_bubble_opens_fullscreen_when_you_talk_and_closes_after(janela):
+    U, w = janela
+    U.heard("toca lofi")
+    U.card("Tocando agora", "lofi")  # já está em tela cheia: não alterna de novo
+    assert w.calls == ["restore", "toggle", "mostraVoce", "cartao"]
+    assert w.rounds == [False]  # tirou o recorte redondo antes de crescer
+    U.Api(lambda t: None).recolher()
+    assert w.calls[-1] == "toggle" and w.rounds == [False, True] and U._full is False
+
+
+def test_minimize_in_fullscreen_goes_back_to_the_bubble(janela):
+    U, w = janela
+    api = U.Api(lambda t: None)
+    api.expandir()
+    api.minimizar()
+    assert w.calls == ["restore", "toggle", "toggle"]
+    api.minimizar()  # já é bolha: aí minimiza de verdade
+    assert w.calls[-1] == "minimize"
+
+
+def test_click_mode_only_opens_with_a_double_click(janela, monkeypatch):
+    U, w = janela
+    monkeypatch.setenv("JARVIS_TELA", "clique")
+    U.heard("toca lofi")
+    assert "toggle" not in w.calls
+    U.Api(lambda t: None).expandir()
+    assert w.calls.count("toggle") == 1
+
+
+def test_always_fullscreen_never_shrinks(janela, monkeypatch):
+    U, w = janela
+    monkeypatch.setenv("JARVIS_TELA", "cheia")
+    monkeypatch.setattr(U, "_full", True)
+    api = U.Api(lambda t: None)
+    api.recolher()
+    api.minimizar()
+    assert w.calls == ["minimize"]
+
+
+def test_fullscreen_page_has_windows_and_hooks():
+    html = (ROOT / "windows" / "interface" / "reator.html").read_text(encoding="utf-8")
+    assert "@media (min-width: 600px)" in html and "const CHEIA = '(min-width: 600px)'" in html
+    for hook in ("window.mostraVoce", "api().recolher()", "api().expandir()", "border-radius: var(--raio)"):
+        assert hook in html
+    assert "innerHTML" not in html  # texto de arquivo/IA nunca vira HTML
 
 
 def test_whisper_near_miss_counts_only_as_first_word_after_vosk_heard_the_name():

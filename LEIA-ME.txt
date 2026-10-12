@@ -128,8 +128,16 @@ INTERFACE (A BOLHA)
    Parado ele gira devagar; ouvindo ondula; pensando pulsa; falando pulsa com a voz.
    Arraste o circulo para mudar de lugar. Passe o mouse em cima para ver
    o "–" (minimiza) e o "×" (fecha). As respostas sao faladas e aparecem no console.
-Quer o painel antigo (titulo, respostas escritas, cartoes e caixa de pedido)?
-   setx JARVIS_TELA painel      (e abra o PowerShell de novo)
+3. Quando voce fala com ele (ou chega um lembrete), a bolha vira TELA CHEIA:
+   o reator no meio, o que voce disse e o que ele respondeu embaixo, e as
+   janelas (musica, arquivos achados, "Mando para Ana? Sim/Nao", lembrete)
+   abrindo por cima. Quando ele termina e fica parado, volta a ser bolha.
+   Dois cliques na bolha abrem a tela cheia; Esc, "–" ou dois cliques voltam.
+Outros jeitos (setx JARVIS_TELA ... e abra o PowerShell de novo):
+   setx JARVIS_TELA cheia       (tela cheia o tempo todo; o "–" minimiza)
+   setx JARVIS_TELA clique      (so a bolha; tela cheia so com dois cliques)
+   setx JARVIS_TELA painel      (o painel antigo: titulo, respostas escritas, cartoes)
+   reg delete HKCU\Environment /v JARVIS_TELA /f   (volta ao padrao)
 Para abrir sem a janela:  python windows\jarvis_ai.py --sem-tela
 
 VOZ ("BOLHA", BIPE, PEDIDO)
