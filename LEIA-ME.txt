@@ -46,7 +46,9 @@ SE ALGO NAO FUNCIONAR
   de novo depois de 10 minutos. Reservas, nesta ordem:
   1. ElevenLabs (voz mais natural, creditos gratis limitados por mes): crie conta em
      elevenlabs.io > Developers > API Keys > crie a chave e faca
-     setx ELEVENLABS_API_KEY "a-chave"   (nunca em arquivo). Outra voz: setx ELEVENLABS_VOICE_ID "id".
+     setx ELEVENLABS_API_KEY "a-chave"   (nunca em arquivo).
+     A voz padrao e a Elvis: no site, Voices > Library > procure "Elvis" (portugues do Brasil)
+     > Add to my voices. Sem ela, usa a George. Outra voz: setx ELEVENLABS_VOICE "nome ou id".
   2. Google (gTTS): gratis e sem chave. python -m pip install gTTS
   Quando o Bing voltar a funcionar: python -m pip install -U edge-tts
 - "procura o arquivo" so olha algumas pastas: instale o Everything (secao

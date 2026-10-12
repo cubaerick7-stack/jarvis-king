@@ -23,6 +23,7 @@ import tempfile
 import threading
 import unicodedata
 import time
+import urllib.parse
 import urllib.request
 import wave
 import zipfile
@@ -318,7 +319,9 @@ def _play_mp3(path):
 EDGE_RETRY = 600  # a voz do Bing (Edge) recusou: fala pela ElevenLabs e só tenta o Bing de novo depois disso (s)
 _edge_off_until = 0.0
 ELEVEN_API = "https://api.elevenlabs.io/v1/text-to-speech/"
-ELEVEN_VOICE = "JBFqnCBsd6RMkjVDRZzb"  # George: voz masculina calma, estilo mordomo (troca com ELEVENLABS_VOICE_ID)
+ELEVEN_VOICE = "Elvis"  # nome (procurado em "Minhas vozes" da conta) ou id; troca com setx ELEVENLABS_VOICE
+ELEVEN_BACKUP_VOICE = "JBFqnCBsd6RMkjVDRZzb"  # George, voz pronta de toda conta: se não achar a Elvis
+_eleven_voice_ids = {}  # nome -> id já encontrado
 ELEVEN_MODEL = "eleven_flash_v2_5"  # o mais barato e rápido, fala português (troca com ELEVENLABS_MODEL)
 
 
@@ -350,11 +353,42 @@ def _edge_mp3(text, path):
         raise errors[0]
 
 
+def _eleven_get(url):
+    req = urllib.request.Request(url, headers={"xi-api-key": eleven_key(), "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def eleven_voice():
+    """O id da voz: ELEVENLABS_VOICE (nome como "Elvis" ou o id), procurada nas vozes da conta."""
+    wanted = (os.environ.get("ELEVENLABS_VOICE", "") or os.environ.get("ELEVENLABS_VOICE_ID", "")).strip() \
+        or ELEVEN_VOICE
+    if re.fullmatch(r"[A-Za-z0-9]{20}", wanted):
+        return wanted
+    if wanted.lower() not in _eleven_voice_ids:
+        found = ""
+        try:
+            data = _eleven_get("https://api.elevenlabs.io/v2/voices?page_size=100&search="
+                               + urllib.parse.quote(wanted))
+            voices = data.get("voices", [])
+            names = [(str(v.get("name", "")), v.get("voice_id", "")) for v in voices]
+            exact = [i for n, i in names if n.strip().lower() == wanted.lower()]
+            starts = [i for n, i in names if n.strip().lower().startswith(wanted.lower())]
+            found = (exact or starts or [""])[0]
+        except Exception:
+            pass
+        if not found:
+            print(f"\nJarvis > (não achei a voz {wanted} nas suas vozes da ElevenLabs; uso a George. "
+                  "No site: Voices > Library > procure a voz > Add to my voices)")
+        _eleven_voice_ids[wanted.lower()] = found or ELEVEN_BACKUP_VOICE
+    return _eleven_voice_ids[wanted.lower()]
+
+
 def _eleven_mp3(text, path):
     """Voz da ElevenLabs (chave só na variável ELEVENLABS_API_KEY; o plano grátis tem créditos limitados)."""
     import urllib.error
     model = os.environ.get("ELEVENLABS_MODEL", "").strip() or ELEVEN_MODEL
-    voice = os.environ.get("ELEVENLABS_VOICE_ID", "").strip() or ELEVEN_VOICE
+    voice = eleven_voice()
     body = {"text": text, "model_id": model}
     if model.endswith("_v2_5"):
         body["language_code"] = "pt"

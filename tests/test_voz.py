@@ -495,9 +495,29 @@ def test_elevenlabs_request_uses_portuguese_and_key_header(monkeypatch, tmp_path
 
     monkeypatch.setenv("ELEVENLABS_API_KEY", "k123")
     monkeypatch.delenv("ELEVENLABS_MODEL", raising=False)
-    monkeypatch.delenv("ELEVENLABS_VOICE_ID", raising=False)
+    monkeypatch.setenv("ELEVENLABS_VOICE", "zNEsdgTUa3ndwKry8Xcq")
     monkeypatch.setattr(V.urllib.request, "urlopen", fake_open)
     V._eleven_mp3("Olá", tmp_path / "a.mp3")
-    assert sent["key"] == "k123" and V.ELEVEN_VOICE in sent["url"]
+    assert sent["key"] == "k123" and sent["url"].endswith("/zNEsdgTUa3ndwKry8Xcq?output_format=mp3_44100_64")
     assert sent["body"] == {"text": "Olá", "model_id": "eleven_flash_v2_5", "language_code": "pt"}
     assert (tmp_path / "a.mp3").read_bytes() == b"mp3"
+
+
+def test_elevenlabs_voice_found_by_name(monkeypatch):
+    asked = []
+
+    def fake_get(url):
+        asked.append(url)
+        return {"voices": [{"name": "Elvis Presley Fake", "voice_id": "B" * 20},
+                           {"name": "Elvis", "voice_id": "A" * 20}]}
+
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "k")
+    monkeypatch.delenv("ELEVENLABS_VOICE", raising=False)
+    monkeypatch.delenv("ELEVENLABS_VOICE_ID", raising=False)
+    monkeypatch.setattr(V, "_eleven_voice_ids", {})
+    monkeypatch.setattr(V, "_eleven_get", fake_get)
+    assert V.eleven_voice() == "A" * 20  # o nome exato ganha
+    assert V.eleven_voice() == "A" * 20 and len(asked) == 1  # guarda: não pergunta toda fala
+    monkeypatch.setattr(V, "_eleven_voice_ids", {})
+    monkeypatch.setattr(V, "_eleven_get", lambda url: {"voices": []})
+    assert V.eleven_voice() == V.ELEVEN_BACKUP_VOICE  # não achou: usa a George
