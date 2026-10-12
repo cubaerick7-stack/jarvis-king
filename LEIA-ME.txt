@@ -42,8 +42,13 @@ SE ALGO NAO FUNCIONAR
   Se aparecer "Nao ouvi o pedido (som mais alto X, precisa de Y)", fale mais
   perto do microfone ou aumente o volume dele no Windows.
 - Nao fala: python -m pip install -U edge-tts  (e confira o som do PC).
-  Se a voz do Edge recusar (erro 403), ele fala com a voz do Windows (Daniel/Maria)
-  e tenta a do Edge de novo depois de 10 minutos.
+  Se a voz do Bing (Edge) recusar (erro 403), ele usa as reservas e tenta o Bing
+  de novo depois de 10 minutos. Reservas, nesta ordem:
+  1. ElevenLabs (voz mais natural, creditos gratis limitados por mes): crie conta em
+     elevenlabs.io > Developers > API Keys > crie a chave e faca
+     setx ELEVENLABS_API_KEY "a-chave"   (nunca em arquivo). Outra voz: setx ELEVENLABS_VOICE_ID "id".
+  2. Google (gTTS): gratis e sem chave. python -m pip install gTTS
+  Quando o Bing voltar a funcionar: python -m pip install -U edge-tts
 - "procura o arquivo" so olha algumas pastas: instale o Everything (secao
   "BUSCA NO PC INTEIRO" abaixo).
 - Qualquer erro aparece no console e o Jarvis fala o motivo.

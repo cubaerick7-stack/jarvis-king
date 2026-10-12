@@ -10,3 +10,4 @@ vosk
 sounddevice
 edge-tts
 pywebview
+gTTS

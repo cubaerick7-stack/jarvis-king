@@ -411,20 +411,93 @@ def test_weather_without_ai_still_sounds_natural(monkeypatch):
                     " A umidade está em 91 por cento."]
 
 
-def test_edge_refused_falls_back_to_windows_voice(monkeypatch):
+def _fake_edge(monkeypatch, fail):
     import types
-    spoke = []
+    calls = []
 
     class Communicate:
-        def __init__(self, *a, **k):
-            pass
+        def __init__(self, text, *a, **k):
+            self.text = text
 
         async def save(self, path):
-            raise RuntimeError("403, message='Invalid response status'")
+            calls.append(self.text)
+            if fail:
+                raise RuntimeError("403, message='Invalid response status', url='wss://speech.platform.bing.com/x'")
+            Path(path).write_bytes(b"mp3")
 
     monkeypatch.setitem(sys.modules, "edge_tts", types.SimpleNamespace(Communicate=Communicate))
     monkeypatch.setattr(V, "_edge_off_until", 0.0)
-    monkeypatch.setattr(V, "_windows_voice", lambda t: spoke.append(t))
+    monkeypatch.setattr(V, "_play_mp3", lambda path: None)
+    monkeypatch.setattr(V, "_has_gtts", lambda: False)
+    return calls
+
+
+def test_bing_refused_falls_back_to_elevenlabs(monkeypatch, tmp_path):
+    edge = _fake_edge(monkeypatch, fail=True)
+    eleven = []
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "teste")
+    monkeypatch.setattr(V, "_eleven_mp3", lambda text, path: eleven.append(text) or Path(path).write_bytes(b"mp3"))
     V.say("Olá, senhor.")
-    V.say("Tudo certo.")  # não tenta o Edge de novo logo em seguida
-    assert spoke == ["Olá, senhor.", "Tudo certo."] and V._edge_off_until > 0
+    V.say("Tudo certo.")  # não tenta o Bing de novo logo em seguida
+    assert edge == ["Olá, senhor."] and eleven == ["Olá, senhor.", "Tudo certo."]
+    monkeypatch.setattr(V, "_edge_off_until", 1.0)  # passou o tempo: tenta o Bing de novo
+    V.say("De novo.")
+    assert edge == ["Olá, senhor.", "De novo."]
+
+
+def test_bing_working_does_not_spend_elevenlabs_credits(monkeypatch):
+    edge = _fake_edge(monkeypatch, fail=False)
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "teste")
+    monkeypatch.setattr(V, "_eleven_mp3", lambda *a: pytest.fail("gastou crédito à toa"))
+    V.say("Olá, senhor.")
+    assert edge == ["Olá, senhor."]
+
+
+def test_without_elevenlabs_key_says_how_to_get_backup_voice(monkeypatch):
+    _fake_edge(monkeypatch, fail=True)
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    with pytest.raises(RuntimeError) as e:
+        V.say("Olá, senhor.")
+    assert "403" in str(e.value) and "ELEVENLABS_API_KEY" in str(e.value) and "wss://" not in str(e.value)
+
+
+def test_google_voice_is_last_backup(monkeypatch):
+    _fake_edge(monkeypatch, fail=True)
+    used = []
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "teste")
+
+    def no_credits(text, path):
+        raise RuntimeError("acabaram os créditos da ElevenLabs deste mês")
+
+    monkeypatch.setattr(V, "_eleven_mp3", no_credits)
+    monkeypatch.setattr(V, "_has_gtts", lambda: True)
+    monkeypatch.setattr(V, "_gtts_mp3", lambda text, path: used.append(text))
+    V.say("Olá, senhor.")
+    assert used == ["Olá, senhor."]
+
+
+def test_elevenlabs_request_uses_portuguese_and_key_header(monkeypatch, tmp_path):
+    sent = {}
+
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b"mp3"
+
+    def fake_open(req, timeout=0):
+        sent["url"], sent["key"], sent["body"] = req.full_url, req.get_header("Xi-api-key"), json.loads(req.data)
+        return Resp()
+
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "k123")
+    monkeypatch.delenv("ELEVENLABS_MODEL", raising=False)
+    monkeypatch.delenv("ELEVENLABS_VOICE_ID", raising=False)
+    monkeypatch.setattr(V.urllib.request, "urlopen", fake_open)
+    V._eleven_mp3("Olá", tmp_path / "a.mp3")
+    assert sent["key"] == "k123" and V.ELEVEN_VOICE in sent["url"]
+    assert sent["body"] == {"text": "Olá", "model_id": "eleven_flash_v2_5", "language_code": "pt"}
+    assert (tmp_path / "a.mp3").read_bytes() == b"mp3"

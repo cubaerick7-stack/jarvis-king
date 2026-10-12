@@ -281,13 +281,11 @@ def clean_for_speech(text):
 
 
 def can_speak():
-    for mod in ("edge_tts", "comtypes"):  # sem o Edge, ainda tem a voz do Windows
-        try:
-            __import__(mod)
-            return True
-        except ImportError:
-            pass
-    return False
+    try:
+        import edge_tts  # noqa: F401
+        return True
+    except ImportError:
+        return bool(eleven_key()) or _has_gtts()  # sem o edge-tts, ainda dá para falar pelas reservas
 
 
 def _mci(command):
@@ -317,71 +315,29 @@ def _play_mp3(path):
             pass
 
 
-EDGE_RETRY = 600  # a voz do Edge recusou: usa a do Windows e só tenta o Edge de novo depois disso (s)
+EDGE_RETRY = 600  # a voz do Bing (Edge) recusou: fala pela ElevenLabs e só tenta o Bing de novo depois disso (s)
 _edge_off_until = 0.0
+ELEVEN_API = "https://api.elevenlabs.io/v1/text-to-speech/"
+ELEVEN_VOICE = "JBFqnCBsd6RMkjVDRZzb"  # George: voz masculina calma, estilo mordomo (troca com ELEVENLABS_VOICE_ID)
+ELEVEN_MODEL = "eleven_flash_v2_5"  # o mais barato e rápido, fala português (troca com ELEVENLABS_MODEL)
 
 
-def _windows_voice(text):
-    """Voz do próprio Windows (SAPI), de reserva quando a do Edge falha. Prefere voz masculina pt-BR (Daniel)."""
+def eleven_key():
+    return os.environ.get("ELEVENLABS_API_KEY", "").strip()
+
+
+def _short_error(e):
+    text = str(e)
+    if "403" in text:
+        return "recusou (erro 403)"
+    return re.sub(r"https?://\S+", "", text)[:120].strip()
+
+
+def _edge_mp3(text, path):
+    import edge_tts
     errors = []
 
-    def run():
-        try:
-            import comtypes
-            import comtypes.client
-            comtypes.CoInitialize()
-            try:
-                voice = comtypes.client.CreateObject("SAPI.SpVoice")
-                voices = voice.GetVoices("Language=416")  # pt-BR
-                tokens = [voices.Item(i) for i in range(voices.Count)]
-                male = [t for t in tokens if "daniel" in t.GetDescription().lower()]
-                if male or tokens:
-                    voice.Voice = (male or tokens)[0]
-                voice.Speak(text, 0)  # 0 = espera terminar de falar
-            finally:
-                comtypes.CoUninitialize()
-        except Exception as e:
-            errors.append(e)
-
-    t = threading.Thread(target=run)  # COM em thread própria, sem mexer na do navegador
-    t.start()
-    t.join()
-    if errors:
-        raise errors[0]
-
-
-def _speak_windows(text, on_state, reason=None):
-    if reason is not None:
-        print(f"Jarvis > (a voz do Edge recusou: {str(reason)[:80]}; falo com a voz do Windows)")
-    speaking.set()
-    if on_state:
-        on_state("falando")
-    try:
-        _windows_voice(text)
-    finally:
-        time.sleep(0.2)
-        speaking.clear()
-        if on_state:
-            on_state("parado")
-
-
-def say(text, on_state=None):
-    global _edge_off_until
-    text = clean_for_speech(text)
-    if not text:
-        return
-    if time.time() < _edge_off_until:
-        return _speak_windows(text, on_state)
-    try:
-        import edge_tts
-    except ImportError:
-        return _speak_windows(text, on_state)
-    # Um arquivo por fala: o anterior pode ainda estar preso pelo Windows.
-    path = Path(tempfile.gettempdir()) / f"jarvis_fala_{int(time.time() * 1000)}.mp3"
-    # Thread própria: o asyncio do edge-tts não se mistura com o loop do navegador (Playwright).
-    errors = []
-
-    def synth():
+    def synth():  # thread própria: o asyncio do edge-tts não se mistura com o loop do navegador (Playwright)
         try:
             asyncio.run(edge_tts.Communicate(text, VOICE, rate=RATE, pitch=PITCH).save(str(path)))
         except Exception as e:
@@ -391,8 +347,91 @@ def say(text, on_state=None):
     t.start()
     t.join()
     if errors:
-        _edge_off_until = time.time() + EDGE_RETRY
-        return _speak_windows(text, on_state, errors[0])
+        raise errors[0]
+
+
+def _eleven_mp3(text, path):
+    """Voz da ElevenLabs (chave só na variável ELEVENLABS_API_KEY; o plano grátis tem créditos limitados)."""
+    import urllib.error
+    model = os.environ.get("ELEVENLABS_MODEL", "").strip() or ELEVEN_MODEL
+    voice = os.environ.get("ELEVENLABS_VOICE_ID", "").strip() or ELEVEN_VOICE
+    body = {"text": text, "model_id": model}
+    if model.endswith("_v2_5"):
+        body["language_code"] = "pt"
+    req = urllib.request.Request(
+        ELEVEN_API + voice + "?output_format=mp3_44100_64", data=json.dumps(body).encode("utf-8"),
+        headers={"xi-api-key": eleven_key(), "Content-Type": "application/json", "Accept": "audio/mpeg"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            audio = r.read()
+    except urllib.error.HTTPError as e:
+        try:
+            detail = json.loads(e.read().decode("utf-8", "replace")).get("detail", {})
+            detail = detail.get("message", "") if isinstance(detail, dict) else str(detail)
+        except Exception:
+            detail = ""
+        if e.code == 401:
+            raise RuntimeError(f"a chave da ElevenLabs foi recusada ({detail or 'confira ELEVENLABS_API_KEY'})") from e
+        if e.code in (402, 429) or "quota" in detail.lower() or "credit" in detail.lower():
+            raise RuntimeError("acabaram os créditos da ElevenLabs deste mês") from e
+        raise RuntimeError(f"a ElevenLabs respondeu HTTP {e.code} {detail}".strip()) from e
+    if not audio:
+        raise RuntimeError("a ElevenLabs não mandou áudio")
+    Path(path).write_bytes(audio)
+
+
+def _gtts_mp3(text, path):
+    """Voz do Google Tradutor (gTTS): grátis e sem chave, a última reserva."""
+    from gtts import gTTS
+    gTTS(text, lang="pt", tld="com.br").save(str(path))
+
+
+def _has_gtts():
+    try:
+        import gtts  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _synth(text, path):
+    """Bing (Edge, grátis) primeiro; reservas: ElevenLabs (se tiver chave) e Google (gTTS).
+    Se o Bing recusar, fica um tempo só nas reservas e depois tenta o Bing de novo."""
+    global _edge_off_until
+    backups = []
+    if eleven_key():
+        backups.append(("ElevenLabs", _eleven_mp3))
+    if _has_gtts():
+        backups.append(("Google", _gtts_mp3))
+    errors = []
+    if not backups or time.time() >= _edge_off_until:
+        try:
+            _edge_mp3(text, path)
+            _edge_off_until = 0.0
+            return
+        except Exception as e:
+            errors.append(f"voz do Bing {_short_error(e)}")
+            if backups and not _edge_off_until:
+                print(f"\nJarvis > (a voz do Bing {_short_error(e)}; falo com a {backups[0][0]} por enquanto)")
+            _edge_off_until = time.time() + EDGE_RETRY
+    for name, make in backups:
+        try:
+            make(text, path)
+            return
+        except Exception as e:
+            errors.append(f"{name}: {_short_error(e)}")
+    if not backups:
+        errors.append("para ter voz de reserva: python -m pip install gTTS, ou setx ELEVENLABS_API_KEY (veja VOZ no LEIA-ME)")
+    raise RuntimeError("; ".join(errors))
+
+
+def say(text, on_state=None):
+    text = clean_for_speech(text)
+    if not text:
+        return
+    # Um arquivo por fala: o anterior pode ainda estar preso pelo Windows.
+    path = Path(tempfile.gettempdir()) / f"jarvis_fala_{int(time.time() * 1000)}.mp3"
+    _synth(text, path)
     speaking.set()
     if on_state:
         on_state("falando")
