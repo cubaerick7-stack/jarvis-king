@@ -20,7 +20,12 @@ class FakeLocator:
         pass
 
     def get_attribute(self, name):
+        if self.sel in B.WA_TITLE:  # cabeçalho da conversa aberta no WhatsApp
+            return self.page.chat if name == "title" else None
         return "Evidências - Chitãozinho & Xororó"
+
+    def inner_text(self, timeout=None):
+        return self.page.chat
 
     def click(self, timeout=None):
         self.page.log.append(("click", self.sel))
@@ -42,7 +47,7 @@ class FakeKeyboard:
 
 class FakePage:
     def __init__(self):
-        self.log, self.url = [], "about:blank"
+        self.log, self.url, self.chat = [], "about:blank", "Ana"
         self.keyboard = FakeKeyboard(self)
 
     def goto(self, url, **kw):
@@ -61,11 +66,15 @@ class FakePage:
     def is_closed(self):
         return False
 
+    def wait_for_timeout(self, ms):
+        pass
+
 
 def use_fake(monkeypatch):
     p = FakePage()
-    monkeypatch.setattr(B, "page", lambda: p)
+    monkeypatch.setattr(B, "page", lambda kind="web": p)
     monkeypatch.setattr(B, "_page", p)
+    monkeypatch.setattr(B, "_tabs", {"midia": p, "web": p, "zap": p})
     return p
 
 
@@ -73,7 +82,7 @@ def test_play_youtube_clicks_first_video_in_same_tab(monkeypatch):
     p = use_fake(monkeypatch)
     assert "Evidências" in B.play_youtube("evidências")
     assert p.log[0][0] == "goto" and "search_query=evid" in p.log[0][1]
-    assert ("click", "ytd-video-renderer a#video-title") in p.log
+    assert ("click", B.YT_FIRST_VIDEO) in p.log
     assert B.on_youtube()
 
 
@@ -85,15 +94,43 @@ def test_youtube_control_keys(monkeypatch):
     assert [k for a, k in p.log if a == "press"] == ["Shift+N", "c"]
 
 
+def fake_clock(monkeypatch):
+    """Relógio falso: o sleep só avança o tempo, para os testes não esperarem de verdade."""
+    from types import SimpleNamespace
+    now = [1000.0]
+
+    def sleep(s):
+        now[0] += s
+
+    monkeypatch.setattr(B, "time", SimpleNamespace(time=lambda: now[0], sleep=sleep))
+
+
 def test_whatsapp_asks_before_sending(monkeypatch):
     p = use_fake(monkeypatch)
-    monkeypatch.setattr(B.time, "sleep", lambda s: None)
+    fake_clock(monkeypatch)
     assert B.whatsapp_send("Ana", "chego às 8", confirm=lambda q: False) is False
     assert ("type", "chego às 8") not in p.log
     asked = []
     assert B.whatsapp_send("Ana", "chego às 8", confirm=lambda q: asked.append(q) or True)
     assert ("type", "chego às 8") in p.log and p.log[-1] == ("press", "Enter")
     assert "Ana" in asked[0]
+
+
+def test_whatsapp_refuses_wrong_chat(monkeypatch):
+    p = use_fake(monkeypatch)
+    fake_clock(monkeypatch)
+    p.chat = "Mariana"  # a busca por "Ana" abriu a conversa errada
+    asked = []
+    assert B.whatsapp_send("Ana", "chego às 8", confirm=lambda q: asked.append(q) or True) is False
+    assert not asked and ("type", "chego às 8") not in p.log
+
+
+def test_same_person():
+    assert B.same_person("Ana", "Ana Paula")
+    assert B.same_person("mãe", "Mãe ❤️")
+    assert B.same_person("joao silva", "João")
+    assert not B.same_person("Ana", "Mariana")
+    assert not B.same_person("Ana", "")
 
 
 def load_jarvis():

@@ -14,7 +14,9 @@ import re
 import shutil
 import socket
 import subprocess
+import tempfile
 import threading
+import time
 import unicodedata
 import urllib.parse
 import urllib.request
@@ -43,6 +45,15 @@ PROTECTED_PROCESSES = {
     "python", "pythonw", "py", "explorer", "csrss", "winlogon", "svchost", "system", "lsass",
     "services", "smss", "wininit", "dwm", "conhost", "powershell", "pwsh", "cmd",
     "windowsterminal", "ollama", "ollama app",
+    "msedgewebview2",  # desenha a janela do Jarvis (e a de outros programas)
+}
+# Nome falado -> processo ("fecha o bloco de notas" = notepad.exe)
+PROCESS_ALIASES = {
+    "bloco de notas": ["notepad"], "notas": ["notepad"], "calculadora": ["calculatorapp", "calculator", "calc"],
+    "gerenciador de tarefas": ["taskmgr"], "edge": ["msedge"], "microsoft edge": ["msedge"],
+    "google chrome": ["chrome"], "word": ["winword"], "powerpoint": ["powerpnt"], "excel": ["excel"],
+    "explorador de arquivos": ["explorer"],  # protegido: responde que não fecha (é a barra de tarefas)
+    "paint": ["mspaint"], "spotify": ["spotify"], "teams": ["ms-teams", "teams"],
 }
 # Pastas onde o Jarvis não mexe em arquivos
 PROTECTED_DIRS = [r"c:\windows", r"c:\program files", r"c:\program files (x86)", r"c:\programdata"]
@@ -116,33 +127,60 @@ def list_processes(limit=10):
         except Exception:
             continue
     procs.sort(reverse=True)
-    _say(f"Programas usando mais memória:")
+    _say("Programas usando mais memória:")
     for rss, name in procs[: int(limit)]:
         print(f"  {name}: {rss / (1024 ** 2):.0f} MB")
     return True
 
 
 def close_app(name):
+    """Fecha como o X da janela (o programa pergunta se quer salvar); só força o que não tem janela."""
     import psutil
     wanted = _norm(re.sub(r"\.exe$", "", str(name), flags=re.I))
     if not wanted:
         return False
-    if wanted in PROTECTED_PROCESSES:
+    names = PROCESS_ALIASES.get(wanted, [wanted.replace(" ", "")])
+    if wanted in PROTECTED_PROCESSES or any(n in PROTECTED_PROCESSES for n in names):
         _say(f"Não fecho {name}: é parte do sistema ou do próprio Jarvis.")
         return False
-    closed = set()
-    for p in psutil.process_iter(["name"]):
+    try:  # o Edge do próprio Jarvis (YouTube, WhatsApp) é filho dele: "fecha o edge" não mexe nele
+        mine = {c.pid for c in psutil.Process().children(recursive=True)} | {os.getpid()}
+    except Exception:
+        mine = {os.getpid()}
+    found, closed, windowless, denied = set(), set(), [], set()
+    for p in psutil.process_iter(["name", "pid"]):
         pname = _norm(re.sub(r"\.exe$", "", p.info["name"] or "", flags=re.I))
-        if not pname or pname in PROTECTED_PROCESSES:
+        if not pname or pname in PROTECTED_PROCESSES or p.info["pid"] in mine:
             continue
-        if pname == wanted or (len(wanted) >= 4 and wanted in pname):
+        if pname in names or any(len(n) >= 4 and pname.startswith(n) for n in names):
+            found.add(p.info["name"])
             try:
-                p.terminate()
+                r = _run(["taskkill", "/PID", str(p.info["pid"])])  # sem /F: pede para fechar
+                if r.returncode == 0:
+                    closed.add(p.info["name"])
+                else:
+                    windowless.append(p)
+            except Exception:
+                windowless.append(p)
+    if windowless:
+        time.sleep(1.5)  # os processos de fundo costumam sair junto com a janela principal
+        for p in windowless:
+            try:
+                if p.is_running():
+                    p.terminate()
                 closed.add(p.info["name"])
+            except psutil.NoSuchProcess:
+                closed.add(p.info["name"])
+            except psutil.AccessDenied:
+                denied.add(p.info["name"])
             except Exception:
                 continue
-    if not closed:
+    if not found:
         _say(f"Não achei {name} aberto.")
+        return False
+    if denied - closed:  # ex.: o Gerenciador de Tarefas roda como administrador
+        _say(f"Não consegui fechar {', '.join(sorted(denied - closed))}: roda como administrador.")
+    if not closed:
         return False
     _say(f"Fechei: {', '.join(sorted(closed))}.")
     return True
@@ -279,16 +317,20 @@ def calculate(expression):
 
 
 _timers = []
+on_alarm = None  # o Jarvis liga isto para o timer virar aviso falado no reator
 
 
 def _alert(message):
-    print(f"\n⏰ Jarvis > {message}\nVocê > ", end="", flush=True)
     try:
         import winsound
         for _ in range(3):
             winsound.Beep(880, 300)
     except Exception:
         pass
+    if on_alarm is not None:
+        on_alarm(message)
+        return
+    print(f"\n⏰ Jarvis > {message}\nVocê > ", end="", flush=True)
     try:
         ctypes.windll.user32.MessageBoxW(0, message, "Jarvis", 0x40 | 0x40000)
     except Exception:
@@ -524,7 +566,7 @@ def find_es():
 
 
 def _decode(raw):
-    for enc in ("utf-8", "mbcs", "cp1252"):
+    for enc in ("utf-8", f"cp{_oem_cp()}", "mbcs", "cp1252"):
         try:
             return raw.decode(enc)
         except (UnicodeDecodeError, LookupError):
@@ -532,32 +574,239 @@ def _decode(raw):
     return raw.decode("utf-8", "replace")
 
 
+def _oem_cp():
+    try:
+        return ctypes.windll.kernel32.GetOEMCP()  # 850 no Windows em português
+    except Exception:
+        return 850
+
+
+def _excluded(path):
+    low = path.lower()
+    return any(x.lower() in low for x in EVERYTHING_EXCLUDE)
+
+
+def _es_command(exe, terms, limit, out, wait_ms=0):
+    """Linha de comando do es.exe como TEXTO. O es.exe lê as aspas do jeito dele (barra invertida não
+    escapa nada), então a lista do subprocess, que vira \\", estragava as exclusões e zerava a busca."""
+    parts = [f'"{exe}"', "-n", str(int(limit))]
+    if wait_ms:
+        parts += ["-timeout", str(int(wait_ms))]  # espera o Everything terminar de carregar o índice
+    parts += ["-export-txt", f'"{out}"']  # o arquivo sai em UTF-8 (o console sairia na página 850)
+    parts += terms + [f'!"{p}"' for p in EVERYTHING_EXCLUDE]
+    return " ".join(parts)
+
+
 def everything_search(query, limit=400, extension=None):
     """Caminhos achados pelo Everything, ou None se ele não estiver instalado/aberto."""
     exe = find_es()
     if not exe:
         return None
-    terms = [f"ext:{extension.lstrip('.')}"] if extension else str(query).split()
-    terms += [f'!"{p}"' for p in EVERYTHING_EXCLUDE]
+    if extension:
+        terms = [f"ext:{extension.lstrip('.')}"]
+    else:  # cada palavra entre aspas: "-foo" não vira opção do es.exe e |, !, <, > ficam literais
+        terms = [t if re.match(r"^[a-z]+:", t, re.I) else f'"{t}"'
+                 for t in str(query).replace('"', " ").split() if t]
+    out = Path(tempfile.gettempdir()) / f"jarvis_es_{os.getpid()}_{threading.get_ident()}.txt"
 
-    def ask():
+    def ask(wait_ms=0):
         try:
-            return subprocess.run([exe, "-n", str(limit), *terms], capture_output=True, timeout=10,
+            return subprocess.run(_es_command(exe, terms, limit * 2, out, wait_ms), capture_output=True, timeout=25,
                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except (OSError, subprocess.TimeoutExpired):
             return None
 
-    r = ask()
-    if r is not None and r.returncode != 0 and start_everything():
-        import time
-        for _ in range(8):  # o Everything leva uns segundos para carregar o índice
-            time.sleep(1)
-            r = ask()
-            if r is not None and r.returncode == 0:
-                break
-    if r is None or r.returncode != 0:  # Everything fechado: o es.exe não consegue perguntar
+    try:
+        r = ask()
+        if r is not None and r.returncode != 0 and start_everything():
+            r = ask(wait_ms=20000)  # o -timeout espera a janela do Everything abrir e o índice carregar
+        if r is None or r.returncode != 0:  # Everything fechado: o es.exe não consegue perguntar
+            return None
+        try:
+            text = out.read_text(encoding="utf-8-sig", errors="replace")
+        except OSError:
+            text = _decode(r.stdout or b"")
+    finally:
+        try:
+            out.unlink()
+        except OSError:
+            pass
+    paths = [line.strip() for line in text.splitlines() if line.strip()]
+    return [p for p in paths if not _excluded(p)][:limit]  # sistema fica de fora mesmo se o filtro falhar
+
+
+_drives = {}
+
+
+def indexes_drive(drive):
+    """O Everything indexa este disco? Por padrão ele só indexa discos NTFS fixos: num pendrive ou
+    disco exFAT o "não achei" dele não vale. Pergunta uma vez por disco (None = sem Everything)."""
+    key = str(drive)[:2].upper()
+    if key not in _drives:
+        found = everything_search(key + "\\", 1)
+        if found is None:
+            return None
+        _drives[key] = bool(found)
+    return _drives[key]
+
+
+def warm_up_everything():
+    """Abre o Everything ao ligar o Jarvis, para o índice estar pronto na primeira busca."""
+    exe = find_es()
+    if not exe:
+        return
+    try:
+        r = subprocess.run(f'"{exe}" -n 1 jarvis', capture_output=True, timeout=10,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        if r.returncode != 0:
+            start_everything()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+# ------------------------- apps da Microsoft Store -------------------------
+_store_apps = None
+_store_lock = threading.Lock()
+
+
+def store_apps():
+    """Nome -> AppID dos apps do Menu Iniciar (inclui os da Store, que não têm .lnk). Lido uma vez."""
+    global _store_apps
+    with _store_lock:
+        if _store_apps is not None:
+            return _store_apps
+        _store_apps = {}
+        if os.name != "nt":
+            return _store_apps
+        cmd = ("[Console]::OutputEncoding=[Text.Encoding]::UTF8; "
+               "Get-StartApps | Select-Object Name,AppID | ConvertTo-Json -Compress")
+        try:
+            r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", cmd],
+                               capture_output=True, timeout=20,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            items = json.loads(r.stdout.decode("utf-8-sig", "replace") or "[]")
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            return _store_apps
+        for item in items if isinstance(items, list) else [items]:
+            if isinstance(item, dict) and item.get("Name") and item.get("AppID"):
+                _store_apps.setdefault(_norm(item["Name"]), (item["Name"], item["AppID"]))
+        return _store_apps
+
+
+def store_app(name):
+    """(nome, AppID) do app com esse nome (ou bem parecido), ou None."""
+    import difflib
+    wanted = _norm(name)
+    apps = store_apps()
+    if not wanted or not apps:
         return None
-    return [line.strip() for line in _decode(r.stdout).splitlines() if line.strip()]
+    if wanted in apps:
+        return apps[wanted]
+    close = difflib.get_close_matches(wanted, list(apps), n=1, cutoff=0.85)
+    return apps[close[0]] if close else None
+
+
+# ========================= JANELAS DO PRÓPRIO JARVIS =========================
+# Pedido digitado no reator ou no console deixa a janela do Jarvis na frente. Antes de digitar,
+# apertar teclas ou fechar/minimizar, o Jarvis volta para a última janela do usuário.
+
+_last_user_window = None
+
+
+def foreground_window():
+    try:
+        return ctypes.windll.user32.GetForegroundWindow()
+    except Exception:
+        return None
+
+
+def is_jarvis_window(hwnd):
+    """Reator, console do Jarvis ou Windows Terminal (onde o Jarvis costuma rodar)."""
+    if not hwnd:
+        return False
+    try:
+        u32, k32 = ctypes.windll.user32, ctypes.windll.kernel32
+        pid = ctypes.c_ulong()
+        u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value == os.getpid():
+            return True
+        console = k32.GetConsoleWindow()
+        if console and hwnd in (console, u32.GetAncestor(console, 3)):  # 3 = GA_ROOTOWNER
+            return True
+        cls = ctypes.create_unicode_buffer(64)
+        u32.GetClassNameW(hwnd, cls, 64)
+        return cls.value == "CASCADIA_HOSTING_WINDOW_CLASS"
+    except Exception:
+        return False
+
+
+def track_focus(every=0.3):
+    """Lembra qual foi a última janela do usuário (que não é do Jarvis)."""
+    if foreground_window() is None:
+        return
+
+    def loop():
+        global _last_user_window
+        while True:
+            hwnd = foreground_window()
+            if hwnd and not is_jarvis_window(hwnd):
+                _last_user_window = hwnd
+            time.sleep(every)
+
+    threading.Thread(target=loop, daemon=True).start()
+
+
+def _title(hwnd):
+    try:
+        buf = ctypes.create_unicode_buffer(256)
+        ctypes.windll.user32.GetWindowTextW(hwnd, buf, 256)
+        return buf.value
+    except Exception:
+        return ""
+
+
+def user_window_title():
+    """Título da janela em que o usuário estava (não a do Jarvis)."""
+    hwnd = foreground_window()
+    if hwnd and not is_jarvis_window(hwnd):
+        return _title(hwnd)
+    return _title(_last_user_window) if _last_user_window else ""
+
+
+def leave_jarvis_window():
+    """Se a janela da frente é do Jarvis, volta para a do usuário. False se não conseguiu."""
+    hwnd = foreground_window()
+    if hwnd is None or not is_jarvis_window(hwnd):
+        return True
+    target = _last_user_window
+    try:
+        u32 = ctypes.windll.user32
+        if not target or not u32.IsWindow(target):
+            return False
+        if u32.IsIconic(target):
+            u32.ShowWindow(target, 9)  # SW_RESTORE
+        u32.keybd_event(0x12, 0, 0, 0)  # um toque no Alt libera o SetForegroundWindow
+        u32.keybd_event(0x12, 0, 2, 0)
+        u32.SetForegroundWindow(target)
+    except Exception:
+        return False
+    time.sleep(0.3)
+    return not is_jarvis_window(foreground_window())
+
+
+def wait_new_window(before, timeout=8.0, least=1.0):
+    """Depois de abrir um programa, espera a janela dele vir para a frente (no i3 pode levar uns segundos)."""
+    if before is None:  # sem como olhar as janelas: espera um tempo fixo
+        time.sleep(1.5)
+        return False
+    start = time.time()
+    while time.time() - start < timeout:
+        hwnd = foreground_window()
+        if time.time() - start >= least and hwnd and hwnd != before and not is_jarvis_window(hwnd):
+            time.sleep(0.4)  # a janela apareceu; espera ela aceitar teclado
+            return True
+        time.sleep(0.2)
+    return False
 
 
 # ========================= TEXTO E TECLADO =========================
@@ -566,6 +815,9 @@ def type_text(text):
     """Digita no programa da frente (via área de transferência, para acentos funcionarem)."""
     import pyautogui
     import pyperclip
+    if not leave_jarvis_window():
+        _say("Clique na janela onde devo digitar e peça de novo.")
+        return False
     old = None
     try:
         old = pyperclip.paste()
@@ -592,6 +844,9 @@ def press_keys(keys):
     parts = ["ctrl" if k == "control" else "esc" if k == "escape" else k for k in parts]
     if not parts or any(k not in ALLOWED_KEYS for k in parts):
         _say(f"Não sei apertar '{keys}'.")
+        return False
+    if not leave_jarvis_window():
+        _say("Clique na janela onde devo apertar as teclas e peça de novo.")
         return False
     pyautogui.hotkey(*parts)
     _say(f"Apertei {'+'.join(parts)}.")

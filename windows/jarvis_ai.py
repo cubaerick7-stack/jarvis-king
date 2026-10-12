@@ -6,6 +6,7 @@ import ctypes
 import difflib
 import io
 import json
+import ntpath
 import os
 import platform
 import queue
@@ -15,6 +16,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import unicodedata
 import webbrowser
 from datetime import datetime
@@ -47,20 +49,39 @@ MAX_RESULTS = 20
 MAX_SCAN = 400  # quantos achados juntar antes de ordenar
 SCREENSHOT_DIR = Path(r"G:\Jarvis\screenshots")
 ACTION_LOG = Path(os.environ.get("JARVIS_LOG", r"G:\Jarvis\logs\acoes.log"))
-SEARCH_ROOTS = [
-    Path(r"G:\\"),
-    Path.home() / "Desktop",
-    Path.home() / "Downloads",
-    Path.home() / "Documents",
-]
+
+
+def _shell_folder(name, fallback):
+    """Pasta de verdade do Windows (com o OneDrive ligado, a Área de Trabalho fica dentro dele)."""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders") as k:
+            return Path(os.path.expandvars(winreg.QueryValueEx(k, name)[0]))
+    except (ImportError, OSError):
+        return Path.home() / fallback
+
+
+DESKTOP = _shell_folder("Desktop", "Desktop")
+DOCUMENTS = _shell_folder("Personal", "Documents")
+DOWNLOADS = _shell_folder("{374DE290-123F-4565-9164-39C4925E467B}", "Downloads")
+PICTURES = _shell_folder("My Pictures", "Pictures")
+MUSIC = _shell_folder("My Music", "Music")
+VIDEOS = _shell_folder("My Video", "Videos")
+GAMES_DRIVE = Path("G:\\")
+SEARCH_ROOTS = [DESKTOP, DOWNLOADS, DOCUMENTS, GAMES_DRIVE]
 PROGRAM_ROOTS = [
     Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs",
     Path(os.environ.get("PROGRAMDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs",
-    Path.home() / "Desktop",
-    Path(r"G:\\"),
+    DESKTOP,
+    Path(os.environ.get("PUBLIC", r"C:\Users\Public")) / "Desktop",  # atalhos de jogos "para todos os usuários"
 ]
+EXTRA_PROGRAM_ROOTS = [GAMES_DRIVE]  # jogos soltos no G: (varrido raso, só se o Menu Iniciar não tiver)
+SKIP_NAMES = {"$recycle.bin", "system volume information", ".git", "node_modules", "__pycache__", "appdata"}
+SKIP_PATHS = {r"g:\jarvis\navegador", r"g:\jarvis\modelos", r"g:\jarvis\tools"}  # milhares de arquivos do Jarvis
 PROGRAM_EXTS = (".lnk", ".exe", ".url")
 last_results = []
+last_kind = None  # "arquivos" ou "web": a que "abre o segundo" se refere
 
 
 def normalize(text):
@@ -217,7 +238,7 @@ def open_target(target):
         return True
 
     if low == "taskmgr":
-        subprocess.Popen(["taskmgr.exe"])
+        os.startfile("taskmgr.exe")  # pede elevação: o Popen dá WinError 740
         print("Jarvis > Gerenciador de Tarefas aberto.")
         return True
 
@@ -240,17 +261,31 @@ def open_target(target):
         if launch(program):
             return True
 
+    app = F.store_app(original)  # apps da Microsoft Store (Câmera, Calendário...) não têm atalho comum
+    if app:
+        try:
+            os.startfile("shell:AppsFolder\\" + app[1])
+            print(f"Jarvis > Abrindo {app[0]}.")
+            return True
+        except OSError:
+            pass
+
     if len(low.split()) > 4:
         print(f"Jarvis > Não achei um programa chamado \"{original}\".")
         return False
 
     need_pyautogui()
     pyautogui.press("win")
-    time.sleep(0.4)
-    pyautogui.write(original, interval=0.025)
-    time.sleep(0.7)
+    time.sleep(0.6)
+    try:  # colar mantém os acentos ("câmera"); o pyautogui.write pula letras acentuadas
+        import pyperclip
+        pyperclip.copy(original)
+        pyautogui.hotkey("ctrl", "v")
+    except Exception:
+        pyautogui.write(low, interval=0.025)  # sem acento a busca do Windows acha igual
+    time.sleep(0.8)
     pyautogui.press("enter")
-    print(f"Jarvis > Tentando abrir {original}.")
+    print(f"Jarvis > Tentei abrir {original} pela busca do Windows.")
     return True
 
 
@@ -274,54 +309,98 @@ def find_program(name):
     return found[0] if found else None
 
 
+def walk(root, max_depth=None):
+    """Arquivos de uma pasta e subpastas, pulando lixeira, .git e as pastas pesadas do próprio Jarvis."""
+    root = Path(root)
+    base = len(root.parts)
+    for folder, dirs, files in os.walk(root, onerror=lambda e: None):
+        here = Path(folder)
+        if max_depth is not None and len(here.parts) - base >= max_depth:
+            dirs[:] = []
+        dirs[:] = [d for d in dirs if d.lower() not in SKIP_NAMES and str(here / d).lower() not in SKIP_PATHS]
+        for name in dirs:
+            yield here / name
+        for name in files:
+            yield here / name
+
+
+def _program_matches(paths, wanted):
+    matches = []
+    for path in paths:
+        path = Path(path)
+        if path.suffix.lower() not in PROGRAM_EXTS:
+            continue
+        stem = normalize(path.stem)
+        if stem == wanted:
+            closeness = 0
+        elif difflib.SequenceMatcher(None, stem, wanted).ratio() >= 0.8:
+            closeness = 1
+        else:
+            continue
+        matches.append(((closeness, PROGRAM_EXTS.index(path.suffix.lower()), len(str(path))), path))
+    return matches
+
+
 def find_programs(name):
     """Atalhos (.lnk/.url) e .exe com nome igual ou bem parecido com o pedido, do melhor pro pior:
-    nome exato antes de parecido, atalho antes de .exe, caminho curto antes de longo."""
+    nome exato antes de parecido, atalho antes de .exe, caminho curto antes de longo.
+    Olha o Menu Iniciar e a Área de Trabalho; o G: só se lá não tiver o nome exato."""
     wanted = normalize(re.sub(r"\.(exe|lnk|url)$", "", str(name).strip(), flags=re.I))
     if not wanted:
         return []
     matches = []
     for root in PROGRAM_ROOTS:
-        if not str(root) or not root.exists():
-            continue
-        try:
-            for path in root.rglob("*"):
-                try:
-                    if path.suffix.lower() not in PROGRAM_EXTS or not path.is_file():
-                        continue
-                except OSError:
-                    continue
-                stem = normalize(path.stem)
-                if stem == wanted:
-                    closeness = 0
-                elif difflib.SequenceMatcher(None, stem, wanted).ratio() >= 0.8:
-                    closeness = 1
-                else:
-                    continue
-                matches.append(((closeness, PROGRAM_EXTS.index(path.suffix.lower()), len(str(path))), path))
-        except (PermissionError, OSError):
-            continue
-    return [p for _, p in sorted(matches, key=lambda m: m[0])[:5]]
+        if str(root) and root.exists():
+            matches += _program_matches(walk(root), wanted)
+    if not any(key[0] == 0 for key, _ in matches):
+        indexed = F.everything_search(f"{wanted} ext:exe;lnk;url", 50)
+        if indexed:
+            matches += _program_matches(indexed, wanted)
+        for root in EXTRA_PROGRAM_ROOTS:  # sem Everything, ou disco que ele não indexa (pendrive, exFAT)
+            if (indexed is None or not F.indexes_drive(root)) and root.exists():
+                matches += _program_matches(walk(root, max_depth=4), wanted)
+    seen, out = set(), []
+    for _, path in sorted(matches, key=lambda m: m[0]):
+        if str(path).lower() not in seen:
+            seen.add(str(path).lower())
+            out.append(path)
+    return out[:5]
+
+
+def _browser_failed(e):
+    first = str(e).strip().splitlines()[0] if str(e).strip() else type(e).__name__
+    print(f"Jarvis > (navegador do Jarvis falhou: {first[:160]}; usando o navegador padrão)")
 
 
 def search_web(query, site="google"):
-    if normalize(site) == "youtube":
+    global last_kind
+    youtube = normalize(site) == "youtube"
+    if youtube:
         url = "https://www.youtube.com/results?search_query=" + quote_plus(str(query))
     else:
-        if B.available():  # na aba do Jarvis, e a IA consegue ler os resultados
-            return B.search(query)
         url = "https://www.google.com/search?q=" + quote_plus(str(query))
-    if B.available():
-        return B.open_url(url)
+        last_kind = "web"
+    if B.available():  # na aba do Jarvis, e a IA consegue ler os resultados
+        try:
+            return B.open_url(url) if youtube else B.search(query)
+        except Exception as e:
+            _browser_failed(e)
     webbrowser.open(url)
     print(f"Jarvis > Pesquisa aberta: {query}")
     return True
 
 
+def web_search(query):
+    """Pesquisa para a IA ler os resultados (modo ciclo)."""
+    global last_kind
+    last_kind = "web"
+    return B.search(query)
+
+
 # ========================= ARQUIVOS =========================
 
 def search_files(query):
-    global last_results
+    global last_results, last_kind
     query_original = str(query).strip()
     query_low = normalize(query_original)
     extension = None
@@ -334,13 +413,19 @@ def search_files(query):
     indexed = F.everything_search(query_original, MAX_SCAN, extension)
     if indexed:  # Everything: o PC inteiro em milissegundos
         found = indexed
-    roots = [] if indexed else SEARCH_ROOTS  # sem Everything (ou sem achado), varre as pastas de sempre
+    # Sem Everything, varre as pastas de sempre. Se ele respondeu "nada", só procura nomes parecidos
+    # nas pastas do usuário (o G: inteiro é lento demais para isso).
+    if indexed is None:
+        roots = SEARCH_ROOTS
+    else:  # o G: só se o Everything não o indexa (pendrive, exFAT): aí o "nada" dele não vale para o G:
+        roots = ([] if indexed else [DESKTOP, DOWNLOADS, DOCUMENTS])
+        roots += [GAMES_DRIVE] if not F.indexes_drive(GAMES_DRIVE) else []
 
     for root in roots:
         if not root.exists():
             continue
         try:
-            for path in root.rglob("*"):
+            for path in walk(root):
                 try:
                     if extension:
                         matched = path.suffix.lower() == extension and path.is_file()
@@ -368,12 +453,13 @@ def search_files(query):
         found = close
     found = rank_results(found, query_low)[:MAX_RESULTS]
     last_results = found
+    last_kind = "arquivos"
 
     if not found:
         print("Jarvis > Não encontrei nenhum arquivo.")
         return []
 
-    print("Jarvis > Encontrei:")
+    print(f"Jarvis > Encontrei {len(found)} resultado{'s' if len(found) > 1 else ''}:")
     for i, p in enumerate(found, 1):
         print(f"  {i}. {p}")
     return found
@@ -489,17 +575,17 @@ def media_control(action):
 
 
 def is_own_console_in_front():
-    try:
-        k32, u32 = ctypes.windll.kernel32, ctypes.windll.user32
-        own = k32.GetConsoleWindow()
-        return bool(own) and own == u32.GetForegroundWindow()
-    except Exception:
-        return False
+    """A janela da frente é o próprio Jarvis (reator, console ou Windows Terminal)?"""
+    return F.is_jarvis_window(F.foreground_window())
 
 
 def window_control(action):
     need_pyautogui()
     action = normalize(action)
+    if action in ("minimizar", "maximizar", "fechar") and not F.leave_jarvis_window():
+        # pedido digitado no reator/console: a janela da frente é o Jarvis, e não a do senhor
+        print("Jarvis > Clique na janela que quer mexer e peça de novo; a da frente é a minha.")
+        return False
     if action == "minimizar":
         pyautogui.hotkey("win", "down")
     elif action == "maximizar":
@@ -573,8 +659,15 @@ def number_ref(text):
     return text
 
 
+# "aí" sem acento só depois de vírgula: "abre o Meta AI" não pode perder o nome
+POLITE_END = re.compile(r"(?:[\s,]+(?:por favor|pfv|pra mim|para mim)|\s*,\s*ai|\s+aí)\s*[.!?]*$", re.I)
+POLITE_START = re.compile(r"^por favor[,\s]+", re.I)
+
+
 def fast_local_router(user_text):
-    text = clean_prefix(user_text)
+    full = clean_prefix(user_text)  # do jeito que veio (para "digita ...")
+    # por voz chega "abre o Chrome, por favor." / "abre o Spotify aí": o fim atrapalha achar o programa
+    text = POLITE_END.sub("", POLITE_START.sub("", full)).strip(" .!?") or full
     clean = normalize(text)
 
     if small_talk(normalize(user_text)) or small_talk(clean):
@@ -586,11 +679,17 @@ def fast_local_router(user_text):
         return True
     m = re.fullmatch(r"(?:jarvis,? )?(?:esquece|esqueca|apaga da memoria)\s+(?:que\s+|o\s+|a\s+|sobre\s+)?(.+)", clean)
     if m:
-        act("forget", M.forget, m.group(1))
+        what = re.sub(r"^(?:meu|minha|meus|minhas)\s+", "", m.group(1)).strip(" .!?")
+        if len(what) < 3 or what in {"isso", "isto", "disso", "tudo", "aquilo"}:
+            return False  # "esquece isso" = deixa pra lá: a IA decide
+        act("forget", M.forget, what)
         return True
     m = re.fullmatch(r"(?:jarvis,? )?meu nome e\s+(.+)", clean)
     if m:
-        act("set_profile", M.set_profile, "nome", text[-len(m.group(1)):].strip(" .!").title())
+        name = re.split(r"[,.!?;]| e | mas ", text[-len(m.group(1)):])[0].strip()
+        if not name or len(name.split()) > 4:
+            return False  # "meu nome é João e eu moro em Recife": a IA separa nome e cidade
+        act("set_profile", M.set_profile, "nome", name.title())
         return True
 
     # pedido com duas partes ("abre o bloco de notas e me explica X") vai inteiro para a IA,
@@ -598,21 +697,27 @@ def fast_local_router(user_text):
     if COMPOUND.search(clean):
         return False
 
-    # volume relativo ("aumenta o volume em 10") vem antes do volume exato
-    up = re.search(r"\b(aumenta|sobe|aumente|suba)\b.*\b(volume|som)\b", clean)
-    down = re.search(r"\b(abaixa|diminui|reduz|abaixe|diminua|reduza)\b.*\b(volume|som)\b", clean)
-    if up or down:
-        m = re.search(r"\b(\d{1,3})\b", clean)
+    # volume ("procura o volume 2 de harry potter" e "toca som de preto 2" não são volume)
+    VOL = r"\b(?:volume|som)\b"
+    not_volume = re.match(r"^(?:procura|procure|busca|busque|pesquisa|pesquise|toca|toque|tocar|calcula|calcule|"
+                          r"quanto|acha|ache|encontra|encontre|abre|abra)\b", clean)
+    up = re.search(rf"\b(aumenta|sobe|aumente|suba)\b.*{VOL}", clean)
+    down = re.search(rf"\b(abaixa|diminui|reduz|abaixe|diminua|reduza)\b.*{VOL}", clean)
+    if (up or down) and not not_volume:
+        to = re.search(r"\b(?:pra|para|ate)\s+(\d{1,3})\b", clean)
+        if to:  # "aumenta o volume pra 80" = deixa em 80
+            act("set_volume", set_volume, int(to.group(1)))
+            return True
+        m = re.search(r"\b(\d{1,3})\b", clean)  # "aumenta o volume em 10" = mais 10
         step = int(m.group(1)) if m else 10
         act("change_volume", change_volume, step if up else -step)
         return True
 
-    # volume exato / metade
-    if "metade" in clean and ("volume" in clean or "som" in clean or "deixa" in clean):
+    if "metade" in clean and "brilho" not in clean and (re.search(VOL, clean) or re.search(r"\bdeixa\b", clean)):
         act("set_volume", set_volume, 50)
         return True
 
-    m = re.search(r"(?:volume|som).{0,20}?\b(\d{1,3})\s*%?", clean)
+    m = None if not_volume else re.search(rf"{VOL}\D{{0,20}}?\b(\d{{1,3}})\b", clean)
     if m:
         act("set_volume", set_volume, int(m.group(1)))
         return True
@@ -657,8 +762,20 @@ def fast_local_router(user_text):
             act("search_files", search_files, query)
             return True
 
+    # "abre o segundo (resultado)" logo depois de uma pesquisa na web: clica no link
+    RUN = r"(?:abre|abra|abrir|executa|execute|executar|roda|rode|rodar|clica|clique|entra)"
+    RESULT = r"(?: resultado| link| site| da lista)?"
+    picks_result = (re.fullmatch(rf"(?:{RUN} )?(?:n?o |n?a )?{ORDINAL}{RESULT}(?: {RUN})?", clean)
+                    or re.match(rf"^{RUN}\s+(?:n?o|n?a)\s+{ORDINAL}\b{RESULT}$", clean))
+    if last_kind == "web" and picks_result:
+        if not B.last_links:
+            return False  # a pesquisa abriu no navegador comum: a IA decide
+        tool("web_click", target=str(ordinal_to_number(clean)))
+        return True
+    files = last_results if last_kind != "web" else []
+
     # resultados da última busca: "mostra o segundo na pasta", "onde ele está"
-    if last_results and (
+    if files and (
         re.search(rf"\bmostra\b.*\b{ORDINAL}\b", clean)
         or any(x in clean for x in ["mostra na pasta", "mostra ele na pasta", "onde ele esta", "onde esta o arquivo"])
     ):
@@ -670,13 +787,12 @@ def fast_local_router(user_text):
         return True
 
     # só "2" ou "o segundo" depois de uma busca
-    RUN = r"(?:abre|abra|abrir|executa|execute|executar|roda|rode|rodar)"
-    if last_results and re.fullmatch(rf"(?:{RUN} )?(?:o |a )?{ORDINAL}(?: {RUN})?", clean):
+    if files and re.fullmatch(rf"(?:{RUN} )?(?:o |a )?{ORDINAL}(?: {RUN})?", clean):
         act("open_search_result", open_search_result, ordinal_to_number(clean))
         return True
 
     # "abre o terceiro", "abre o 2", "abre ele"
-    if last_results and (
+    if files and (
         re.match(rf"^(?:abre|abra|abrir|executa|execute|roda|rode)\s+(?:o|a)\s+{ORDINAL}\b", clean)
         or any(x in clean for x in ["abre ele", "abre o arquivo", "abre esse"])
     ):
@@ -754,15 +870,22 @@ def fast_local_router(user_text):
         target = m.group(1).strip()
         if target in {"janela", "essa janela", "esta janela", "isso", "isto"}:
             act("window_control", window_control, "fechar")
+        elif target in {"youtube", "video", "aba", "essa aba", "esta aba", "musica", "navegador do jarvis"} and B.is_open():
+            act("close_tab", B.close_tab)  # o YouTube toca numa aba do Jarvis, não num programa
         else:
             tool("close_app", name=target)
         return True
     if re.search(r"\b(cancela|cancelar|para|parar)\s+(?:o\s+|os\s+)?(timer|timers|alarme|alarmes|lembrete|lembretes)\b", clean):
         tool("cancel_timers")
         return True
-    m = re.search(r"\b(?:me lembra|me lembre|me avisa|me avise|lembra|timer|alarme|cronometro)\b.*?\b(\d+)\s*"
+    # timer só com duração ("em 10 minutos", "daqui a 2 horas", "timer de 5 min"). Hora marcada
+    # ("me lembra às 8 horas", "amanhã às 10") vai para a IA, que marca um lembrete de verdade.
+    m = re.search(r"\b(?:me lembra|me lembre|me avisa|me avise|timer|alarme|cronometro)\b.*?\b(\d+)\s*"
                   r"(seg|segundo|segundos|min|minuto|minutos|h|hora|horas)\b(?:\s+(?:de|pra|para|que)\s+(.+))?", clean)
-    if m:
+    clock = re.search(r"\b(?:as|pras|ate as|pelas)\s+\d|\b\d{1,2}(?::|h)\d{2}\b|\b(?:da manha|da tarde|da noite|"
+                      r"de manha|de tarde|de noite|amanha|hoje a noite|segunda|terca|quarta|quinta|sexta|sabado|"
+                      r"domingo|meio dia|meia noite|dia \d)", clean)
+    if m and not clock:
         n, unit = int(m.group(1)), m.group(2)
         minutes = n / 60 if unit.startswith("seg") else n * 60 if unit.startswith("h") else n
         tool("start_timer", minutes=minutes, message=(m.group(3) or "Tempo esgotado!").strip())
@@ -787,7 +910,7 @@ def fast_local_router(user_text):
     if m:
         tool("delete_item", path=number_ref(m.group(1)))
         return True
-    m = re.match(r"^(?:digita|digite|escreve|escreva)\s+(.+)$", text, flags=re.I)
+    m = re.match(r"^(?:digita|digite|escreve|escreva)\s+(.+)$", full, flags=re.I)
     if m:
         tool("type_text", text=m.group(1))
         return True
@@ -818,6 +941,8 @@ def fast_local_router(user_text):
     # abrir apps/sites
     m = re.match(r"^(?:abre|abra|abrir|inicia|inicie|executa|execute|roda|rode|joga|jogar)\s+(?:o\s+|a\s+)?(.+?)(?:\s+pra mim|\s+para mim)?$", text, flags=re.I)
     if m:
+        if re.fullmatch(rf"(?:o |a )?{ORDINAL}(?: resultado| link| site)?", normalize(m.group(1))):
+            return False  # "abre o segundo resultado" sem busca antes: a IA vê o contexto
         act("open_target", open_target, m.group(1).strip(" ."))
         return True
 
@@ -861,15 +986,15 @@ def fast_local_router(user_text):
 # Fonte única do que o Jarvis sabe fazer: gera o prompt do Qwen, a tela de ajuda
 # e a execução das ações. Ferramenta nova = uma entrada nova aqui.
 
-FOLDERS = {
-    "downloads": Path.home() / "Downloads",
-    "documentos": Path.home() / "Documents",
-    "desktop": Path.home() / "Desktop",
-    "area de trabalho": Path.home() / "Desktop",
-    "imagens": Path.home() / "Pictures",
-    "fotos": Path.home() / "Pictures",
-    "musicas": Path.home() / "Music",
-    "videos": Path.home() / "Videos",
+FOLDERS = {  # pastas de verdade (o OneDrive costuma levar a Área de Trabalho e os Documentos)
+    "downloads": DOWNLOADS,
+    "documentos": DOCUMENTS,
+    "desktop": DESKTOP,
+    "area de trabalho": DESKTOP,
+    "imagens": PICTURES,
+    "fotos": PICTURES,
+    "musicas": MUSIC,
+    "videos": VIDEOS,
     "prints": SCREENSHOT_DIR,
     "jarvis": Path(r"G:\Jarvis"),
 }
@@ -891,7 +1016,10 @@ def open_url(url):
     if not re.match(r"^https?://", url):
         url = "https://" + url
     if B.available():
-        return B.open_url(url)
+        try:
+            return B.open_url(url)
+        except Exception as e:
+            _browser_failed(e)
     webbrowser.open(url)
     print(f"Jarvis > Abrindo {url}")
     return True
@@ -901,9 +1029,16 @@ def play_youtube(query):
     """Com o Playwright, clica no vídeo de verdade na aba do Jarvis; sem ele, o jeito antigo."""
     if B.available():
         try:
-            return _show_playing(B.play_youtube(query))
+            result = B.play_youtube(query)
+            if result is False:  # a página de busca mudou ou demorou: abre o primeiro vídeo pelo link
+                url = F.youtube_first_video(query)
+                if url:
+                    B.open_url(url)
+                    print(f"Jarvis > Tocando {query}.")
+                    result = f"Tocando: {query}"
+            return _show_playing(result)
         except Exception as e:
-            print(f"Jarvis > Navegador do Jarvis falhou ({e}); abrindo do jeito antigo.")
+            _browser_failed(e)
     return F.play_youtube(query)
 
 
@@ -915,7 +1050,10 @@ def _show_playing(result):
 
 def youtube_control(action):
     if B.on_youtube():
-        return B.youtube_control(action, normalize)
+        try:
+            return B.youtube_control(action, normalize)
+        except Exception as e:
+            _browser_failed(e)
     return F.youtube_control(action)
 
 
@@ -941,11 +1079,27 @@ def resolve_path(ref):
     return Path(os.path.expandvars(text)).expanduser()
 
 
-YES = {"s", "sim", "pode", "confirmo", "y", "yes", "isso", "manda", "envia", "pode mandar", "sim senhor", "claro"}
+YES_WORDS = {"s", "sim", "pode", "confirmo", "confirma", "y", "yes", "isso", "manda", "envia", "claro", "ok",
+             "okay", "beleza", "bora", "positivo", "certo", "exato", "fechado"}
+NO_WORDS = {"n", "nao", "no", "cancela", "cancelar", "cancele", "negativo", "nunca"}
 commands = queue.Queue()  # (origem, texto) vindos do teclado e da voz; um só lugar executa tudo
 queue_mode = False  # ligado no main(); nos testes a confirmação usa input() direto
 listener = None  # voz.Listener quando a voz está ligada
 voice_out = False  # fala as respostas em voz alta (ligado no run() se o edge-tts estiver instalado)
+
+
+def answer_kind(answer):
+    """True = sim ("Sim, senhor.", "pode mandar"), False = não, None = não é resposta (outro pedido)."""
+    words = re.findall(r"\w+", normalize(answer))
+    if not words:
+        return None
+    if any(w in NO_WORDS for w in words):
+        return False
+    return True if words[0] in YES_WORDS else None
+
+
+def is_yes(answer):
+    return answer_kind(answer) is True
 
 
 def confirm(question):
@@ -954,16 +1108,36 @@ def confirm(question):
             answer = input(f"Jarvis > {question} (s/n) ")
         except (EOFError, KeyboardInterrupt):
             return False
-        return normalize(answer).strip(" .!") in YES
+        return is_yes(answer)
     print(f"Jarvis > {question} (s/n)")
+    U.speech(question + " (sim ou não)")
+    U.card("Confirmar", question)
+    speak(question)
+    set_state("parado")
     if listener is not None:
-        speak(question)
         listener.ask_answer()
+    deadline, later = time.time() + 60, []
     try:
-        _, answer = commands.get(timeout=60)
-    except queue.Empty:
+        while (left := deadline - time.time()) > 0:
+            try:
+                origin, answer = commands.get(timeout=left)
+            except queue.Empty:
+                break
+            answer = (answer or "").strip()
+            if origin == "lembrete":  # avisa depois; não é a resposta
+                later.append((origin, answer))
+                continue
+            if not answer:  # o microfone não ouviu nada: ainda dá para digitar ou dizer "Jarvis, sim"
+                continue
+            kind = answer_kind(answer)
+            if kind is None:  # outro pedido no meio: cancela este e faz o novo em seguida
+                later.append((origin, answer))
+                return False
+            return kind
         return False
-    return normalize(answer).strip(" .!") in YES
+    finally:
+        for item in later:
+            commands.put(item)
 
 
 def summarize_file(ref):
@@ -973,14 +1147,21 @@ def summarize_file(ref):
         if not path.is_file():
             print(f"Jarvis > Arquivo não encontrado: {path}")
         return False
-    print("Jarvis > Resumindo...")
-    limit = 60000 if N.available() else 6000  # o Gemini aguenta textos bem maiores
-    try:
-        summary = think("Resuma o texto em português do Brasil, em até 6 tópicos curtos.", text[:limit],
-                        json_mode=False, num_predict=400, temperature=0.2)
-    except Exception as e:
-        print(f"Jarvis > Não consegui resumir: {e}")
-        return False
+    print(f"Jarvis > Resumindo {path.name}...")
+    system = "Resuma o texto em português do Brasil, em até 6 tópicos curtos."
+    summary = None
+    if N.available():  # o Gemini aguenta textos bem maiores
+        try:
+            summary = N.generate(system, text[:60000], max_tokens=8192, temperature=0.2)
+        except Exception as e:
+            print(f"Jarvis > (Gemini falhou: {e})")
+    if not summary:
+        try:  # o Groq grátis recusa pedidos muito grandes (HTTP 413): manda um pedaço menor
+            summary = think(system, text[:12000], skip=("Gemini",) if N.available() else (),
+                            json_mode=False, num_predict=600, temperature=0.2)
+        except Exception as e:
+            print(f"Jarvis > Não consegui resumir: {e}")
+            return False
     print(summary.strip())
     return True
 
@@ -1140,7 +1321,7 @@ TOOLS = [
     {"name": "web_search", "args": '{"query":"texto"}', "group": "navegador",
      "desc": "pesquisar no Google e LER os resultados (para escolher, comparar, responder)",
      "examples": ["pesquisa a melhor receita de bolo de cenoura"],
-     "run": lambda a: B.search(a.get("query", ""))},
+     "run": lambda a: web_search(a.get("query", ""))},
     {"name": "web_read", "args": "{}", "group": "navegador",
      "desc": "ler o texto da página aberta no navegador do Jarvis", "examples": ["lê essa página"],
      "run": lambda a: B.read_page()},
@@ -1284,7 +1465,7 @@ def ai_context():
     memory = M.context()
     if memory:
         parts.append(memory)
-    title = active_window_title()
+    title = F.user_window_title() or active_window_title()
     if title:
         parts.append(f"Janela ativa: {title}")
     if last_results:
@@ -1317,13 +1498,15 @@ def ask_local(system, user, json_mode=True, num_predict=None, temperature=None):
 
 
 def ask_cloud(system, user, json_mode=True, num_predict=None, temperature=None):
+    # o Gemini Flash "pensa" antes de responder e esse raciocínio gasta o mesmo limite de tokens
     return N.generate(system, user, json_mode=json_mode, temperature=temperature or 0.0,
-                      max_tokens=max(2048, num_predict or 0))
+                      max_tokens=max(8192, num_predict or 0))
 
 
 def ask_groq(system, user, json_mode=True, num_predict=None, temperature=None):
+    # pedir pouco: o Groq grátis conta o max_tokens no limite por minuto
     return N.groq_generate(system, user, json_mode=json_mode, temperature=temperature or 0.0,
-                           max_tokens=max(2048, num_predict or 0))
+                           max_tokens=num_predict or 1024)
 
 
 def local_enabled():
@@ -1343,26 +1526,42 @@ def ai_backends():
     return order
 
 
-def think(system, user, **kw):
-    """Pergunta para a primeira IA disponível; se falhar, tenta a próxima."""
+def think(system, user, parse=None, skip=(), **kw):
+    """Pergunta para a primeira IA disponível; se falhar (ou a resposta não servir), tenta a próxima."""
     errors = []
     for name, fn in ai_backends():
+        if name in skip:
+            continue
         try:
             text = fn(system, user, **kw)
             if text:
+                result = parse(text) if parse else text
                 if errors:
                     print(f"Jarvis > ({'; '.join(errors)}; respondi com o {name})")
-                return text
+                return result
         except Exception as e:
             errors.append(f"{name} falhou: {e}")
     raise RuntimeError("; ".join(errors) or "nenhuma IA configurada (setx GEMINI_API_KEY ou GROQ_API_KEY)")
 
 
 def parse_json(raw):
-    raw = raw.strip()
-    if raw.startswith("```"):
-        raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw)
-    return json.loads(raw)
+    """O objeto JSON da resposta da IA, mesmo com ```json, texto antes ou dentro de uma lista."""
+    raw = str(raw).strip()
+    start = raw.find("{")
+    if start < 0:
+        raise ValueError("a IA não devolveu JSON")
+    if raw.startswith("[") and raw.find("[") < start:  # [{"name":...}, ...] = só a lista de ações
+        try:
+            items, _ = json.JSONDecoder().raw_decode(raw)
+            if isinstance(items, list) and all(isinstance(a, dict) and "name" in a for a in items):
+                return {"actions": items, "reply": ""}
+        except ValueError:
+            pass
+    data, _ = json.JSONDecoder().raw_decode(raw[start:])
+    if not isinstance(data, dict):
+        raise ValueError("a IA não devolveu um objeto JSON")
+    data["actions"] = [a for a in (data.get("actions") or []) if isinstance(a, dict)]
+    return data
 
 
 MAX_STEPS = 6  # teto do modo ciclo, para não gastar o limite grátis da nuvem
@@ -1370,30 +1569,39 @@ MAX_SEEN = 2500  # quanto do resultado de cada ação volta para a IA
 
 
 class _Tee(io.StringIO):
-    """Mostra na tela e guarda o que a ferramenta escreveu, para a IA ver o resultado."""
+    """Mostra na tela e guarda o que a ferramenta escreveu, para a IA ver o resultado.
+    Só guarda o que vem da thread do pedido (a voz e os timers também escrevem na tela)."""
 
     def __init__(self, screen):
         super().__init__()
         self.screen = screen
+        self.owner = threading.get_ident()
 
     def write(self, text):
         self.screen.write(text)
-        return super().write(text)
+        if threading.get_ident() == self.owner:
+            return super().write(text)
+        return len(text)
+
+    def flush(self):
+        self.screen.flush()
 
 
 def run_actions(actions):
     """Executa as ações; devolve as que falharam e o que cada uma mostrou."""
     failed, seen = [], []
     for i, action in enumerate(actions):
-        name = action.get("name", "")
-        args = action.get("args", {}) or {}
+        name = str(action.get("name", ""))
+        args = action.get("args", {})
+        args = args if isinstance(args, dict) else {}
+        before = F.foreground_window()
         tee = _Tee(sys.stdout)
         with contextlib.redirect_stdout(tee):
             result = execute_ai_action(name, args)
         if result is False:
             failed.append(name)
         elif name in OPENS_WINDOW and i + 1 < len(actions):
-            time.sleep(1.5)  # espera a janela abrir antes de digitar/clicar nela
+            F.wait_new_window(before)  # espera a janela abrir antes de digitar/clicar nela
         shown = tee.getvalue().strip()
         if isinstance(result, str) and result not in shown:
             shown = (shown + "\n" + result).strip()
@@ -1411,20 +1619,26 @@ def ask_ai_router(user_text):
             prompt += ("\n\nO que você já fez neste pedido e o resultado de cada ação:\n"
                        + "\n".join(history) + "\n\nDecida o próximo passo ou termine.")
         try:
-            data = parse_json(think(AI_PROMPT, prompt))
+            data = think(AI_PROMPT, prompt, parse=parse_json)
+            if not isinstance(data, dict):
+                data = parse_json(data)
         except Exception as e:
             print(f"Jarvis > Não consegui falar com a IA: {e}")
             return False
 
-        actions = data.get("actions", []) or []
+        actions = data["actions"]
         failed, seen = run_actions(actions)
         history += seen
-        reply = str(data.get("reply", "")).strip()
-        if data.get("continue") and actions and step + 1 < MAX_STEPS:
-            if reply:
-                print(f"Jarvis > {reply}")
-            continue
-        if failed and not data.get("continue"):
+        reply = str(data.get("reply") or "").strip()
+        more = data.get("continue") is True or str(data.get("continue")).lower() == "true"
+        if more and actions:
+            if step + 1 < MAX_STEPS:
+                if reply:
+                    print(f"Jarvis > {reply}")
+                continue
+            print("Jarvis > Parei aqui para não gastar o limite grátis da IA; o que achei está na tela.")
+            return True
+        if failed:
             print(f"Jarvis > Não deu certo: {', '.join(failed)}.")
         elif reply:
             print(f"Jarvis > {reply}")
@@ -1482,6 +1696,8 @@ def speak(text):
         V.say(text, set_state)
     except Exception as e:
         print(f"Jarvis > (não consegui falar: {e})")
+    finally:
+        set_state("parado")  # se a fala falhar, o reator não fica preso em "pensando"
 
 
 def announce(text, title):
@@ -1497,21 +1713,64 @@ def handle(text):
     ask_ai_router(text)
 
 
+def last_said(out):
+    """A última fala do Jarvis: a linha "Jarvis > ..." e as linhas que vieram junto (lista, resumo)."""
+    blocks = []
+    for line in out.splitlines():
+        if line.startswith("Jarvis > "):
+            blocks.append([line[len("Jarvis > "):].strip()])
+        elif blocks and line.strip():
+            blocks[-1].append(line.strip())
+    blocks = [b for b in blocks if b[0] and not b[0].startswith("(")]
+    if not blocks:
+        return "", ""
+    head, *rest = blocks[-1]
+    if not rest and len(head) <= 40:
+        # "Resumindo x..." + o resumo, e depois só um "Pronto." da IA: o que importa é o resumo
+        for b in reversed(blocks[:-1]):
+            if b[0].endswith("...") and len(b) > 1:
+                return b[0], "\n".join(b[1:])
+    return head, "\n".join(rest)
+
+
+def _short_paths(text):
+    """No cartão, "1. G:\\Escola\\2024\\relatorio.pdf" vira "1. relatorio.pdf" (o caminho fica no console)."""
+    def short(m):
+        path = m.group(2)
+        return m.group(1) + (ntpath.basename(path.rstrip("\\")) or path)
+    return re.sub(r"(?m)^(\d+\.\s+)((?:[A-Za-z]:\\|\\\\).+)$", short, text)
+
+
+def spoken(head, rest):
+    """O que falar: o resumo inteiro depois de "Resumindo...", e só o começo de listas longas."""
+    if rest and head.endswith("..."):
+        return rest
+    if rest and head.endswith(":"):
+        return head[:-1] + ". Deixei na tela."
+    return head
+
+
 def respond(text):
-    """Executa o pedido; mostra a última fala do Jarvis no reator e fala em voz alta."""
+    """Executa o pedido; mostra a fala do Jarvis no reator (listas viram cartão) e fala em voz alta."""
     set_state("pensando")
     tee = _Tee(sys.stdout)
     with contextlib.redirect_stdout(tee):
-        handle(text)
-    said = [line[len("Jarvis > "):] for line in tee.getvalue().splitlines() if line.startswith("Jarvis > ")]
-    said = [x for x in said if not x.startswith("(")]
-    U.speech(said[-1] if said else "")
+        try:
+            handle(text)
+        except Exception as e:  # o erro também é falado e aparece no reator
+            log_action("erro", f"{text}: {e}")
+            print(f"Jarvis > Desculpe, senhor, não consegui: {e}")
+    head, rest = last_said(tee.getvalue())
+    say = spoken(head, rest)
+    U.speech(say if head.endswith("...") else head)
+    if rest:
+        U.card(head.rstrip(":. ") or "Jarvis", _short_paths(rest)[:900], 15000)
     try:
-        M.add_talk(text, said[-1] if said else "")
+        M.add_talk(text, say)
     except Exception:
         pass
-    if said and voice_out:
-        speak(said[-1])
+    if say and voice_out:
+        speak(say)  # volta para "parado" sozinho, até se a fala falhar
     else:
         set_state("parado")
 
@@ -1570,10 +1829,18 @@ def run():
     print("")
     queue_mode = True
     threading.Thread(target=keyboard_reader, daemon=True).start()
+    threading.Thread(target=F.warm_up_everything, daemon=True).start()  # índice pronto antes da 1ª busca
+    threading.Thread(target=F.store_apps, daemon=True).start()  # lista dos apps da Store, para o "abre"
+    F.track_focus()
+    F.on_alarm = lambda message: commands.put(("lembrete", message))  # timers também falam
     M.reminder_watcher(commands.put)
     hint = M.habit_hint()
     if hint:
         announce(hint, "Sugestão")
+        try:  # a IA vê a sugestão na conversa e entende o "sim" que vier depois
+            M.add_talk("(o Jarvis sugeriu ao abrir)", hint)
+        except Exception:
+            pass
 
     while True:
         try:
@@ -1599,7 +1866,21 @@ def run():
     U.close()
 
 
+def disable_quick_edit():
+    """No console antigo, um clique na janela congela todos os print() (e o Jarvis junto)."""
+    try:
+        k32 = ctypes.windll.kernel32
+        k32.GetStdHandle.restype = ctypes.c_void_p
+        handle = k32.GetStdHandle(-10)  # STD_INPUT_HANDLE
+        mode = ctypes.c_uint32()
+        if k32.GetConsoleMode(handle, ctypes.byref(mode)):
+            k32.SetConsoleMode(handle, (mode.value & ~0x0040) | 0x0080)  # sem QUICK_EDIT, com EXTENDED_FLAGS
+    except Exception:
+        pass
+
+
 def main():
+    disable_quick_edit()
     print("")
     print("==============================================")
     print("              J.A.R.V.I.S.")
@@ -1608,9 +1889,27 @@ def main():
     print("")
     print("Digite o pedido e Enter. 'sair' fecha.")
     if "--sem-tela" not in sys.argv and U.available():
-        U.start(run, lambda text: commands.put(("janela", text)))  # o reator fica na thread principal
-        os._exit(0)  # fechou a janela: fecha tudo (voz e teclado ficam em threads)
-    if "--sem-tela" not in sys.argv:
+        started = threading.Event()
+
+        def worker():
+            started.set()
+            try:
+                run()
+            except Exception:
+                traceback.print_exc()
+                print("Jarvis > Parei por causa do erro acima.")
+            os._exit(0)
+
+        try:
+            U.start(worker, lambda text: commands.put(("janela", text)))  # o reator fica na thread principal
+        except Exception as e:
+            print(f"A janela do reator não abriu ({e}). Sigo sem ela.")
+            if started.is_set():  # o Jarvis já está rodando na outra thread
+                while True:
+                    time.sleep(3600)
+        else:
+            os._exit(0)  # fechou a janela: fecha tudo (voz e teclado ficam em threads)
+    elif "--sem-tela" not in sys.argv:
         print("Sem interface: python -m pip install pywebview")
     run()
 

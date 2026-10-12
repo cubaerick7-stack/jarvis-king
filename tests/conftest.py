@@ -8,6 +8,12 @@ def sem_nuvem(monkeypatch):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.delenv("JARVIS_NUVEM", raising=False)
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "windows"))
+    import nuvem
+    monkeypatch.setattr(nuvem, "_limited", {})
+    monkeypatch.setattr(nuvem, "_no_thinking_cfg", set())
 
 
 @pytest.fixture(autouse=True)
@@ -18,6 +24,8 @@ def sem_everything(monkeypatch):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "windows"))
     import ferramentas
     monkeypatch.setattr(ferramentas, "find_es", lambda: None)
+    monkeypatch.setattr(ferramentas, "_drives", {})
+    monkeypatch.setattr(ferramentas, "_store_apps", {})  # nunca roda o PowerShell do PC nos testes
 
 
 @pytest.fixture(autouse=True)
@@ -26,6 +34,7 @@ def sem_navegador(monkeypatch):
     import navegador
     monkeypatch.setattr(navegador, "available", lambda: False)
     monkeypatch.setattr(navegador, "_page", None)
+    monkeypatch.setattr(navegador, "_tabs", {})
 
 
 @pytest.fixture(autouse=True)

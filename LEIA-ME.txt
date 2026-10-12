@@ -1,39 +1,50 @@
-JARVIS LITE V2
+JARVIS PARA WINDOWS
 
-Essa versão corrige o problema em que o Qwen 1.7B escrevia:
-    mute_audio mute
-    search_files query="FO 1102"
-mas não executava nada.
+Assistente de voz e texto: comandos rapidos rodam direto no Python
+(volume, arquivos, programas, midia) e o resto vai para a IA na nuvem
+(Gemini, com o Groq de reserva). Ele fala com a voz Antonio e acorda
+quando voce diz "Jarvis".
 
-AGORA:
-- volume, mute, arquivos, abrir programas, mídia etc. rodam direto no Python;
-- o Qwen só é usado como fallback para pedidos mais difíceis;
-- isso reduz bastante o uso de CPU.
+PASSO A PASSO (primeira vez)
 
-PASSO A PASSO
-
-1. Extraia o ZIP.
-
-2. Copie:
-   windows\jarvis_ai.py
-
-para:
-   G:\Jarvis\cozmo-esp32\windows\jarvis_ai.py
-
-Substitua o anterior.
-
-3. No PowerShell:
+1. No PowerShell:
 
    G:
-   cd G:\Jarvis\cozmo-esp32
-   python -m pip install ollama pycaw pyautogui mss pypdf
+   cd G:\Jarvis\jarvis-king
+   python -m pip install -U -r requirements.txt
 
-4. Rode:
+2. Chaves da IA (uma vez so; veja "IA NA NUVEM" no fim deste arquivo):
 
+   setx GEMINI_API_KEY "sua-chave"
+   setx GROQ_API_KEY "sua-chave"
+
+   Depois feche e abra o PowerShell de novo.
+
+3. Rode:
+
+   cd G:\Jarvis\jarvis-king
    python windows\jarvis_ai.py
 
-OU, para iniciar o Ollama e o Jarvis juntos:
-   powershell -ExecutionPolicy Bypass -File iniciar.ps1
+   (ou: powershell -ExecutionPolicy Bypass -File iniciar.ps1)
+
+   O reator aparece no canto da tela e o console mostra
+   "Voz ligada (nome do microfone)". Diga "Jarvis, toca lofi".
+
+ATUALIZAR (quando tiver versao nova no GitHub)
+
+   cd G:\Jarvis\jarvis-king
+   git pull
+   python -m pip install -U -r requirements.txt
+
+SE ALGO NAO FUNCIONAR
+- Nao ouve: rode assim para ver o que ele escuta e o volume do microfone:
+     $env:JARVIS_VOZ_DEBUG=1; python windows\jarvis_ai.py
+  Se aparecer "Nao ouvi o pedido (som mais alto X, precisa de Y)", fale mais
+  perto do microfone ou aumente o volume dele no Windows.
+- Nao fala: python -m pip install -U edge-tts  (e confira o som do PC).
+- "procura o arquivo" so olha algumas pastas: instale o Everything (secao
+  "BUSCA NO PC INTEIRO" abaixo).
+- Qualquer erro aparece no console e o Jarvis fala o motivo.
 
 TESTE:
    mn muta o volume
@@ -90,10 +101,14 @@ COMO CRIAR UMA FERRAMENTA NOVA
 4. Adicione um teste em tests\ e rode python -m pytest -q.
 
 BUSCA NO PC INTEIRO (EVERYTHING)
-1. Instale o Everything (voidtools.com) e deixe ele aberto (fica perto do relogio).
+1. Instale o Everything (voidtools.com). Tambem serve a versao portatil: deixe o
+   Everything.exe em G:\Jarvis\tools\Everything\Everything.exe
+   (o Jarvis abre ele escondido, perto do relogio, se estiver fechado).
 2. Baixe o ES (Everything command line) no mesmo site e coloque o es.exe em
    G:\Jarvis\tools\es.exe
 Pronto: "procura o arquivo X" acha em todos os discos na hora.
+Se o G: for pendrive ou exFAT, o Everything nao indexa ele; o Jarvis percebe e
+procura no G: do jeito antigo.
 Pastas do sistema (Windows, Program Files, AppData) ficam de fora.
 Sem o Everything, o Jarvis volta a procurar so no G:, Desktop, Documentos e Downloads.
 

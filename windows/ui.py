@@ -7,13 +7,13 @@ Arraste pelo título ou pelo reator para mudar de lugar. O × fecha o Jarvis.
 """
 
 import json
+import threading
 from pathlib import Path
 
 HTML = Path(__file__).resolve().parent / "interface" / "reator.html"
 WIDTH, HEIGHT = 340, 640
 BACKGROUND = "#02080b"
 MARGIN = 16
-TASKBAR = 48
 
 _window = None
 
@@ -27,12 +27,22 @@ def available():
 
 
 def _corner():
-    """Canto inferior direito da tela principal, acima da barra de tarefas (x, y, altura)."""
+    """Canto inferior direito da área de trabalho (sem a barra de tarefas): (x, y, altura).
+    Em pixels "lógicos", que é o que o pywebview espera: com a tela em 125% ou 150%
+    a conta em pixels de verdade jogava a janela para fora da tela."""
     try:
         import ctypes
-        sw, sh = ctypes.windll.user32.GetSystemMetrics(0), ctypes.windll.user32.GetSystemMetrics(1)
-        height = min(HEIGHT, sh - TASKBAR - 2 * MARGIN)  # cabe em telas baixas (768 px)
-        return sw - WIDTH - MARGIN, max(0, sh - height - TASKBAR - MARGIN), height
+        from ctypes import wintypes
+        u32 = ctypes.windll.user32
+        area = wintypes.RECT()
+        u32.SystemParametersInfoW(0x0030, 0, ctypes.byref(area), 0)  # SPI_GETWORKAREA
+        try:
+            scale = u32.GetDpiForSystem() / 96  # 96 = 100%; o pyautogui deixa o processo "DPI-aware"
+        except AttributeError:
+            scale = 1.0
+        left, top, right, bottom = (v / scale for v in (area.left, area.top, area.right, area.bottom))
+        height = int(min(HEIGHT, bottom - top - 2 * MARGIN))  # cabe em telas baixas (768 px)
+        return int(right - WIDTH - MARGIN), int(max(top, bottom - height - MARGIN)), height
     except Exception:
         return None, None, HEIGHT
 
@@ -47,7 +57,8 @@ class Api:
         self._on_text(str(text))
 
     def fechar(self):
-        self._on_text("sair")
+        # fecha na hora, mesmo com o Jarvis ocupado ou esperando um "sim" (o main() encerra o resto)
+        threading.Thread(target=close, daemon=True).start()
 
     def minimizar(self):
         if _window is not None:
@@ -61,7 +72,7 @@ def start(worker, on_text=lambda t: None):
     x, y, height = _corner()
     _window = webview.create_window(
         "J.A.R.V.I.S.", url=str(HTML), width=WIDTH, height=height, x=x, y=y, js_api=Api(on_text),
-        frameless=True, on_top=True, resizable=False, background_color=BACKGROUND)
+        frameless=True, easy_drag=False, on_top=True, resizable=False, background_color=BACKGROUND)
     webview.start(worker)
     _window = None
 
@@ -91,5 +102,5 @@ def speech(text):
     _js(f"mostraFala({json.dumps(text)})")
 
 
-def card(title, text):
-    _js(f"cartao({json.dumps(title)}, {json.dumps(text)})")
+def card(title, text, ms=7000):
+    _js(f"cartao({json.dumps(title)}, {json.dumps(text)}, {int(ms)})")

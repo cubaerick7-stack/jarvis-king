@@ -273,21 +273,65 @@ class FakeRun:
         return type("R", (), {"stdout": self.out, "returncode": self.code})()
 
 
+class FakeEs:
+    """Simula o es.exe: lê a linha de comando (texto) e grava o resultado no -export-txt em UTF-8."""
+
+    def __init__(self, lines, code=0):
+        self.lines, self.code, self.cmd = lines, code, None
+
+    def __call__(self, cmd, **kw):
+        import re
+        self.cmd = cmd
+        out = re.search(r'-export-txt "([^"]+)"', cmd).group(1)
+        Path(out).write_text("\ufeff" + "\r\n".join(self.lines) + "\r\n", encoding="utf-8")
+        return type("R", (), {"stdout": b"", "returncode": self.code})()
+
+
 def test_everything_search_excludes_system(monkeypatch):
-    run = FakeRun("G:\\Escola\\Relatório.pdf\r\nC:\\Users\\joao\\Desktop\\relatorio.docx\r\n".encode("utf-8"))
+    run = FakeEs(["G:\\Escola\\Relatório.pdf", "C:\\Users\\joao\\Desktop\\relatorio.docx",
+                  "C:\\Windows\\relatorio.log"])
     monkeypatch.setattr(F, "find_es", lambda: "es.exe")
     monkeypatch.setattr(F.subprocess, "run", run)
+    # acentos chegam certos (arquivo em UTF-8) e o que é do sistema fica de fora mesmo se o es.exe mandar
     assert F.everything_search("relatorio") == ["G:\\Escola\\Relatório.pdf", "C:\\Users\\joao\\Desktop\\relatorio.docx"]
-    assert run.args[:4] == ["es.exe", "-n", "400", "relatorio"]
-    assert '!"C:\\Windows\\"' in run.args
+    assert isinstance(run.cmd, str) and run.cmd.startswith('"es.exe" -n 800 ')
+    # o es.exe não entende o \\" que o subprocess põe numa lista: as exclusões vão como texto
+    assert ' !"C:\\Windows\\"' in run.cmd and ' !"C:\\Program Files\\"' in run.cmd and ' "relatorio" ' in run.cmd
+
+
+def test_everything_search_parser_keeps_exclusions_whole():
+    """Lê a linha de comando como o es.exe lê (aspas alternam, barra invertida é letra comum)."""
+    cmd = F._es_command("es.exe", ["omori"], 10, "C:\\Temp\\x.txt")
+    args, cur, quoted = [], "", False
+    for ch in cmd:
+        if ch == '"':
+            quoted = not quoted
+            cur += ch
+        elif ch == " " and not quoted:
+            if cur:
+                args.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    args.append(cur)
+    assert '!"C:\\Program Files (x86)\\"' in args and '!"\\System Volume Information\\"' in args
+
+
+def test_everything_user_words_are_quoted(monkeypatch):
+    run = FakeEs([])
+    monkeypatch.setattr(F, "find_es", lambda: "es.exe")
+    monkeypatch.setattr(F.subprocess, "run", run)
+    assert F.everything_search('-foo a|b "x"') == []
+    # entre aspas, "-foo" não vira opção do es.exe e o | não vira OU
+    assert ' "-foo" "a|b" "x" ' in run.cmd
 
 
 def test_everything_by_extension(monkeypatch):
-    run = FakeRun(b"G:\\a.pdf\n")
+    run = FakeEs(["G:\\a.pdf"])
     monkeypatch.setattr(F, "find_es", lambda: "es.exe")
     monkeypatch.setattr(F.subprocess, "run", run)
-    F.everything_search("pdf", extension=".pdf")
-    assert "ext:pdf" in run.args
+    assert F.everything_search("pdf", extension=".pdf") == ["G:\\a.pdf"]
+    assert " ext:pdf " in run.cmd
 
 
 def test_everything_closed_means_fallback(monkeypatch):
@@ -302,7 +346,8 @@ def test_search_files_uses_everything_whole_pc(monkeypatch, tmp_path):
     spec = importlib.util.spec_from_file_location("jarvis_real", ROOT / "windows" / "jarvis_ai.py")
     real = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(real)
-    monkeypatch.setattr(real.F, "everything_search", lambda q, n, ext: ["D:\\Fotos\\viagem.jpg", "C:\\Users\\j\\viagem.txt"])
+    monkeypatch.setattr(real.F, "everything_search",
+                        lambda q, n, ext=None: ["D:\\Fotos\\viagem.jpg", "C:\\Users\\j\\viagem.txt"])
     monkeypatch.setattr(real, "SEARCH_ROOTS", [tmp_path / "nao-deve-varrer"])
     found = real.search_files("viagem")
     assert set(found) == {"D:\\Fotos\\viagem.jpg", "C:\\Users\\j\\viagem.txt"}
@@ -317,13 +362,73 @@ def test_everything_closed_gets_started_once(monkeypatch):
 
         def __call__(self, args, **kw):
             self.n += 1
+            self.last = args
             code = 8 if self.n == 1 else 0
             return type("R", (), {"stdout": b"G:\\a.txt\n", "returncode": code})()
 
     monkeypatch.setattr(F, "find_es", lambda: "es.exe")
-    monkeypatch.setattr(F.subprocess, "run", Seq())
+    seq = Seq()
+    monkeypatch.setattr(F.subprocess, "run", seq)
     monkeypatch.setattr(F, "start_everything", lambda: calls.append(1) or True)
-    import time
-    monkeypatch.setattr(time, "sleep", lambda s: None)
     assert F.everything_search("a") == ["G:\\a.txt"]
-    assert calls == [1]
+    assert calls == [1] and seq.n == 2 and "-timeout 20000" in seq.last  # uma espera só, sem laço
+
+
+def test_store_app_matches_spoken_name(monkeypatch):
+    monkeypatch.setattr(F, "_store_apps", {"camera": ("Câmera", "Cam!App"), "calendario": ("Calendário", "Cal!App")})
+    assert F.store_app("câmera") == ("Câmera", "Cam!App")
+    assert F.store_app("calendario") == ("Calendário", "Cal!App")
+    assert F.store_app("camra") == ("Câmera", "Cam!App")  # erro de digitação/fala
+    assert F.store_app("xbox") is None
+
+
+class FakeProc:
+    def __init__(self, pid, name, alive=True, denied=False):
+        self.pid, self.info, self.alive, self.denied = pid, {"name": name, "pid": pid}, alive, denied
+
+    def is_running(self):
+        return self.alive
+
+    def terminate(self):
+        if self.denied:
+            raise FakePsutil.AccessDenied()
+        self.alive = False
+
+
+class FakePsutil:
+    class NoSuchProcess(Exception):
+        pass
+
+    class AccessDenied(Exception):
+        pass
+
+    def __init__(self, procs, children=()):
+        self.procs, self.children = procs, children
+
+    def process_iter(self, attrs):
+        return list(self.procs)
+
+    def Process(self, pid=None):
+        kids = self.children
+        return type("P", (), {"children": lambda self, recursive=False: list(kids)})()
+
+
+def test_close_app_skips_jarvis_browser_and_reports_only_what_closed(monkeypatch, capsys):
+    mine = FakeProc(200, "msedge.exe")  # o Edge do próprio Jarvis (YouTube/WhatsApp)
+    user = FakeProc(100, "msedge.exe")
+    fake = FakePsutil([user, mine], children=[mine])
+    monkeypatch.setitem(sys.modules, "psutil", fake)
+    killed = []
+    monkeypatch.setattr(F, "_run", lambda args, timeout=15: killed.append(args[2]) or type("R", (), {"returncode": 0})())
+    assert F.close_app("edge") is True
+    assert killed == ["100"]
+
+
+def test_close_app_admin_process_is_not_announced_as_closed(monkeypatch, capsys):
+    admin = FakeProc(300, "Taskmgr.exe", denied=True)
+    monkeypatch.setitem(sys.modules, "psutil", FakePsutil([admin]))
+    monkeypatch.setattr(F, "_run", lambda args, timeout=15: type("R", (), {"returncode": 1})())
+    monkeypatch.setattr(F.time, "sleep", lambda s: None)
+    assert F.close_app("gerenciador de tarefas") is False
+    out = capsys.readouterr().out
+    assert "administrador" in out and "Fechei" not in out

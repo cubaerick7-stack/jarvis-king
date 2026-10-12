@@ -17,6 +17,7 @@ import io
 import json
 import math
 import os
+import queue
 import re
 import tempfile
 import threading
@@ -41,6 +42,10 @@ MAX_COMMAND = 10.0  # segundos
 END_SILENCE = 1.2  # segundos de silêncio que encerram o pedido
 NO_SPEECH = 5.0  # desiste se você não falar nada
 PRE_BUFFER = 25  # 2,5 s antes do "Jarvis": pega o "Jarvis, toca lofi" dito de uma vez só
+ECHO_BLOCKS = 2  # 0,2 s depois do bipe: o eco do bipe na caixa de som não conta como fala
+DUCK_LEVEL = 0.15  # volume do PC enquanto você fala (música alta atrapalha ouvir o pedido)
+# Mostra no console o que o Vosk ouviu:  $env:JARVIS_VOZ_DEBUG=1; python windows\jarvis_ai.py
+DEBUG = os.environ.get("JARVIS_VOZ_DEBUG", "").strip() == "1"
 
 speaking = threading.Event()  # enquanto ele fala, não se escuta (para não ativar sozinho)
 
@@ -125,25 +130,39 @@ def wav_bytes(pcm):
     return buf.getvalue()
 
 
-def record_command(read_block, noise=300.0, before=()):
+last_levels = (0.0, 0.0)  # (maior nível ouvido, nível que precisava) da última gravação, para o aviso
+
+
+def record_command(read_block, noise=300.0, before=(), recalibrate=False):
     """Grava do microfone até você parar de falar. read_block() devolve 0,1 s de áudio.
-    before = o áudio de logo antes do "Jarvis" (se você já falou o pedido junto, ele vem junto)."""
+    before = o áudio de logo antes do "Jarvis" (se você já falou o pedido junto, ele vem junto).
+    recalibrate = o som do PC acabou de ser abaixado: mede o barulho de novo nos primeiros blocos."""
+    global last_levels
     threshold = max(350.0, noise * 2.5)
     before = [bytes(b) for b in before]
     spoke_before = sum(rms(b) >= threshold for b in before) >= 3
-    chunks, spoke, quiet, elapsed = list(before), False, 0.0, 0.0
+    chunks, spoke, quiet, elapsed, loudest = list(before), False, 0.0, 0.0, 0.0
     step = BLOCK / SAMPLE_RATE
+    first = []
     while elapsed < MAX_COMMAND:
         block = read_block()
         chunks.append(bytes(block))
         elapsed += step
-        if rms(block) >= threshold:
+        level = rms(block)
+        if len(first) <= ECHO_BLOCKS:
+            first.append(level)
+            if recalibrate and len(first) == ECHO_BLOCKS + 1:  # o menor bloco nunca fica abaixo do barulho real
+                threshold = max(350.0, min(noise, min(first)) * 2.5)
+        if len(first) > ECHO_BLOCKS and level >= threshold:
             spoke, quiet = True, 0.0
         else:
             quiet += step
+        if len(first) > ECHO_BLOCKS:
+            loudest = max(loudest, level)
+        last_levels = (loudest, threshold)
         if spoke and quiet >= END_SILENCE:
             break
-        if not spoke and elapsed >= (1.5 if spoke_before else NO_SPEECH):
+        if not spoke and elapsed >= (2.0 if spoke_before else NO_SPEECH):
             return b"".join(chunks) if spoke_before else b""
     return b"".join(chunks)
 
@@ -169,6 +188,28 @@ def is_wake(text):
     words = re.findall(r"\w+", plain)
     pairs = [a + b for a, b in zip(words, words[1:])]  # "já vis" -> "javis"
     return any(_sounds_like_jarvis(w) for w in words + pairs)
+
+
+# O Whisper escreve "Jarvis" certinho; o Vosk (sem "Jarvis" no vocabulário) só dá um palpite.
+WHISPER_WAKE = {"jarvis", "jarbas", "jarbis", "javis", "jarves", "jervis", "jarvi", "jarvas", "garvis"}
+
+
+def _plain(word):
+    return re.sub(r"[^a-z]", "", "".join(
+        c for c in unicodedata.normalize("NFKD", word.lower()) if not unicodedata.combining(c)))
+
+
+def after_wake(text):
+    """O pedido que vem depois do "Jarvis" na transcrição. None se o Whisper não ouviu "Jarvis":
+    aí foi conversa de fundo, a TV ou o próprio vídeo ("eu já vi esse..."), e não é para obedecer."""
+    words = (text or "").split()
+    plain = [_plain(w) for w in words]
+    for i, p in enumerate(plain):
+        if p in WHISPER_WAKE or (len(p) >= 5 and difflib.SequenceMatcher(None, p, "jarvis").ratio() >= 0.8):
+            return " ".join(words[i + 1:]).strip(" ,.!?;:-")
+        if i + 1 < len(plain) and p + plain[i + 1] in WHISPER_WAKE:  # "Já vis, toca lofi"
+            return " ".join(words[i + 2:]).strip(" ,.!?;:-")
+    return None
 
 
 # ------------------------- falar -------------------------
@@ -260,6 +301,28 @@ def beep():
         pass
 
 
+def duck(level=DUCK_LEVEL):
+    """Abaixa o som do PC enquanto você fala o pedido. Devolve a função que volta o volume
+    (ou None se não precisou ou não deu para mexer)."""
+    try:
+        from pycaw.pycaw import AudioUtilities
+        vol = AudioUtilities.GetSpeakers().EndpointVolume
+        old = vol.GetMasterVolumeLevelScalar()
+        if old <= level:
+            return None
+        vol.SetMasterVolumeLevelScalar(level, None)
+    except Exception:
+        return None
+
+    def restore():
+        try:
+            vol.SetMasterVolumeLevelScalar(old, None)
+        except Exception:
+            pass
+
+    return restore
+
+
 # ------------------------- ouvir -------------------------
 
 class Listener(threading.Thread):
@@ -277,19 +340,29 @@ class Listener(threading.Thread):
     def ask_answer(self):
         self.answer_wanted.set()
 
-    def _listen_command(self, read_block, noise, before=()):
+    def _hear(self, read_block, noise, before=()):
+        """Grava (com o som do PC baixinho) e transcreve. None = ninguém falou."""
         self.on_state("ouvindo")
-        pcm = record_command(read_block, noise, before)
+        restore = duck()
+        try:
+            # com o som abaixado, o barulho aprendido com a música não vale mais: mede de novo
+            pcm = record_command(read_block, noise, before, recalibrate=restore is not None)
+        finally:
+            if restore:
+                restore()
         if not pcm:
+            loudest, needed = last_levels
+            print(f"\nJarvis > Não ouvi o pedido (som mais alto {loudest:.0f}, precisa de {needed:.0f})."
+                  " Fale logo depois do bipe, perto do microfone, ou aumente o volume do microfone no Windows.")
             self.on_state("parado")
-            return ""
+            return None
         self.on_state("pensando")
         try:
-            return strip_wake(N.transcribe(wav_bytes(pcm)))
+            return N.transcribe(wav_bytes(pcm))
         except Exception as e:
             print(f"\nJarvis > {e}")
             self.on_state("parado")
-            return ""
+            return None
 
     def run(self):
         try:
@@ -302,25 +375,42 @@ class Listener(threading.Thread):
     def _run(self):
         import sounddevice as sd
         from vosk import KaldiRecognizer, Model, SetLogLevel
+        try:
+            import comtypes
+            comtypes.CoInitialize()  # o duck() mexe no volume por COM nesta thread
+        except Exception:
+            pass
         SetLogLevel(-1)
         # Sem gramática: o modelo escreve o que ouviu e is_wake() reconhece "Jarvis" de vários jeitos.
         rec = KaldiRecognizer(Model(str(self.model_path)), SAMPLE_RATE)
         noise, silent_blocks, warned = 300.0, 0, False
         recent = collections.deque(maxlen=PRE_BUFFER)
-        with sd.RawInputStream(samplerate=SAMPLE_RATE, blocksize=BLOCK, channels=1, dtype="int16") as stream:
+        # O microfone enche uma fila sozinho: enquanto o Whisper transcreve, nada do que você fala se perde.
+        audio = queue.Queue(maxsize=600)
+
+        def on_audio(indata, frames, t, status):
+            try:
+                audio.put_nowait(bytes(indata))
+            except queue.Full:
+                pass
+
+        with sd.RawInputStream(samplerate=SAMPLE_RATE, blocksize=BLOCK, channels=1, dtype="int16", callback=on_audio):
             self.ready.set()
 
             def read_block():
-                return stream.read(BLOCK)[0]
+                try:
+                    return audio.get(timeout=5)
+                except queue.Empty:
+                    raise RuntimeError("o microfone parou de mandar som (desconectado?)") from None
 
             while True:
                 if self.answer_wanted.is_set():
                     while speaking.is_set():
                         read_block()
                     beep()
-                    text = self._listen_command(read_block, noise)
+                    text = self._hear(read_block, noise)
                     self.answer_wanted.clear()
-                    self.put(("voz", text))
+                    self.put(("voz", strip_wake(text or "")))
                     continue
                 block = read_block()
                 if speaking.is_set():
@@ -335,17 +425,32 @@ class Listener(threading.Thread):
                     print("\nJarvis > O microfone está mudo. Ligue \"Permitir que aplicativos da área de trabalho"
                           " acessem o microfone\" na tela que abri e reinicie o Jarvis.")
                     open_mic_settings()
-                noise = noise * 0.98 + level * 0.02  # aprende o barulho do ambiente
+                # aprende o barulho do ambiente: desce rápido, sobe devagar (fala e picos quase não contam)
+                noise += (level - noise) * (0.02 if level < noise else 0.005)
                 done = rec.AcceptWaveform(bytes(block))
                 heard = json.loads(rec.Result() if done else rec.PartialResult())
-                if is_wake(heard.get("text") or heard.get("partial")):
-                    rec.Reset()
-                    beep()
-                    text = self._listen_command(read_block, noise, list(recent))
-                    recent.clear()
-                    if not text:  # só disse "Jarvis": espera o pedido depois do bipe
-                        text = self._listen_command(read_block, noise)
-                    if text:
-                        self.put(("voz", text))
-                    else:
-                        self.on_state("parado")
+                said = heard.get("text") or heard.get("partial") or ""
+                if DEBUG and done and said:
+                    print(f"[vosk ouviu] {said}  (nível {level:.0f}, barulho {noise:.0f})")
+                if not is_wake(said):
+                    continue
+                if DEBUG:
+                    print(f"[vosk acordou com] {said}")
+                rec.Reset()
+                beep()
+                text = self._hear(read_block, noise, list(recent))
+                recent.clear()
+                if text is None:
+                    continue
+                command = after_wake(text)
+                if command is None:  # o Whisper não ouviu "Jarvis": era conversa, TV ou vídeo
+                    if DEBUG:
+                        print(f"[ignorado, sem \"Jarvis\"] {text}")
+                    self.on_state("parado")
+                    continue
+                if not command:  # só disse "Jarvis": o pedido vem logo depois (a fila guardou o áudio)
+                    command = strip_wake(self._hear(read_block, noise) or "")
+                if command:
+                    self.put(("voz", command))
+                else:
+                    self.on_state("parado")

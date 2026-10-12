@@ -155,3 +155,23 @@ def test_typed_request_is_spoken_too(monkeypatch):
     j.voice_out = False
     j.respond("me conta outra")
     assert said == ["Pois não, senhor."]
+
+
+def test_after_wake_only_obeys_when_jarvis_was_said():
+    assert V.after_wake("Jarvis, toca lofi.") == "toca lofi"
+    assert V.after_wake("Jarvis.") == ""  # só chamou: espera o pedido
+    assert V.after_wake("Já vis, toca lofi") == "toca lofi"
+    assert V.after_wake("eu já vi esse filme") is None  # conversa ou TV: não obedece
+
+
+def test_beep_echo_is_not_taken_as_speech():
+    audio = iter([block(5000)] * V.ECHO_BLOCKS + [block(0)] * 100)  # o bipe volta pelo microfone
+    assert V.record_command(lambda: next(audio)) == b""
+
+
+def test_recalibrates_after_music_is_lowered():
+    # com a música alta o barulho medido era 2000; depois de abaixar o som, a voz (1200) precisa contar
+    audio = iter([block(200)] * (V.ECHO_BLOCKS + 1) + [block(1200)] * 10 + [block(200)] * 50)
+    assert V.record_command(lambda: next(audio), noise=2000, recalibrate=True) != b""
+    audio = iter([block(200)] * (V.ECHO_BLOCKS + 1) + [block(1200)] * 10 + [block(200)] * 50)
+    assert V.record_command(lambda: next(audio), noise=2000) == b""  # sem recalibrar, a voz se perdia

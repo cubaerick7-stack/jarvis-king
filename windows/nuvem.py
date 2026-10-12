@@ -10,6 +10,7 @@ GEMINI_MODEL e GROQ_MODEL são opcionais para trocar o modelo.
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 
@@ -21,6 +22,9 @@ TIMEOUT = 20
 
 GROQ_API = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+COOLDOWN = 300  # segundos que um modelo sem cota fica de lado (para não gastar uma ida e volta à toa)
+_limited = {}  # modelo -> quando deu 429
+_no_thinking_cfg = set()  # modelos que recusaram o thinkingConfig
 
 
 def api_key():
@@ -64,13 +68,63 @@ def _groq_post(body, key):
     return _request(GROQ_API, body, {"Authorization": f"Bearer {key}", "User-Agent": "jarvis/1.0"})
 
 
-def _http_fail(name, e):
-    """Erros que não adianta tentar outro modelo do mesmo serviço."""
-    if e.code in (401, 403):
-        return CloudError(f"chave do {name} recusada")
-    if e.code == 429:
-        return CloudError(f"limite grátis do {name} atingido por agora")
+def _detail(e):
+    """O corpo da resposta de erro (onde vem o motivo, ex.: API_KEY_INVALID)."""
+    try:
+        return e.read().decode("utf-8", "replace")
+    except Exception:
+        return ""
+
+
+def _message(body):
+    try:
+        err = json.loads(body).get("error", {})
+        return str(err.get("message") if isinstance(err, dict) else err)[:160]
+    except Exception:
+        return ""
+
+
+def _http_fail(name, e, body=""):
+    """Erros que não adianta tentar outro modelo do mesmo serviço. O 429 não está aqui:
+    no plano grátis o limite é por modelo, então o próximo modelo ainda pode ter cota."""
+    if e.code in (401, 403) or "API_KEY_INVALID" in body or "API key not valid" in body:
+        return CloudError(f"chave do {name} recusada (confira o setx)")
     return None
+
+
+class _Http(Exception):
+    """HTTPError com o corpo já lido (o corpo só pode ser lido uma vez)."""
+
+    def __init__(self, e):
+        super().__init__(f"HTTP {e.code}")
+        self.code, self.body = e.code, _detail(e)
+
+
+def _call(fn, *args):
+    try:
+        return fn(*args)
+    except urllib.error.HTTPError as e:
+        raise _Http(e) from e
+
+
+def _in_order(names):
+    """Modelos que deram 429 há pouco vão para o fim da fila."""
+    now = time.time()
+    fresh = [m for m in names if now - _limited.get(m, -COOLDOWN) >= COOLDOWN]
+    return fresh + [m for m in names if m not in fresh]
+
+
+def _all_failed(name, last, limited):
+    if limited:
+        return CloudError(f"limite grátis do {name} atingido por agora ({last})")
+    return CloudError(f"nenhum modelo do {name} respondeu ({last})")
+
+
+def _with_thinking(body, on):
+    if not on:
+        return body
+    config = {**body["generationConfig"], "thinkingConfig": {"thinkingBudget": 0}}
+    return {**body, "generationConfig": config}
 
 
 def generate(system, user, json_mode=False, max_tokens=2048, temperature=0.0):
@@ -86,28 +140,43 @@ def generate(system, user, json_mode=False, max_tokens=2048, temperature=0.0):
     if json_mode:
         body["generationConfig"]["responseMimeType"] = "application/json"
 
-    last = None
-    for model in models():
+    last, limited = None, False
+    for model in _in_order(models()):
+        # sem "pensar" antes de responder: o Jarvis fala, cada segundo conta (e o raciocínio gasta tokens)
+        thinking = model not in _no_thinking_cfg
         try:
-            data = _post(model, body, key)
-        except urllib.error.HTTPError as e:
-            last = f"{model}: HTTP {e.code}"
-            fail = _http_fail("Gemini", e)
+            try:
+                data = _call(_post, model, _with_thinking(body, thinking), key)
+            except _Http as h:
+                if not (h.code == 400 and thinking and "API_KEY" not in h.body):
+                    raise
+                _no_thinking_cfg.add(model)  # modelo que não aceita o thinkingConfig: repete sem
+                data = _call(_post, model, body, key)
+        except _Http as h:
+            last = f"{model}: HTTP {h.code} {_message(h.body)}".strip()
+            fail = _http_fail("Gemini", h, h.body)
             if fail:
-                raise fail from e
-            continue  # 404 (modelo aposentado), 503 (sobrecarga), 500...: tenta o próximo
+                raise fail from h
+            if h.code == 429:
+                limited = True
+                _limited[model] = time.time()
+            continue  # 429 (cota do modelo), 404 (aposentado), 503 (sobrecarga)...: tenta o próximo
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             raise CloudError(f"sem conexão com o Gemini ({e})") from e
         try:
-            parts = data["candidates"][0]["content"]["parts"]
+            cand = data["candidates"][0]
+            parts = cand["content"]["parts"]
             text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
-        except (KeyError, IndexError):
+        except (KeyError, IndexError, TypeError):
             last = f"{model}: resposta vazia"
+            continue
+        if json_mode and cand.get("finishReason") == "MAX_TOKENS":
+            last = f"{model}: resposta cortada"  # JSON pela metade não serve
             continue
         if text.strip():
             return text
         last = f"{model}: resposta vazia"
-    raise CloudError(f"nenhum modelo do Gemini respondeu ({last})")
+    raise _all_failed("Gemini", last, limited)
 
 
 def groq_models():
@@ -120,8 +189,8 @@ def groq_generate(system, user, json_mode=False, max_tokens=2048, temperature=0.
     key = groq_key()
     if not key:
         raise CloudError("sem GROQ_API_KEY")
-    last = None
-    for model in groq_models():
+    last, limited = None, False
+    for model in _in_order(groq_models()):
         body = {
             "model": model,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -133,10 +202,14 @@ def groq_generate(system, user, json_mode=False, max_tokens=2048, temperature=0.
         try:
             data = _groq_post(body, key)
         except urllib.error.HTTPError as e:
-            last = f"{model}: HTTP {e.code}"
-            fail = _http_fail("Groq", e)
+            detail = _detail(e)
+            last = f"{model}: HTTP {e.code} {_message(detail)}".strip()
+            fail = _http_fail("Groq", e, detail)
             if fail:
                 raise fail from e
+            if e.code == 429:
+                limited = True
+                _limited[model] = time.time()
             continue
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             raise CloudError(f"sem conexão com o Groq ({e})") from e
@@ -147,7 +220,7 @@ def groq_generate(system, user, json_mode=False, max_tokens=2048, temperature=0.
         if text.strip():
             return text
         last = f"{model}: resposta vazia"
-    raise CloudError(f"nenhum modelo do Groq respondeu ({last})")
+    raise _all_failed("Groq", last, limited)
 
 
 # ------------------------- ouvir (voz -> texto) -------------------------
@@ -166,13 +239,32 @@ def _multipart(fields, filename, content, mime):
     return b"".join(parts), f"multipart/form-data; boundary={boundary}"
 
 
+# Frases que o Whisper inventa quando só tem barulho (tosse, porta, TV baixa).
+HALLUCINATIONS = {"obrigado", "obrigada", "tchau", "tchau tchau", "legendas pela comunidade amaraorg",
+                  "inscrevase no canal", "obrigado por assistir"}
+
+
+def _plain(text):
+    import unicodedata
+    text = "".join(c for c in unicodedata.normalize("NFKD", text.lower()) if not unicodedata.combining(c))
+    return " ".join("".join(c for c in text if c.isalnum() or c.isspace()).split())
+
+
 def _groq_transcribe(wav, key):
-    body, ctype = _multipart({"model": STT_MODEL, "language": "pt", "response_format": "json"},
+    body, ctype = _multipart({"model": STT_MODEL, "language": "pt", "temperature": "0",
+                              "response_format": "verbose_json", "prompt": "Jarvis"},
                              "fala.wav", wav, "audio/wav")
     req = urllib.request.Request(GROQ_STT, data=body, method="POST", headers={
         "Content-Type": ctype, "Authorization": f"Bearer {key}", "User-Agent": "jarvis/1.0"})
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-        return json.loads(r.read().decode("utf-8")).get("text", "")
+        data = json.loads(r.read().decode("utf-8"))
+    segments = data.get("segments")
+    if segments:  # trechos que o Whisper acha que não são fala ficam de fora (mesma regra do Whisper)
+        text = " ".join(str(seg.get("text", "")).strip() for seg in segments
+                        if not (seg.get("no_speech_prob", 0) > 0.6 and seg.get("avg_logprob", 0) < -1.0))
+    else:
+        text = data.get("text", "")
+    return "" if _plain(text) in HALLUCINATIONS else text.strip()
 
 
 def _gemini_transcribe(wav, key):
@@ -194,15 +286,14 @@ def _gemini_transcribe(wav, key):
 
 
 def transcribe(wav):
-    """Texto falado num WAV: Whisper no Groq; se faltar, o Gemini ouve o áudio."""
+    """Texto falado num WAV: Whisper no Groq; se faltar (ou falhar), o Gemini ouve o áudio.
+    Se o Whisper respondeu "nada", é nada mesmo (o Gemini só inventaria algo como "não há fala")."""
     errors = []
     for name, key, fn in (("Groq", groq_key(), _groq_transcribe), ("Gemini", api_key(), _gemini_transcribe)):
         if not key:
             continue
         try:
-            text = fn(wav, key).strip()
-            if text:
-                return text
+            return fn(wav, key).strip()
         except Exception as e:
             errors.append(f"{name}: {e}")
     if errors:

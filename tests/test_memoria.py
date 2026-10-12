@@ -103,3 +103,52 @@ def test_weather_url_is_ascii(monkeypatch):
     monkeypatch.setattr(F.urllib.request, "urlopen", fake_open)
     F.weather("São Paulo")
     urls[0].encode("ascii")
+
+
+def test_forget_my_name_and_short_values():
+    M.set_profile("nome", "João")
+    M.set_profile("cidade", "Rio")
+    assert M.forget("a prova do rio grande") is False  # "Rio" só sai se for ele o assunto
+    assert M.forget("meu nome") is True
+    assert M.load()["perfil"] == {"cidade": "Rio"}
+    assert M.forget("rio") is True and M.load()["perfil"] == {}
+
+
+def test_broken_json_is_kept_aside_not_erased():
+    M.FILE.write_text('{"perfil": {"nome": "João"},}', encoding="utf-8")  # vírgula a mais
+    assert M.load()["perfil"] == {}
+    assert list(M.FILE.parent.glob("memoria.estragada-*.json"))
+
+
+def test_unreadable_file_is_never_overwritten(monkeypatch):
+    M.set_profile("nome", "João")
+
+    def locked(*a, **k):
+        raise PermissionError("preso por outro programa")
+
+    with monkeypatch.context() as m:
+        m.setattr(M.time, "sleep", lambda s: None)
+        m.setattr(type(M.FILE), "read_bytes", locked)
+        assert M.context() == ""  # a IA segue sem memória naquele pedido
+        try:
+            M.add_talk("oi", "olá")
+        except PermissionError:
+            pass
+    assert M.load()["perfil"] == {"nome": "João"}  # nada foi apagado
+
+
+def test_reminder_hours_are_normalized():
+    assert M.add_reminder("a", "2026-10-16", "7h") and M.load()["lembretes"][-1]["hora"] == "07:00"
+    assert M.add_reminder("b", "2026-10-16", "19h30") and M.load()["lembretes"][-1]["hora"] == "19:30"
+    assert M.add_reminder("c", "2026-10-16", "24:00")
+    assert M.load()["lembretes"][-1]["data"] == "2026-10-17" and M.load()["lembretes"][-1]["hora"] == "00:00"
+    assert M.add_reminder("d", "2026-10-16", "25:00") is False
+    assert M.add_reminder("e", "2026-10-16", "9:60") is False
+
+
+def test_broken_reminder_does_not_block_others():
+    data = M.load()
+    data["lembretes"] = [{"texto": "estragado", "data": "ontem", "hora": "x"},
+                         {"texto": "certo", "data": "2026-10-16", "hora": "07:00"}]
+    M.save(data)
+    assert M.due_reminders(datetime(2026, 10, 16, 8, 0)) == ["estragado", "certo"]

@@ -212,3 +212,46 @@ def test_ai_runs_catalog_tools(jarvis, monkeypatch):
     jarvis.calls.clear()
     jarvis.ask_ai_router("modo estudo")
     assert jarvis.calls == [("set_volume", (25,)), ("open_target", ("notepad",))]
+
+
+def test_find_program_walks_games_drive_everything_does_not_index(tmp_path, monkeypatch):
+    real = load_real()
+    games = tmp_path / "G"
+    make_omori(games)
+    empty = tmp_path / "menu"
+    empty.mkdir()
+    monkeypatch.setattr(real, "PROGRAM_ROOTS", [empty])
+    monkeypatch.setattr(real, "EXTRA_PROGRAM_ROOTS", [games])
+    monkeypatch.setattr(real.F, "everything_search", lambda q, n=400, ext=None: [])
+    monkeypatch.setattr(real.F, "indexes_drive", lambda d: False)  # G: em exFAT: o "nada" não vale
+    assert real.find_program("omori").name == "OMORI.lnk"
+    monkeypatch.setattr(real.F, "indexes_drive", lambda d: True)  # G: indexado: confia no Everything
+    assert real.find_program("omori") is None
+
+
+def test_store_app_opens_without_typing(monkeypatch):
+    real = load_real()
+    monkeypatch.setattr(real, "find_programs", lambda name: [])
+    monkeypatch.setattr(real.F, "store_app", lambda name: ("Câmera", "Microsoft.WindowsCamera_8wekyb3d8bbwe!App"))
+    opened = []
+    monkeypatch.setattr(real.os, "startfile", lambda path, *a, **k: opened.append(path), raising=False)
+    monkeypatch.setattr(real, "need_pyautogui", lambda: (_ for _ in ()).throw(AssertionError("digitou")))
+    assert real.open_target("câmera") is True
+    assert opened == ["shell:AppsFolder\\Microsoft.WindowsCamera_8wekyb3d8bbwe!App"]
+
+
+@pytest.mark.parametrize("text", ["me lembra às 7h de tomar remédio", "me lembra amanhã às 15h da reunião",
+                                  "alarme às 6 horas"])
+def test_reminder_at_a_time_goes_to_ai_not_timer(text):
+    real = load_real()
+    used = []
+    real.tool = lambda name, **a: used.append(name) or True
+    assert real.fast_local_router(text) is False and used == []  # a IA marca o lembrete com data e hora
+
+
+def test_timer_in_minutes_keeps_the_message():
+    real = load_real()
+    used = []
+    real.tool = lambda name, **a: used.append((name, a)) or True
+    assert real.fast_local_router("coloca um alarme em 20 minutos pra tirar o bolo") is True
+    assert used == [("start_timer", {"minutes": 20, "message": "tirar o bolo"})]
