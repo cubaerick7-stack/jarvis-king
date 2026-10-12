@@ -413,6 +413,9 @@ def _eleven_request(text, path, voice, model):
         except Exception:
             detail = ""
         low = detail.lower()
+        if "key id used as api key" in low:
+            raise ElevenError("você colocou o ID da chave, não a chave. A chave começa com sk_ e só aparece "
+                              "quando é criada: crie outra e faça o setx com ela", e.code, detail) from e
         if e.code == 401 and "permission" not in low:
             raise ElevenError(f"a chave foi recusada ({detail or 'confira ELEVENLABS_API_KEY'})", e.code, detail) from e
         # a mensagem original da ElevenLabs vai junto: "quota" pode ser o limite da CHAVE, não da conta
@@ -425,7 +428,7 @@ def _eleven_request(text, path, voice, model):
 def _voice_refused(e):
     """A voz escolhida não pode ser usada (voz da Library no plano grátis, voz não adicionada, sem permissão)."""
     low = e.detail.lower()
-    return e.code in (400, 402, 403, 404) and not ("quota" in low or "credit" in low)
+    return e.code in (400, 402, 403, 404) and not ("quota" in low or "credit" in low or "api key" in low)
 
 
 def _eleven_mp3(text, path):
@@ -476,6 +479,8 @@ def voices_summary():
     if _has_gtts():
         order.append("Google")
     line = "Vozes: " + (" -> ".join(order) or "nenhuma")
+    if eleven_key() and not eleven_key().startswith("sk_"):
+        line += "  (ATENÇÃO: a ELEVENLABS_API_KEY não começa com sk_; deve ser o ID da chave, não a chave)"
     if not eleven_key():
         line += "  (ElevenLabs desligada: a ELEVENLABS_API_KEY não chegou neste PowerShell; " \
                 "faça o setx e abra outra janela)"

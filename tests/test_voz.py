@@ -567,3 +567,11 @@ def test_startup_line_tells_which_voices(monkeypatch):
     assert "ElevenLabs (Elvis) -> Google" in V.voices_summary()
     monkeypatch.delenv("ELEVENLABS_API_KEY")
     assert "ELEVENLABS_API_KEY não chegou" in V.voices_summary()
+
+
+def test_key_id_instead_of_key_is_explained(monkeypatch):
+    monkeypatch.setattr(V, "_has_gtts", lambda: False)
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "abc123")
+    assert "não começa com sk_" in V.voices_summary()
+    err = V.ElevenError("HTTP 400", 400, "API key ID used as API key - only valid API keys can be used.")
+    assert not V._voice_refused(err)  # não adianta trocar para a George
