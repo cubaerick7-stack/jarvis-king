@@ -332,6 +332,8 @@ def eleven_key():
 
 def _short_error(e):
     text = str(e)
+    if isinstance(e, ElevenError):
+        return text[:220]
     if "403" in text:
         return "recusou (erro 403)"
     return re.sub(r"https?://\S+", "", text)[:120].strip()
@@ -413,9 +415,8 @@ def _eleven_request(text, path, voice, model):
         low = detail.lower()
         if e.code == 401 and "permission" not in low:
             raise ElevenError(f"a chave foi recusada ({detail or 'confira ELEVENLABS_API_KEY'})", e.code, detail) from e
-        if "quota" in low or "credit" in low:
-            raise ElevenError("acabaram os créditos deste mês", e.code, detail) from e
-        raise ElevenError(f"HTTP {e.code} {detail}".strip(), e.code, detail) from e
+        # a mensagem original da ElevenLabs vai junto: "quota" pode ser o limite da CHAVE, não da conta
+        raise ElevenError(f"HTTP {e.code} {detail[:200]}".strip(), e.code, detail) from e
     if not audio:
         raise ElevenError("não mandou áudio")
     Path(path).write_bytes(audio)
