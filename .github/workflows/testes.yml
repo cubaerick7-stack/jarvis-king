@@ -26,6 +26,5 @@ jobs:
       - name: Importa o Jarvis
         working-directory: windows
         run: python -c "import ferramentas, memoria, navegador, nuvem, ui, voz, jarvis_ai; print('ok')"
-      - name: Testes no Windows (ainda informativo)
-        continue-on-error: true
+      - name: Testes no Windows
         run: python -m pytest -q

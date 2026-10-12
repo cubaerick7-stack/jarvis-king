@@ -215,8 +215,21 @@ def test_ai_waits_for_window_before_typing(jarvis, monkeypatch):
     monkeypatch.setattr(jarvis, "open_target", lambda t: order.append("open") or True)
     monkeypatch.setattr(F, "type_text", lambda t: order.append("type") or True)
     monkeypatch.setattr(jarvis.time, "sleep", lambda s: order.append(f"sleep{s}"))
+    monkeypatch.setattr(F, "foreground_window", lambda: None)  # igual no Linux e no Windows: espera fixa
     jarvis.ask_ai_router("abre o bloco de notas e escreve oi")
     assert order == ["open", "sleep1.5", "type"]
+
+
+def test_wait_new_window_returns_when_program_comes_to_front(monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr(F.time, "time", lambda: now[0])
+    monkeypatch.setattr(F.time, "sleep", lambda s: now.__setitem__(0, now[0] + s))
+    monkeypatch.setattr(F, "is_jarvis_window", lambda h: False)
+    monkeypatch.setattr(F, "foreground_window", lambda: 7 if now[0] >= 2.0 else 1)  # o Bloco de Notas abre em 2 s
+    assert F.wait_new_window(1) is True and now[0] < 3.0
+    now[0] = 0.0
+    monkeypatch.setattr(F, "foreground_window", lambda: 1)  # nunca abriu: desiste no tempo limite
+    assert F.wait_new_window(1, timeout=8.0) is False and 8.0 <= now[0] < 9.0
 
 
 @pytest.mark.parametrize("text, expected", [
