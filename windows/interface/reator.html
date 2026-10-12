@@ -244,8 +244,9 @@ window.mostraNome = (nome) => {
 
 // Botões e caixa de texto falam com o Python (ui.py -> Api)
 const api = () => (window.pywebview && window.pywebview.api) || null;
-// Apertar o – ou o × não começa a arrastar a janela (senão, ao soltar depois de arrastar, fecharia o Jarvis)
-document.querySelector('.botoes').addEventListener('mousedown', (e) => e.stopPropagation());
+// Apertar o – ou o × não começa a arrastar a janela (senão, ao soltar depois de arrastar, fecharia o Jarvis),
+// e o clique não deixa o botão com foco (senão o – e o × ficam aparecendo depois de minimizar e voltar)
+document.querySelector('.botoes').addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
 document.getElementById('fechar').onclick = () => api() && api().fechar();
 document.getElementById('minimizar').onclick = () => api() && api().minimizar();
 const campo = document.getElementById('pedido');

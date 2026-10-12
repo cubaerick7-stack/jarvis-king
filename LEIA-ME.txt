@@ -141,6 +141,9 @@ VOZ ("BOLHA", BIPE, PEDIDO)
 4. Diga "Bolha, toca lofi" de uma vez, ou "Bolha", espere o bipe e fale.
    Ele responde com a voz Antonio. Digitar continua funcionando junto.
    Outro nome? setx JARVIS_NOME Jarvis   (ou o nome que quiser; abra o PowerShell de novo)
+   Pode pensar no meio da frase: se ela parar em "abre o...", "tipo...", ele espera
+   voce terminar. "Calma", "peraí" e "ainda nao falei" nao fazem nada.
+   A TV falando "a bolha imobiliaria" ou "sair da bolha" nao chama ele.
 Microfone mudo? Configuracoes > Privacidade > Microfone > ligue
 "Permitir que aplicativos da area de trabalho acessem o microfone"
 (o Jarvis abre essa tela sozinho quando percebe o microfone mudo).
@@ -166,6 +169,11 @@ o Groq responde. Nao pesa a CPU. Os comandos rapidos funcionam sem internet.
 2. Feche e abra o PowerShell de novo.
 Opcional:
    setx GEMINI_MODEL gemini-3.8-flash   (escolher o modelo do Gemini)
-   setx GROQ_MODEL llama-3.1-8b-instant (escolher o modelo do Groq)
+   setx GROQ_MODEL openai/gpt-oss-120b  (escolher o modelo do Groq)
    setx JARVIS_LOCAL 1                  (usar tambem o Qwen local, por ultimo)
+Nao precisa trocar modelo quando o Groq aposenta um: o Jarvis pergunta ao Groq
+quais existem hoje e usa esses. Se um modelo do Gemini demorar, ele tenta o
+proximo (mais leve) em vez de desistir.
+Se voce ja tinha feito "setx GROQ_MODEL" com um modelo que sumiu, apague com:
+   reg delete HKCU\Environment /v GROQ_MODEL /f
 As chaves NUNCA vao para arquivo nem para o GitHub.

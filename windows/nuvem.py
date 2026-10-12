@@ -10,21 +10,30 @@ GEMINI_MODEL e GROQ_MODEL são opcionais para trocar o modelo.
 
 import json
 import os
+import re
+import socket
 import time
 import urllib.error
 import urllib.request
 
 API = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-# Tentados em ordem: se um estiver sobrecarregado (503) ou aposentado (404), vai para o próximo.
+# Tentados em ordem: se um estiver sobrecarregado (503), aposentado (404) ou demorando, vai para o próximo.
 DEFAULT_MODELS = ["gemini-flash-latest", "gemini-flash-lite-latest"]
 TIMEOUT = 20
+GEN_TIMEOUT = 15  # o Gemini que passa disso costuma estar "pensando" demais: o lite responde em segundos
 
 
 GROQ_API = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+GROQ_LIST = "https://api.groq.com/openai/v1/models"
+# Preferidos, em ordem. O Groq aposenta modelos de tempos em tempos: os que sumiram (404) ficam de lado
+# e a lista de modelos da própria conta (GROQ_LIST) completa com os que existem hoje.
+GROQ_MODELS = ["llama-3.3-70b-versatile", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.1-8b-instant"]
+NOT_CHAT = ("whisper", "guard", "tts", "playai", "orpheus", "compound", "distil")
 COOLDOWN = 300  # segundos que um modelo sem cota fica de lado (para não gastar uma ida e volta à toa)
 _limited = {}  # modelo -> quando deu 429
 _no_thinking_cfg = set()  # modelos que recusaram o thinkingConfig
+_dead = set()  # modelos que responderam 404 (não existem mais): pulados até fechar o Jarvis
+_groq_listed = None  # modelos que a conta do Groq tem hoje ([] = não deu para perguntar)
 
 
 def api_key():
@@ -52,15 +61,22 @@ class CloudError(Exception):
     pass
 
 
-def _request(url, body, headers):
+def _request(url, body, headers, timeout=TIMEOUT):
     req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
                                  headers={"Content-Type": "application/json", **headers}, method="POST")
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
 
 
 def _post(model, body, key):
-    return _request(API.format(model=model), body, {"x-goog-api-key": key})
+    return _request(API.format(model=model), body, {"x-goog-api-key": key}, GEN_TIMEOUT)
+
+
+def _timed_out(e):
+    """Demorou para responder (o modelo, não a internet)."""
+    if isinstance(e, urllib.error.URLError) and not isinstance(e, urllib.error.HTTPError):
+        e = e.reason
+    return isinstance(e, (TimeoutError, socket.timeout)) or "timed out" in str(e).lower()
 
 
 def _groq_post(body, key):
@@ -114,10 +130,11 @@ def _in_order(names):
     return fresh + [m for m in names if m not in fresh]
 
 
-def _all_failed(name, last, limited):
+def _all_failed(name, errors, limited):
+    detail = "; ".join(errors) or "nenhum modelo disponível"
     if limited:
-        return CloudError(f"limite grátis do {name} atingido por agora ({last})")
-    return CloudError(f"nenhum modelo do {name} respondeu ({last})")
+        return CloudError(f"limite grátis do {name} atingido por agora ({detail})")
+    return CloudError(f"nenhum modelo do {name} respondeu ({detail})")
 
 
 def _with_thinking(body, on):
@@ -140,8 +157,8 @@ def generate(system, user, json_mode=False, max_tokens=2048, temperature=0.0):
     if json_mode:
         body["generationConfig"]["responseMimeType"] = "application/json"
 
-    last, limited = None, False
-    for model in _in_order(models()):
+    errors, limited = [], False
+    for model in _in_order([m for m in models() if m not in _dead]):
         # sem "pensar" antes de responder: o Jarvis fala, cada segundo conta (e o raciocínio gasta tokens)
         thinking = model not in _no_thinking_cfg
         try:
@@ -153,35 +170,60 @@ def generate(system, user, json_mode=False, max_tokens=2048, temperature=0.0):
                 _no_thinking_cfg.add(model)  # modelo que não aceita o thinkingConfig: repete sem
                 data = _call(_post, model, body, key)
         except _Http as h:
-            last = f"{model}: HTTP {h.code} {_message(h.body)}".strip()
+            errors.append(f"{model}: HTTP {h.code} {_message(h.body)}".strip())
             fail = _http_fail("Gemini", h, h.body)
             if fail:
                 raise fail from h
             if h.code == 429:
                 limited = True
                 _limited[model] = time.time()
+            elif h.code == 404:
+                _dead.add(model)
             continue  # 429 (cota do modelo), 404 (aposentado), 503 (sobrecarga)...: tenta o próximo
         except (urllib.error.URLError, TimeoutError, OSError) as e:
-            raise CloudError(f"sem conexão com o Gemini ({e})") from e
+            if _timed_out(e):  # esse modelo demorou: o próximo (mais leve) costuma responder rápido
+                errors.append(f"{model}: demorou mais de {GEN_TIMEOUT} s")
+                continue
+            raise CloudError(f"sem conexão com o Gemini ({getattr(e, 'reason', e)})") from e
         try:
             cand = data["candidates"][0]
             parts = cand["content"]["parts"]
             text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
         except (KeyError, IndexError, TypeError):
-            last = f"{model}: resposta vazia"
+            errors.append(f"{model}: resposta vazia")
             continue
         if json_mode and cand.get("finishReason") == "MAX_TOKENS":
-            last = f"{model}: resposta cortada"  # JSON pela metade não serve
+            errors.append(f"{model}: resposta cortada")  # JSON pela metade não serve
             continue
         if text.strip():
             return text
-        last = f"{model}: resposta vazia"
-    raise _all_failed("Gemini", last, limited)
+        errors.append(f"{model}: resposta vazia")
+    raise _all_failed("Gemini", errors, limited)
 
 
-def groq_models():
+def _groq_list(key):
+    """Os modelos que a conta do Groq tem hoje (uma pergunta por vez que o Jarvis abre)."""
+    global _groq_listed
+    if _groq_listed is None:
+        try:
+            req = urllib.request.Request(GROQ_LIST, headers={"Authorization": f"Bearer {key}", "User-Agent": "jarvis/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            _groq_listed = [str(m["id"]) for m in data.get("data", [])
+                            if isinstance(m, dict) and m.get("id") and m.get("active", True) is not False]
+        except Exception:
+            _groq_listed = []  # sem a lista, tenta os preferidos mesmo
+    return _groq_listed
+
+
+def groq_models(key=None):
     custom = os.environ.get("GROQ_MODEL", "").strip()
-    return ([custom] if custom else []) + [m for m in GROQ_MODELS if m != custom]
+    names = ([custom] if custom else []) + [m for m in GROQ_MODELS if m != custom]
+    listed = _groq_list(key) if key else []
+    if listed:  # só os que existem hoje, e depois qualquer outro modelo de conversa da conta
+        names = [m for m in names if m in listed or m == custom]
+        names += [m for m in listed if m not in names and not any(x in m.lower() for x in NOT_CHAT)]
+    return [m for m in names if m not in _dead]
 
 
 def groq_generate(system, user, json_mode=False, max_tokens=2048, temperature=0.0):
@@ -189,38 +231,46 @@ def groq_generate(system, user, json_mode=False, max_tokens=2048, temperature=0.
     key = groq_key()
     if not key:
         raise CloudError("sem GROQ_API_KEY")
-    last, limited = None, False
-    for model in _in_order(groq_models()):
+    errors, limited = [], False
+    for model in _in_order(groq_models(key)):
         body = {
             "model": model,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if model.startswith("openai/gpt-oss"):
+            body["reasoning_effort"] = "low"  # raciocina pouco: responde rápido e sobra resposta no max_tokens
         if json_mode:
             body["response_format"] = {"type": "json_object"}
         try:
             data = _groq_post(body, key)
         except urllib.error.HTTPError as e:
             detail = _detail(e)
-            last = f"{model}: HTTP {e.code} {_message(detail)}".strip()
+            errors.append(f"{model}: HTTP {e.code} {_message(detail)}".strip())
             fail = _http_fail("Groq", e, detail)
             if fail:
                 raise fail from e
             if e.code == 429:
                 limited = True
                 _limited[model] = time.time()
+            elif e.code == 404:
+                _dead.add(model)  # o Groq aposentou esse modelo
             continue
         except (urllib.error.URLError, TimeoutError, OSError) as e:
-            raise CloudError(f"sem conexão com o Groq ({e})") from e
+            if _timed_out(e):
+                errors.append(f"{model}: demorou mais de {TIMEOUT} s")
+                continue
+            raise CloudError(f"sem conexão com o Groq ({getattr(e, 'reason', e)})") from e
         try:
             text = data["choices"][0]["message"]["content"] or ""
-        except (KeyError, IndexError):
+        except (KeyError, IndexError, TypeError):
             text = ""
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)  # modelos que "pensam alto" na resposta
         if text.strip():
             return text
-        last = f"{model}: resposta vazia"
-    raise _all_failed("Groq", last, limited)
+        errors.append(f"{model}: resposta vazia")
+    raise _all_failed("Groq", errors, limited)
 
 
 # ------------------------- ouvir (voz -> texto) -------------------------

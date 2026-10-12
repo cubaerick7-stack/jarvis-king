@@ -33,7 +33,15 @@ def test_record_stops_after_you_stop_talking():
     audio = iter([block(0)] * 3 + [block(3000)] * 10 + [block(0)] * 50)
     pcm = V.record_command(lambda: next(audio))
     seconds = len(pcm) / 2 / V.SAMPLE_RATE
-    assert 2.4 <= seconds <= 2.7  # 0,3 s antes + 1 s falando + 1,2 s de silêncio
+    expected = 0.3 + 1.0 + V.END_SILENCE  # antes + falando + o silêncio que encerra
+    assert expected - 0.15 <= seconds <= expected + 0.15
+
+
+def test_a_pause_to_think_does_not_cut_the_sentence():
+    # fala 1 s, pensa 1,2 s e continua: a gravação pega as duas partes
+    audio = iter([block(3000)] * 10 + [block(0)] * 12 + [block(3000)] * 10 + [block(0)] * 50)
+    pcm = V.record_command(lambda: next(audio))
+    assert len(pcm) / 2 / V.SAMPLE_RATE >= 3.2
 
 
 def test_record_gives_up_without_speech():
@@ -228,3 +236,58 @@ def test_whisper_near_miss_counts_only_as_first_word_after_vosk_heard_the_name()
     assert V.after_wake("Olha, toca lofi", lenient_first=True) == "toca lofi"
     assert V.after_wake("eu olha toca lofi", lenient_first=True) is None  # no meio da frase, só o nome exato
     assert V.after_wake("Bola, toca lofi") is None
+
+
+@pytest.mark.parametrize("text", ["a bolha imobiliária vai estourar", "tem que sair da bolha", "plástico bolha é ótimo",
+                                  "a gente vive numa bolha.", "essa bolha da inteligência artificial"])
+def test_the_noun_on_tv_does_not_wake_it(text):
+    assert not V.is_wake(text.lower())
+    assert V.after_wake(text, lenient_first=True) is None
+
+
+@pytest.mark.parametrize("text, command", [("Bolha, toca lofi", "toca lofi"), ("Ei Bolha, toca lofi", "toca lofi"),
+                                           ("Tá. Bolha, abre o Chrome", "abre o Chrome"), ("Oi bolha", "")])
+def test_calling_the_name_still_works(text, command):
+    assert V.is_wake(text.lower())
+    assert V.after_wake(text, lenient_first=True) == command
+
+
+def test_exact_name_wins_over_a_similar_first_word():
+    assert V.after_wake("Olha que coisa. Bolha, toca lofi.", lenient_first=True) == "toca lofi"
+    assert V.after_wake("Olha. Bolha.", lenient_first=True) == ""
+    assert V.after_wake("Olha, toca lofi", lenient_first=True) == "toca lofi"  # sem o nome exato, a 1ª parecida vale
+
+
+@pytest.mark.parametrize("text, cut", [
+    ("pesquisa sobre tipo", True), ("abre o", True), ("Eu queria que você...", True), ("toca uma música e", True),
+    ("é hum", True), ("toca lofi", False), ("abre o Chrome.", False), ("por que?", False), ("toca lofi mano", False),
+    ("", False),
+])
+def test_unfinished_sentence(text, cut):
+    assert V.unfinished(text) is cut
+
+
+def test_waits_for_you_to_finish_before_acting(monkeypatch):
+    lis = V.Listener(put=lambda x: None, model_path="x")
+    heard = iter(["Chrome e", "o Spotify"])
+    waits = []
+
+    def fake_hear(read_block, noise, before=(), no_speech=V.NO_SPEECH, quiet=False):
+        waits.append((no_speech, quiet))
+        return next(heard, None)
+
+    monkeypatch.setattr(lis, "_hear", fake_hear)
+    assert lis._finish("abre o...", None, 300.0) == "abre o Chrome e o Spotify"
+    assert waits == [(V.GO_ON_WAIT, True)] * 2
+    waits.clear()
+    assert lis._finish("toca lofi", None, 300.0) == "toca lofi" and waits == []
+    monkeypatch.setattr(lis, "_hear", lambda *a, **k: None)
+    assert lis._finish("pesquisa sobre tipo", None, 300.0) == "pesquisa sobre tipo"  # você não continuou: segue
+
+
+def test_continuation_wait_is_quiet_when_nobody_talks(monkeypatch, capsys):
+    lis = V.Listener(put=lambda x: None, model_path="x")
+    monkeypatch.setattr(V, "duck", lambda *a, **k: None)
+    monkeypatch.setattr(V, "record_command", lambda *a, **k: b"")
+    assert lis._hear(lambda: block(0), 300.0, no_speech=V.GO_ON_WAIT, quiet=True) is None
+    assert "Não ouvi" not in capsys.readouterr().out

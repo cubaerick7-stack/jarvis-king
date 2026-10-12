@@ -271,3 +271,22 @@ def test_assistant_introduces_itself_with_the_name(capsys):
     assert real.fast_local_router("bolha, quem é você?") is True
     assert "Meu nome é Bolha" in capsys.readouterr().out
     assert "Seu nome é Bolha" in real.AI_PROMPT and "oi bolha, tudo bem?" in real.AI_PROMPT
+
+
+@pytest.mark.parametrize("text", ["calma", "Calma, mano.", "peraí", "Bolha, espera aí", "deixa eu pensar",
+                                  "Calma, mano Eu tipo, não tenho um negócio, mano Eu não falei o que quero ainda "
+                                  "Não pesquisa quando eu mandar algo do tipo",
+                                  "ainda não te falei", "isso não era um pedido"])
+def test_thinking_aloud_does_nothing(jarvis, text, capsys):
+    assert route(jarvis, text) == []
+    assert "senhor" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("text", ["ainda não falei com a Ana, manda pra ela que eu chego às 8",
+                                  "calma que eu já volto, toca lofi", "pesquisa receita de bolo"])
+def test_real_requests_are_not_mistaken_for_thinking_aloud(jarvis, text):
+    assert route(jarvis, text) != []  # vai para a ação ou para a IA, nunca para o "pode falar"
+
+
+def test_ai_is_told_not_to_search_half_sentences(jarvis):
+    assert "NUNCA pesquise só porque não entendeu" in jarvis.AI_PROMPT

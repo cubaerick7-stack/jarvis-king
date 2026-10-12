@@ -1398,6 +1398,7 @@ AI_EXAMPLES = [
     ("me explica o que é fotossíntese", '{"actions":[],"reply":"É o processo em que as plantas usam luz, água e gás carbônico para produzir açúcar e liberar oxigênio."}'),
     (f"oi {NAME.lower()}, tudo bem?", '{"actions":[],"reply":"Tudo certo! Diga o que precisa."}'),
     ("faz um bolo pra mim", '{"actions":[],"reply":"Isso eu não consigo fazer. Diga \\"o que você sabe fazer\\" para ver a lista."}'),
+    ("calma mano, eu tipo, não tenho um negócio, é que", '{"actions":[],"reply":"Sem pressa, senhor. O que o senhor quer que eu faça?"}'),
 ]
 
 
@@ -1432,6 +1433,8 @@ Regras:
 - "lembra que tenho prova sexta" = add_reminder; algo sem data ("sou alérgico a camarão") = remember;
   nome, cidade, gostos = set_profile
 - se nenhuma ferramenta serve, diga isso em reply; nunca finja que fez
+- fala pela metade, pensando alto ("tipo...", "é que...", "calma", "espera"), reclamação ou desabafo
+  SEM um pedido claro = actions vazio (NUNCA pesquise só porque não entendeu); pergunte em reply o que ele quer
 
 Exemplos:
 {examples}
@@ -1680,7 +1683,16 @@ SMALL_TALK = [
     (rf"^(obrigad[oa]|valeu|vlw|brigad[oa]|show|top|massa|perfeito),?( {CALL})?[!. ]*$", "Tamo junto!"),
     (rf"^({CALL},? )?(quem e voce|quem e vc|qual (e )?(o )?seu nome)\??$",
      f"Meu nome é {NAME}, seu assistente do Windows. Diga \"o que você sabe fazer\"."),
+    # "calma", "peraí", "deixa eu pensar": ainda não é um pedido, então não faz nada
+    (rf"^({CALL},? )?(calma|espera|espere|pera|perai|pera ai|aguarda|aguenta ai|um momento|um minuto|"
+     rf"so um (momento|minuto|segundo)|deixa eu (pensar|ver|lembrar))((,? )(mano|ai|ae|{CALL}))*[!.,? ]*$",
+     "Tudo bem, senhor. Pode falar quando quiser."),
 ]
+# "eu não falei o que quero ainda", "não pesquisa quando eu mandar algo assim": a fala não era pedido
+END = r"(?=\s*(?:[,.!?]|$))"  # fim da frase: "ainda não falei com a Ana, manda..." é pedido
+NOT_A_REQUEST = re.compile(rf"\b(?:ainda nao (?:te )?(?:falei|disse|pedi)(?: o que (?:eu )?quero| nada)?{END}"
+                           rf"|nao (?:te )?(?:falei|disse|pedi) (?:o que (?:eu )?quero|nada) ainda"
+                           rf"|nao (?:te )?(?:falei|disse|pedi) ainda{END}|nao (?:era|e) (?:um )?pedido|nao (?:te )?pedi nada)")
 
 
 def small_talk(clean):
@@ -1688,6 +1700,9 @@ def small_talk(clean):
         if re.search(pattern, clean):
             print(f"Jarvis > {answer}")
             return True
+    if NOT_A_REQUEST.search(clean):
+        print("Jarvis > Entendido, senhor. Só faço algo quando o senhor terminar de dizer o que quer.")
+        return True
     return False
 
 

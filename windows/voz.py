@@ -40,9 +40,17 @@ BLOCK = 1600  # 0,1 s de áudio
 JARVIS_VOSK = ["jarvis", "jarbas", "javis", "jarves", "jervis", "jarvi", "jarve", "garvis", "jarvas", "jabis"]
 # O Whisper escreve "Jarvis" certinho; estes são os jeitos que ele ainda erra.
 JARVIS_WHISPER = {"jarvis", "jarbas", "jarbis", "javis", "jarves", "jervis", "jarvi", "jarvas", "garvis"}
-MAX_COMMAND = 10.0  # segundos
-END_SILENCE = 1.2  # segundos de silêncio que encerram o pedido
+MAX_COMMAND = 12.0  # segundos
+END_SILENCE = 1.5  # segundos de silêncio que encerram o pedido (uma pausa para pensar não corta a frase)
 NO_SPEECH = 5.0  # desiste se você não falar nada
+GO_ON_WAIT = 4.0  # frase parou no meio ("abre o..."): espera até isso você continuar, sem bipe
+# No fim da fala, estas palavras mostram que a frase ficou pela metade ("pesquisa sobre tipo", "abre o").
+UNFINISHED = {"tipo", "e", "que", "pra", "para", "de", "do", "da", "dos", "das", "no", "na", "nos", "nas", "o", "a",
+              "os", "as", "um", "uma", "com", "sobre", "em", "mas", "porque", "se", "meu", "minha", "eh", "hum",
+              "hmm", "humm", "ahn", "tipoassim"}
+# Antes do nome, estas palavras mostram que é o substantivo, não um chamado ("a bolha", "sair da bolha").
+NOT_CALL = {"a", "as", "da", "das", "na", "nas", "numa", "numas", "uma", "umas", "de", "em", "essa", "dessa",
+            "nessa", "esta", "desta", "nesta", "sua", "minha", "nossa", "pela", "plastico", "outra", "cada"}
 PRE_BUFFER = 25  # 2,5 s antes do "Jarvis": pega o "Jarvis, toca lofi" dito de uma vez só
 ECHO_BLOCKS = 2  # 0,2 s depois do bipe: o eco do bipe na caixa de som não conta como fala
 DUCK_LEVEL = 0.15  # volume do PC enquanto você fala (música alta atrapalha ouvir o pedido)
@@ -135,10 +143,11 @@ def wav_bytes(pcm):
 last_levels = (0.0, 0.0)  # (maior nível ouvido, nível que precisava) da última gravação, para o aviso
 
 
-def record_command(read_block, noise=300.0, before=(), recalibrate=False):
+def record_command(read_block, noise=300.0, before=(), recalibrate=False, no_speech=NO_SPEECH):
     """Grava do microfone até você parar de falar. read_block() devolve 0,1 s de áudio.
     before = o áudio de logo antes do "Jarvis" (se você já falou o pedido junto, ele vem junto).
-    recalibrate = o som do PC acabou de ser abaixado: mede o barulho de novo nos primeiros blocos."""
+    recalibrate = o som do PC acabou de ser abaixado: mede o barulho de novo nos primeiros blocos.
+    no_speech = quanto esperar você começar a falar."""
     global last_levels
     threshold = max(350.0, noise * 2.5)
     before = [bytes(b) for b in before]
@@ -164,7 +173,7 @@ def record_command(read_block, noise=300.0, before=(), recalibrate=False):
         last_levels = (loudest, threshold)
         if spoke and quiet >= END_SILENCE:
             break
-        if not spoke and elapsed >= (2.0 if spoke_before else NO_SPEECH):
+        if not spoke and elapsed >= (2.0 if spoke_before else no_speech):
             return b"".join(chunks) if spoke_before else b""
     return b"".join(chunks)
 
@@ -212,12 +221,19 @@ def _sounds_like_name(word):
         difflib.SequenceMatcher(None, word, w).ratio() for w in ("jarvis", "jarbas")) >= 0.8)
 
 
+def _called(words, i):
+    """O nome na posição i é um chamado ("Bolha, toca lofi", "ei bolha") e não o substantivo
+    ("a bolha imobiliária", "plástico bolha"), que a TV e os vídeos falam toda hora."""
+    return FUZZY_WAKE or i == 0 or words[i - 1] not in NOT_CALL
+
+
 def is_wake(text):
     """True se a frase tem o nome (ou o jeito que o reconhecedor escreve), junto ou separado."""
     plain = "".join(c for c in unicodedata.normalize("NFKD", (text or "").lower()) if not unicodedata.combining(c))
     words = re.findall(r"\w+", plain)
     pairs = [a + b for a, b in zip(words, words[1:])]  # "já vis" -> "javis"
-    return any(_sounds_like_name(w) for w in words + pairs)
+    return (any(_sounds_like_name(w) and _called(words, i) for i, w in enumerate(words))
+            or any(_sounds_like_name(p) for p in pairs))
 
 
 def _near_name(word):
@@ -233,13 +249,25 @@ def after_wake(text, lenient_first=False):
     words = (text or "").split()
     plain = [_plain(w) for w in words]
     for i, p in enumerate(plain):
-        if p in WHISPER_WAKE or (FUZZY_WAKE and len(p) >= 5
-                                 and difflib.SequenceMatcher(None, p, "jarvis").ratio() >= 0.8) \
-                or (lenient_first and i == 0 and _near_name(p)):
+        if (p in WHISPER_WAKE and _called(plain, i)) or (FUZZY_WAKE and len(p) >= 5
+                                                         and difflib.SequenceMatcher(None, p, "jarvis").ratio() >= 0.8):
             return " ".join(words[i + 1:]).strip(" ,.!?;:-")
         if i + 1 < len(plain) and p + plain[i + 1] in WHISPER_WAKE:  # "Já vis, toca lofi"
             return " ".join(words[i + 2:]).strip(" ,.!?;:-")
+    if lenient_first and plain and _near_name(plain[0]):  # só se o nome exato não apareceu
+        return " ".join(words[1:]).strip(" ,.!?;:-")
     return None
+
+
+def unfinished(text):
+    """A fala parou no meio ("Bolha, pesquisa sobre tipo...", "abre o"): você ainda está pensando."""
+    text = (text or "").strip()
+    if not text or text.endswith("?"):
+        return False
+    if text.endswith(("...", "…")):
+        return True
+    words = [w for w in (_plain(w) for w in text.split()) if w]
+    return bool(words) and (words[-1] in UNFINISHED or "".join(words[-2:]) in UNFINISHED)
 
 
 # ------------------------- falar -------------------------
@@ -370,16 +398,19 @@ class Listener(threading.Thread):
     def ask_answer(self):
         self.answer_wanted.set()
 
-    def _hear(self, read_block, noise, before=()):
-        """Grava (com o som do PC baixinho) e transcreve. None = ninguém falou."""
+    def _hear(self, read_block, noise, before=(), no_speech=NO_SPEECH, quiet=False):
+        """Grava (com o som do PC baixinho) e transcreve. None = ninguém falou.
+        quiet = se ninguém falar, não reclama (era só uma espera para você continuar a frase)."""
         self.on_state("ouvindo")
         restore = duck()
         try:
             # com o som abaixado, o barulho aprendido com a música não vale mais: mede de novo
-            pcm = record_command(read_block, noise, before, recalibrate=restore is not None)
+            pcm = record_command(read_block, noise, before, recalibrate=restore is not None, no_speech=no_speech)
         finally:
             if restore:
                 restore()
+        if not pcm and quiet:
+            return None
         if not pcm:
             loudest, needed = last_levels
             print(f"\nJarvis > Não ouvi o pedido (som mais alto {loudest:.0f}, precisa de {needed:.0f})."
@@ -393,6 +424,19 @@ class Listener(threading.Thread):
             print(f"\nJarvis > {e}")
             self.on_state("parado")
             return None
+
+    def _finish(self, command, read_block, noise):
+        """Frase pela metade ("Bolha, abre o..."): espera você completar antes de fazer qualquer coisa."""
+        for _ in range(2):
+            if not unfinished(command):
+                break
+            if DEBUG:
+                print(f"[esperando você terminar] {command}")
+            more = self._hear(read_block, noise, no_speech=GO_ON_WAIT, quiet=True)
+            if not more or not more.strip():
+                break
+            command = f"{command.rstrip(' .…')} {strip_wake(more)}".strip()
+        return command
 
     def run(self):
         try:
@@ -480,6 +524,7 @@ class Listener(threading.Thread):
                     continue
                 if not command:  # só disse o nome: o pedido vem logo depois (a fila guardou o áudio)
                     command = strip_wake(self._hear(read_block, noise) or "")
+                command = self._finish(command, read_block, noise)
                 if command:
                     self.put(("voz", command))
                 else:

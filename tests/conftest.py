@@ -14,6 +14,8 @@ def sem_nuvem(monkeypatch):
     import nuvem
     monkeypatch.setattr(nuvem, "_limited", {})
     monkeypatch.setattr(nuvem, "_no_thinking_cfg", set())
+    monkeypatch.setattr(nuvem, "_dead", set())
+    monkeypatch.setattr(nuvem, "_groq_listed", [])  # nunca pergunta ao Groq de verdade quais modelos existem
     monkeypatch.delenv("JARVIS_TELA", raising=False)
 
 
