@@ -461,6 +461,27 @@ def _has_gtts():
         return False
 
 
+def voices_summary():
+    """Linha mostrada ao ligar: que vozes ele vai usar, na ordem."""
+    order = []
+    try:
+        import edge_tts  # noqa: F401
+        order.append("Bing")
+    except ImportError:
+        pass
+    wanted = (os.environ.get("ELEVENLABS_VOICE", "") or os.environ.get("ELEVENLABS_VOICE_ID", "")).strip() \
+        or ELEVEN_VOICE
+    if eleven_key():
+        order.append(f"ElevenLabs ({wanted})")
+    if _has_gtts():
+        order.append("Google")
+    line = "Vozes: " + (" -> ".join(order) or "nenhuma")
+    if not eleven_key():
+        line += "  (ElevenLabs desligada: a ELEVENLABS_API_KEY não chegou neste PowerShell; " \
+                "faça o setx e abra outra janela)"
+    return line
+
+
 def _synth(text, path):
     """Bing (Edge, grátis) primeiro; reservas: ElevenLabs (se tiver chave) e Google (gTTS).
     Se o Bing recusar, fica um tempo só nas reservas e depois tenta o Bing de novo."""

@@ -557,3 +557,13 @@ def test_failed_backup_voice_says_why(monkeypatch, capsys):
     V.say("De novo")
     out = capsys.readouterr().out
     assert out.count("a ElevenLabs falhou: a chave foi recusada") == 1 and "falo com a Google" in out
+
+
+def test_startup_line_tells_which_voices(monkeypatch):
+    monkeypatch.setattr(V, "_has_gtts", lambda: True)
+    monkeypatch.delenv("ELEVENLABS_VOICE", raising=False)
+    monkeypatch.delenv("ELEVENLABS_VOICE_ID", raising=False)
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "k")
+    assert "ElevenLabs (Elvis) -> Google" in V.voices_summary()
+    monkeypatch.delenv("ELEVENLABS_API_KEY")
+    assert "ELEVENLABS_API_KEY não chegou" in V.voices_summary()

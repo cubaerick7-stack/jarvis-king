@@ -2110,6 +2110,8 @@ def run():
     voice_out = "--mudo" not in sys.argv and V.can_speak()
     if not voice_out and "--mudo" not in sys.argv:
         print("Fala desligada: python -m pip install edge-tts")
+    elif voice_out:
+        print(V.voices_summary())
     if "--sem-voz" not in sys.argv:
         start_voice()
     print("")
