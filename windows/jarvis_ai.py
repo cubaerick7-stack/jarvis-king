@@ -30,6 +30,7 @@ import navegador as B  # noqa: E402
 import ui as U  # noqa: E402
 import voz as V  # noqa: E402
 import nuvem as N  # noqa: E402
+import instagram as IG  # noqa: E402
 
 try:
     import pyautogui
@@ -1247,7 +1248,7 @@ def show_help():
 
 
 TOOL_GROUPS = ["som", "programas e sites", "arquivos e pastas", "ler e resumir", "mídia", "navegador", "memória", "janelas e teclado",
-               "sistema", "energia", "informação", "rotinas"]
+               "sistema", "energia", "informação", "rotinas", "instagram"]
 
 TOOLS = [
     {"name": "set_volume", "args": '{"percent":0-100}', "group": "som",
@@ -1406,6 +1407,19 @@ TOOLS = [
     {"name": "spotify_play", "args": '{"query":"música"}', "group": "navegador",
      "desc": "abrir uma música no app do Spotify", "examples": ["toca evidências no spotify"],
      "run": lambda a: F.spotify_play(a.get("query", ""))},
+    {"name": "instagram_status", "args": "{}", "group": "instagram",
+     "desc": "ver o perfil do Instagram (seguidores) e os últimos posts com curtidas e comentários",
+     "examples": ["como tá meu instagram", "quantos seguidores eu tenho"],
+     "run": lambda a: ig_status()},
+    {"name": "instagram_comments", "args": '{"post":1}', "group": "instagram",
+     "desc": "ler os comentários de um post (1 = o mais recente)", "examples": ["lê os comentários do meu último post"],
+     "run": lambda a: ig_comments(a.get("post", 1))},
+    {"name": "instagram_reply", "args": '{"comment":1,"message":"texto","post":1}', "group": "instagram",
+     "desc": "responder um comentário (pede confirmação)", "examples": ["responde o primeiro comentário com obrigado"],
+     "run": lambda a: ig_reply(a.get("comment", 1), a.get("message", ""), a.get("post", 1))},
+    {"name": "instagram_post", "args": '{"image_url":"https://...","caption":"legenda"}', "group": "instagram",
+     "desc": "publicar foto que já está num link público (pede confirmação)", "examples": ["posta essa foto com a legenda bom dia"],
+     "run": lambda a: ig_post(a.get("image_url", ""), a.get("caption", ""))},
     {"name": "whatsapp_send", "args": '{"contact":"nome","message":"texto"}', "group": "navegador",
      "desc": "mandar mensagem no WhatsApp Web (pede confirmação)", "examples": ["manda oi pra mãe no zap"],
      "run": lambda a: _sent(B.whatsapp_send(a.get("contact", ""), a.get("message", ""), confirm))},
@@ -1859,6 +1873,90 @@ def info_card(out, head):
         lines = lines[:-1]  # a resposta da IA já está na legenda
     if lines:
         U.card(titles[0], "\n".join(lines)[:900], 12000)
+
+
+# ------------------------- Instagram (API oficial) -------------------------
+_ig_comments = []  # os comentários da última leitura (para "responde o primeiro")
+
+
+def _ig(fn):
+    try:
+        return fn()
+    except IG.InstagramError as e:
+        print(f"Jarvis > Instagram: {e}.")
+        return False
+
+
+def _ig_post_id(n):
+    posts = IG.recent_posts(max(1, int(n or 1)))
+    if len(posts) < int(n or 1):
+        raise IG.InstagramError("não achei esse post")
+    return posts[int(n or 1) - 1]
+
+
+def ig_status():
+    def run():
+        me = IG.profile()
+        print(f"Jarvis > @{me.get('username')}: {me.get('followers_count', 0)} seguidores, "
+              f"{me.get('media_count', 0)} posts.")
+        for i, p in enumerate(IG.recent_posts(3), 1):
+            caption = (p.get("caption") or "sem legenda").splitlines()[0][:60]
+            print(f"{i}. {caption} - {p.get('like_count', 0)} curtidas, {p.get('comments_count', 0)} comentários")
+        return True
+    return _ig(run)
+
+
+def ig_comments(post=1):
+    def run():
+        global _ig_comments
+        _ig_comments = IG.comments(_ig_post_id(post)["id"])
+        if not _ig_comments:
+            print("Jarvis > Esse post não tem comentários.")
+            return True
+        print(f"Jarvis > {len(_ig_comments)} comentários:")
+        for i, c in enumerate(_ig_comments, 1):
+            print(f"{i}. @{c.get('username')}: {c.get('text', '')[:120]}")
+        return True
+    return _ig(run)
+
+
+def ig_reply(comment, message, post=1):
+    def run():
+        global _ig_comments
+        message_ = str(message or "").strip()
+        if not message_:
+            print("Jarvis > O que respondo?")
+            return False
+        if not _ig_comments:
+            _ig_comments = IG.comments(_ig_post_id(post)["id"])
+        n = int(comment or 1)
+        if not 1 <= n <= len(_ig_comments):
+            print("Jarvis > Não achei esse comentário.")
+            return False
+        c = _ig_comments[n - 1]
+        if not confirm(f'Respondo "{message_}" para @{c.get("username")} no Instagram?'):
+            print("Jarvis > Cancelado, não respondi.")
+            return False
+        IG.reply_comment(c["id"], message_)
+        print(f"Jarvis > Respondi @{c.get('username')}.")
+        return True
+    return _ig(run)
+
+
+def ig_post(image_url, caption=""):
+    def run():
+        url = str(image_url or "").strip()
+        if not url.startswith("https://"):
+            print("Jarvis > O Instagram só publica foto que já está num link público (https). "
+                  "Foto do PC ainda não dá direto.")
+            return False
+        if not confirm(f'Publico essa foto no Instagram com a legenda "{caption}"?'):
+            print("Jarvis > Cancelado, não publiquei.")
+            return False
+        IG.publish_image(url, caption)
+        print("Jarvis > Publicado no Instagram.")
+        return True
+    return _ig(run)
 
 
 def respond(text):

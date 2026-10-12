@@ -183,3 +183,19 @@ proximo (mais leve) em vez de desistir.
 Se voce ja tinha feito "setx GROQ_MODEL" com um modelo que sumiu, apague com:
    reg delete HKCU\Environment /v GROQ_MODEL /f
 As chaves NUNCA vao para arquivo nem para o GitHub.
+
+INSTAGRAM (API OFICIAL DA META)
+O Bolha usa so a API oficial (nada de robo no navegador, que pode bloquear a conta).
+Ele le seguidores, posts e comentarios, responde comentario e publica foto
+(responder e publicar SEMPRE perguntam antes). Mensagens diretas ainda nao.
+1. No app do Instagram: Configuracoes > Tipo de conta > Mudar para conta profissional
+   (Criador de conteudo). E gratis.
+2. Em developers.facebook.com: Meus apps > Criar app > tipo "Empresa".
+   No app, adicione o produto "Instagram" > "API com login do Instagram".
+3. Em "Gerar tokens de acesso", adicione sua conta do Instagram e gere o token.
+4. No PowerShell:  setx INSTAGRAM_TOKEN "o-token"   (e abra outro PowerShell)
+   O token NUNCA vai para arquivo nem para o GitHub. Ele vence em uns 60 dias:
+   quando o Bolha avisar, gere outro e faca o setx de novo.
+Pedidos: "como ta meu instagram", "le os comentarios do meu ultimo post",
+"responde o primeiro comentario com obrigado".
+Publicar: a API so aceita foto que ja esta num link publico (https).
