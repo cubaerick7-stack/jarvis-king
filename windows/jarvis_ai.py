@@ -203,6 +203,21 @@ SITES = {
     "gmail": "https://mail.google.com",
     "drive": "https://drive.google.com",
     "whatsapp": "https://web.whatsapp.com",
+    "zap": "https://web.whatsapp.com",
+    "whatsapp web": "https://web.whatsapp.com",
+    "instagram": "https://www.instagram.com",
+    "insta": "https://www.instagram.com",
+    "facebook": "https://www.facebook.com",
+    "tiktok": "https://www.tiktok.com",
+    "twitter": "https://x.com",
+    "x": "https://x.com",
+    "netflix": "https://www.netflix.com",
+    "chatgpt": "https://chatgpt.com",
+    "outlook": "https://outlook.live.com",
+    "github": "https://github.com",
+    "twitch": "https://www.twitch.tv",
+    "mercado livre": "https://www.mercadolivre.com.br",
+    "shopee": "https://shopee.com.br",
 }
 
 
@@ -227,10 +242,9 @@ def open_target(target):
     if low in FOLDERS:
         return open_folder(low)
 
-    if low in SITES:
-        webbrowser.open(SITES[low])
-        print(f"Jarvis > Abrindo {low}.")
-        return True
+    site = re.sub(r"^(?:o|a)\s+|\s+(?:web|site)$", "", low).strip()
+    if low in SITES or site in SITES:  # sites abrem no navegador do Jarvis (onde ele já está logado)
+        return open_url(SITES.get(low) or SITES[site])
 
     if low == "chrome":
         p = r"C:\Program Files\Google\Chrome\Application\chrome.exe"

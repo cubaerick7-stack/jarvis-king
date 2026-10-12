@@ -298,3 +298,15 @@ def test_spotify_music_stays_in_spotify(jarvis, monkeypatch, text):
     monkeypatch.setattr(jarvis.F, "spotify_play", lambda q: asked.append(q) or True)
     assert jarvis.fast_local_router(text) is True
     assert asked == ["evidencias"]
+
+
+@pytest.mark.parametrize("text", ["abre o instagram", "abre o whatsapp web"])
+def test_sites_open_in_jarvis_browser(text, monkeypatch):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("jx", ROOT / "windows" / "jarvis_ai.py")
+    j = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(j)
+    opened = []
+    monkeypatch.setattr(j, "open_url", lambda u: opened.append(u) or True)
+    assert j.open_target(text.split(" ", 1)[1]) is True
+    assert opened and opened[0].startswith("https://")
