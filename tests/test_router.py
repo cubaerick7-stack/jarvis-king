@@ -290,3 +290,11 @@ def test_real_requests_are_not_mistaken_for_thinking_aloud(jarvis, text):
 
 def test_ai_is_told_not_to_search_half_sentences(jarvis):
     assert "NUNCA pesquise só porque não entendeu" in jarvis.AI_PROMPT
+
+
+@pytest.mark.parametrize("text", ["toca evidências no spotify", "abre o spotify e toca evidências"])
+def test_spotify_music_stays_in_spotify(jarvis, monkeypatch, text):
+    asked = []
+    monkeypatch.setattr(jarvis.F, "spotify_play", lambda q: asked.append(q) or True)
+    assert jarvis.fast_local_router(text) is True
+    assert asked == ["evidencias"]

@@ -1111,3 +1111,18 @@ def youtube_control(action):
     pyautogui.hotkey(*key.split("+"))
     _say(f"YouTube: {action}.")
     return True
+
+
+def spotify_play(query):
+    """Abre a música no app do Spotify (a busca dele). Tocar sozinho precisaria da API do Spotify (Premium)."""
+    q = str(query or "").strip()
+    if not q:
+        _say("Qual música no Spotify?")
+        return False
+    try:
+        os.startfile("spotify:search:" + urllib.parse.quote(q))
+    except (OSError, AttributeError):
+        _say("Não achei o Spotify instalado neste PC.")
+        return False
+    _say(f"Abri {q} no Spotify. É só dar play no primeiro resultado.")
+    return f"Spotify: {q}"

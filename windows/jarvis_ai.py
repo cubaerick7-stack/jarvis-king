@@ -655,7 +655,7 @@ def act(name, fn, *args):
 # Ações que abrem ou mostram algo fora do Jarvis (programa, pasta, navegador)
 SHOWS_OUTSIDE = {"open_target", "open_url", "open_folder", "open_search_result", "show_search_result",
                  "focus_window", "open_settings", "play_youtube", "youtube_control", "search_web",
-                 "web_search", "web_click", "whatsapp_send"}
+                 "web_search", "web_click", "whatsapp_send", "spotify_play"}
 
 
 # Ferramentas cujo resultado vira uma janelinha na tela cheia (título da janela)
@@ -730,6 +730,12 @@ def fast_local_router(user_text):
         act("set_profile", M.set_profile, "nome", name.title())
         return True
 
+    # Spotify: "toca evidências no spotify", "abre o spotify e toca evidências"
+    m = (re.match(r"^(?:toca|toque|tocar|bota|coloca|poe|quero ouvir)\s+(?:a\s+|o\s+)?(?:musica\s+)?(.+?)\s+no spotify$", clean)
+         or re.match(r"^(?:abre|abra|abrir)\s+o\s+spotify\s+e\s+(?:toca|toque|tocar|bota|coloca|poe)\s+(?:a\s+|o\s+)?(?:musica\s+)?(.+)$", clean))
+    if m:
+        tool("spotify_play", query=m.group(1).strip())
+        return True
     # pedido com duas partes ("abre o bloco de notas e me explica X") vai inteiro para a IA,
     # que divide em várias ações; o roteador rápido só entende um comando por vez
     if COMPOUND.search(clean):
@@ -1372,6 +1378,9 @@ TOOLS = [
     {"name": "web_key", "args": '{"key":"Enter|Escape|PageDown|..."}', "group": "navegador",
      "desc": "apertar uma tecla na página", "examples": ["desce a página"],
      "run": lambda a: B.press(a.get("key", "Enter"))},
+    {"name": "spotify_play", "args": '{"query":"música"}', "group": "navegador",
+     "desc": "abrir uma música no app do Spotify", "examples": ["toca evidências no spotify"],
+     "run": lambda a: F.spotify_play(a.get("query", ""))},
     {"name": "whatsapp_send", "args": '{"contact":"nome","message":"texto"}', "group": "navegador",
      "desc": "mandar mensagem no WhatsApp Web (pede confirmação)", "examples": ["manda oi pra mãe no zap"],
      "run": lambda a: _sent(B.whatsapp_send(a.get("contact", ""), a.get("message", ""), confirm))},
@@ -1452,6 +1461,7 @@ Regras:
 - pode usar várias ações em sequência
 - conversa ou pergunta de conhecimento: actions vazio e a resposta (curta, até 3 frases) em reply
 - se pedir para abrir um programa E escrever/explicar algo, abra e use type_text com o texto
+- música "no Spotify" (ou junto com abrir o Spotify) = spotify_play, NUNCA play_youtube
 - tocar/ouvir/abrir uma música ou vídeo = play_youtube (toca direto); search_web youtube só se pedir para ver a lista
 - pausar, pular, tela cheia, avançar no vídeo aberto = youtube_control
 - MODO CICLO: se precisar VER o resultado antes de decidir (pesquisar na web, ler página, procurar arquivo,
