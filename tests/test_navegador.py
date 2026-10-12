@@ -31,7 +31,7 @@ class FakeLocator:
         self.page.log.append(("click", self.sel))
 
     def is_visible(self):
-        return True
+        return self.sel != ".ytp-error"  # o player do YouTube não deu erro
 
 
 class FakeKeyboard:
@@ -68,6 +68,12 @@ class FakePage:
 
     def wait_for_timeout(self, ms):
         pass
+
+    def evaluate(self, js):
+        return True  # o vídeo está tocando
+
+    def reload(self, **kw):
+        self.log.append(("reload", self.url))
 
 
 def use_fake(monkeypatch):

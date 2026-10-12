@@ -586,3 +586,46 @@ def test_key_with_extra_text_pasted_is_cleaned(monkeypatch):
     monkeypatch.setenv("ELEVENLABS_API_KEY", "sk_" + "b" * 64)  # comprida demais: não dá para adivinhar
     monkeypatch.setattr(V, "_has_gtts", lambda: False)
     assert "tem 67 caracteres" in V.voices_summary()
+
+
+def test_youtube_player_error_moves_videos_to_default_browser(monkeypatch):
+    j = load_jarvis()
+    calls = []
+    monkeypatch.setattr(j, "_youtube_outside", False)
+    monkeypatch.delenv("JARVIS_YOUTUBE", raising=False)
+    monkeypatch.setattr(j.B, "available", lambda: True)
+    monkeypatch.setattr(j.B, "play_youtube", lambda q: calls.append(("jarvis", q)) or j.B.PLAYER_ERROR)
+    monkeypatch.setattr(j.F, "play_youtube", lambda q: calls.append(("padrao", q)) or True)
+    monkeypatch.setattr(j.B, "on_youtube", lambda: True)
+    monkeypatch.setattr(j.B, "youtube_control", lambda *a: calls.append(("teclas jarvis",)) or True)
+    monkeypatch.setattr(j.F, "youtube_control", lambda a: calls.append(("teclas padrao", a)) or True)
+    j.play_youtube("p do pecado")
+    j.play_youtube("evidencias")  # o próximo já vai direto para o navegador padrão
+    j.youtube_control("pausar")  # e as teclas vão para lá, não para a aba quebrada
+    assert calls == [("jarvis", "p do pecado"), ("padrao", "p do pecado"), ("padrao", "evidencias"),
+                     ("teclas padrao", "pausar")]
+
+
+def test_player_check_sees_youtube_error():
+    import navegador as B
+
+    class Loc:
+        def __init__(self, visible):
+            self.first = self
+            self.visible = visible
+
+        def is_visible(self):
+            return self.visible
+
+    class Page:
+        def __init__(self, error, playing):
+            self.error, self.playing = error, playing
+
+        def locator(self, sel):
+            return Loc(self.error)
+
+        def evaluate(self, js):
+            return self.playing
+
+    assert B._player_ok(Page(error=True, playing=False), seconds=1) is False
+    assert B._player_ok(Page(error=False, playing=True), seconds=1) is True

@@ -306,8 +306,35 @@ def play_youtube(query):
     except Exception:
         _say(f"Abri a busca de {query}, mas não consegui clicar no vídeo.")
         return False
+    if not _player_ok(p):
+        p.reload(wait_until="domcontentloaded", timeout=30000)  # às vezes é só um tropeço: tenta mais uma vez
+        if not _player_ok(p):
+            try:
+                p.goto("about:blank")  # a aba quebrada não fica tocando nada nem recebendo teclas
+            except Exception:
+                pass
+            return PLAYER_ERROR
     _say(f"Tocando {title}.")
     return f"Tocando: {title}"
+
+
+PLAYER_ERROR = "erro no player"
+
+
+def _player_ok(p, seconds=12):
+    """O vídeo começou a tocar? False se o YouTube mostrou "Algo deu errado"."""
+    end = time.time() + seconds
+    while time.time() < end:
+        try:
+            if p.locator(".ytp-error").first.is_visible():
+                return False
+            if p.evaluate("() => { const v = document.querySelector('video');"
+                          " return !!v && !v.paused && v.currentTime > 0; }"):
+                return True
+        except Exception:
+            pass
+        time.sleep(0.5)
+    return True  # não deu para ter certeza (anúncio, internet lenta): não troca de navegador à toa
 
 
 def youtube_control(action, norm=lambda s: s):

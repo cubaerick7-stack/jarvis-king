@@ -193,6 +193,11 @@ Se voce ja tinha feito "setx GROQ_MODEL" com um modelo que sumiu, apague com:
    reg delete HKCU\Environment /v GROQ_MODEL /f
 As chaves NUNCA vao para arquivo nem para o GitHub.
 
+YOUTUBE
+Se o YouTube der "Algo deu errado" no navegador do Bolha, ele toca no seu navegador
+padrao e continua usando ele (pausar, proximo etc. vao para la). Para usar sempre o
+navegador padrao: setx JARVIS_YOUTUBE fora
+
 INSTAGRAM (API OFICIAL DA META)
 O Bolha usa so a API oficial (nada de robo no navegador, que pode bloquear a conta).
 Ele le seguidores, posts e comentarios, responde comentario e publica foto

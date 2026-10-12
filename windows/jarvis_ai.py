@@ -1113,11 +1113,24 @@ def open_url(url):
     return True
 
 
+_youtube_outside = False  # o player do YouTube deu erro no navegador do Jarvis: usa o navegador padrão
+
+
+def youtube_outside():
+    return _youtube_outside or os.environ.get("JARVIS_YOUTUBE", "").strip().lower() in ("fora", "padrao", "padrão")
+
+
 def play_youtube(query):
-    """Com o Playwright, clica no vídeo de verdade na aba do Jarvis; sem ele, o jeito antigo."""
-    if B.available():
+    """Com o Playwright, clica no vídeo de verdade na aba do Jarvis; sem ele, o jeito antigo.
+    Se o YouTube der "Algo deu errado" no navegador do Jarvis, toca no navegador padrão (e continua lá)."""
+    global _youtube_outside
+    if B.available() and not youtube_outside():
         try:
             result = B.play_youtube(query)
+            if result == B.PLAYER_ERROR:
+                _youtube_outside = True
+                print("Jarvis > (o YouTube deu erro no meu navegador; vou usar o seu navegador para vídeos)")
+                return _show_playing(F.play_youtube(query) and f"Tocando: {query}")
             if result is False:  # a página de busca mudou ou demorou: abre o primeiro vídeo pelo link
                 url = F.youtube_first_video(query)
                 if url:
@@ -1137,7 +1150,7 @@ def _show_playing(result):
 
 
 def youtube_control(action):
-    if B.on_youtube():
+    if not youtube_outside() and B.on_youtube():
         try:
             return B.youtube_control(action, normalize)
         except Exception as e:
