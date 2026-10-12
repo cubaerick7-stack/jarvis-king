@@ -327,7 +327,10 @@ ELEVEN_MODEL = "eleven_flash_v2_5"  # o mais barato e rápido, fala português (
 
 
 def eleven_key():
-    return os.environ.get("ELEVENLABS_API_KEY", "").strip()
+    """A chave (sk_ + 48 letras/números). Se veio com sobra colada junto (aspas, espaço, texto), pega só a chave."""
+    raw = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+    m = re.search(r"sk_[A-Za-z0-9]{48}(?![A-Za-z0-9])", raw)
+    return m.group(0) if m else raw.strip("\"' ")
 
 
 def _short_error(e):
@@ -479,8 +482,11 @@ def voices_summary():
     if _has_gtts():
         order.append("Google")
     line = "Vozes: " + (" -> ".join(order) or "nenhuma")
-    if eleven_key() and not eleven_key().startswith("sk_"):
+    key = eleven_key()
+    if key and not key.startswith("sk_"):
         line += "  (ATENÇÃO: a ELEVENLABS_API_KEY não começa com sk_; deve ser o ID da chave, não a chave)"
+    elif key and len(key) != 51:
+        line += f"  (ATENÇÃO: a ELEVENLABS_API_KEY tem {len(key)} caracteres, a chave tem 51; copie de novo)"
     if not eleven_key():
         line += "  (ElevenLabs desligada: a ELEVENLABS_API_KEY não chegou neste PowerShell; " \
                 "faça o setx e abra outra janela)"

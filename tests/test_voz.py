@@ -575,3 +575,14 @@ def test_key_id_instead_of_key_is_explained(monkeypatch):
     assert "não começa com sk_" in V.voices_summary()
     err = V.ElevenError("HTTP 400", 400, "API key ID used as API key - only valid API keys can be used.")
     assert not V._voice_refused(err)  # não adianta trocar para a George
+
+
+def test_key_with_extra_text_pasted_is_cleaned(monkeypatch):
+    key = "sk_" + "a1" * 24
+    monkeypatch.setenv("ELEVENLABS_API_KEY", f'"{key}" ')
+    assert V.eleven_key() == key
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "ELEVENLABS_API_KEY=" + key)
+    assert V.eleven_key() == key
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "sk_" + "b" * 64)  # comprida demais: não dá para adivinhar
+    monkeypatch.setattr(V, "_has_gtts", lambda: False)
+    assert "tem 67 caracteres" in V.voices_summary()
