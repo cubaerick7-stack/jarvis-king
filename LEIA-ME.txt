@@ -42,6 +42,8 @@ SE ALGO NAO FUNCIONAR
   Se aparecer "Nao ouvi o pedido (som mais alto X, precisa de Y)", fale mais
   perto do microfone ou aumente o volume dele no Windows.
 - Nao fala: python -m pip install -U edge-tts  (e confira o som do PC).
+  Se a voz do Edge recusar (erro 403), ele fala com a voz do Windows (Daniel/Maria)
+  e tenta a do Edge de novo depois de 10 minutos.
 - "procura o arquivo" so olha algumas pastas: instale o Everything (secao
   "BUSCA NO PC INTEIRO" abaixo).
 - Qualquer erro aparece no console e o Jarvis fala o motivo.

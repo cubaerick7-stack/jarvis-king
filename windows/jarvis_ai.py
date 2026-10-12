@@ -689,6 +689,8 @@ INFO_CARDS = {"weather": "Clima", "system_info": "PC", "battery_status": "Bateri
               "file_info": "Arquivo", "web_read": "Página", "list_routines": "Rotinas", "add_reminder": "Lembrete marcado",
               "start_timer": "Timer", "tell_time": "Hora"}
 _ran = []  # ferramentas usadas no pedido atual
+# Ferramentas cujo resultado ele conta de volta numa conversa ("Verifiquei, senhor. Em Curitiba está...")
+TALK_ABOUT = {"weather", "system_info", "battery_status", "network_info"}
 
 
 def opening(name):
@@ -1862,6 +1864,50 @@ def _sent(result):
     return result
 
 
+ANSWER_PROMPT = (
+    "Você é {name}, um mordomo educado e simpático que fala com o senhor em voz alta, em português do Brasil. "
+    "Você acabou de verificar o que ele pediu. Conte o resultado como numa conversa, em 2 ou 3 frases curtas: "
+    "comece com algo como \"Verifiquei, senhor.\", diga os números principais por extenso de jeito natural "
+    "(17 graus, 91 por cento) e, se fizer sentido, um comentário útil (levar guarda-chuva, bateria fraca). "
+    "Use só os dados recebidos, não invente nada. Sem emojis, sem markdown, sem símbolos como °C ou %."
+)
+CLIMA = re.compile(r"^(.*?):\s*(.*?),\s*\+?(-?\d+)\s*°C\s*\(sensação\s*\+?(-?\d+)\s*°C\),\s*umidade\s*(\d+)%")
+
+
+def _tool_lines(out):
+    lines = [line[len("Jarvis > "):].strip() for line in out.splitlines() if line.startswith("Jarvis > ")]
+    return [line for line in lines if line and not line.startswith("(")]
+
+
+def told(lines):
+    """Sem IA: "Verifiquei, senhor. Em Curitiba está chuva fraca, com 17 graus..." direto do resultado."""
+    first = lines[0] if lines else ""
+    m = CLIMA.match(first)
+    if m:
+        place, sky, temp, feel, humidity = (g.strip() for g in m.groups())
+        place = place.split(",")[-1].strip() or place
+        text = f"Verifiquei, senhor. Em {place} está {sky.lower()}, com {temp} graus"
+        text += f" e sensação de {feel}." if feel != temp else "."
+        return text + f" A umidade está em {humidity} por cento."
+    return f"Verifiquei, senhor. {first}" if first else ""
+
+
+def talk_about(request, out):
+    """O que ele fala depois de clima, PC, bateria, rede: o resultado contado numa conversa."""
+    lines = _tool_lines(out)
+    if not lines:
+        return ""
+    try:
+        answer = think(ANSWER_PROMPT.format(name=NAME), f"O senhor pediu: {request}\nO que você verificou:\n"
+                       + "\n".join(lines)[:1500], json_mode=False, temperature=0.6)
+        answer = re.sub(r"[*_#`]", "", str(answer or "")).strip().strip('"')
+        if answer and not answer.startswith(("{", "[")) and len(answer) <= 500:
+            return answer
+    except Exception:
+        pass
+    return told(lines)
+
+
 def info_card(out, head):
     """Clima, PC, bateria...: o que a ferramenta mostrou vira uma janelinha (a fala final fica na legenda)."""
     titles = [INFO_CARDS[n] for n in _ran if n in INFO_CARDS]
@@ -1974,7 +2020,10 @@ def respond(text):
     out = tee.getvalue()
     head, rest = last_said(out)
     say = spoken(head, rest)
-    U.speech(say if head.endswith("...") else head)
+    caption = say if head.endswith("...") else head
+    if not rest and any(n in TALK_ABOUT for n in _ran):
+        say = caption = talk_about(text, out) or say  # "Verifiquei, senhor. A previsão é..."
+    U.speech(caption)
     if rest:
         U.card(head.rstrip(":. ") or "Jarvis", _short_paths(rest)[:900], 15000)
     else:

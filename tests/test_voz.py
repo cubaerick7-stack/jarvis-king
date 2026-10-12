@@ -378,3 +378,53 @@ def test_question_listens_for_answer_without_name(monkeypatch):
     monkeypatch.setattr(j, "handle", lambda t: print("Jarvis > Pronto, senhor."))
     j.respond("abre a calculadora")
     assert L.n == 1
+
+
+WEATHER = "Boqueirão, Curitiba: Chuva fraca, +17°C (sensação +18°C), umidade 91%, vento 9km/h"
+
+
+def test_weather_is_told_back_like_a_conversation(monkeypatch):
+    j = load_jarvis()
+    said, captions = [], []
+    monkeypatch.setattr(j, "voice_out", True)
+    monkeypatch.setattr(j, "speak", lambda t: said.append(t))
+    monkeypatch.setattr(j.U, "speech", lambda t: captions.append(t))
+    monkeypatch.setattr(j.F, "weather", lambda city="": print(f"Jarvis > {WEATHER}") or True)
+    monkeypatch.setattr(j, "think", lambda *a, **k: "Verifiquei, senhor. Em Curitiba chove fraco, 17 graus.")
+    j.respond("previsão do tempo")
+    assert said == ["Verifiquei, senhor. Em Curitiba chove fraco, 17 graus."] and captions == said
+
+
+def test_weather_without_ai_still_sounds_natural(monkeypatch):
+    j = load_jarvis()
+    said = []
+    monkeypatch.setattr(j, "voice_out", True)
+    monkeypatch.setattr(j, "speak", lambda t: said.append(t))
+    monkeypatch.setattr(j.F, "weather", lambda city="": print(f"Jarvis > {WEATHER}") or True)
+
+    def no_ai(*a, **k):
+        raise RuntimeError("sem IA")
+
+    monkeypatch.setattr(j, "think", no_ai)
+    j.respond("previsão do tempo")
+    assert said == ["Verifiquei, senhor. Em Curitiba está chuva fraca, com 17 graus e sensação de 18."
+                    " A umidade está em 91 por cento."]
+
+
+def test_edge_refused_falls_back_to_windows_voice(monkeypatch):
+    import types
+    spoke = []
+
+    class Communicate:
+        def __init__(self, *a, **k):
+            pass
+
+        async def save(self, path):
+            raise RuntimeError("403, message='Invalid response status'")
+
+    monkeypatch.setitem(sys.modules, "edge_tts", types.SimpleNamespace(Communicate=Communicate))
+    monkeypatch.setattr(V, "_edge_off_until", 0.0)
+    monkeypatch.setattr(V, "_windows_voice", lambda t: spoke.append(t))
+    V.say("Olá, senhor.")
+    V.say("Tudo certo.")  # não tenta o Edge de novo logo em seguida
+    assert spoke == ["Olá, senhor.", "Tudo certo."] and V._edge_off_until > 0

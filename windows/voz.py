@@ -281,11 +281,13 @@ def clean_for_speech(text):
 
 
 def can_speak():
-    try:
-        import edge_tts  # noqa: F401
-        return True
-    except ImportError:
-        return False
+    for mod in ("edge_tts", "comtypes"):  # sem o Edge, ainda tem a voz do Windows
+        try:
+            __import__(mod)
+            return True
+        except ImportError:
+            pass
+    return False
 
 
 def _mci(command):
@@ -315,11 +317,65 @@ def _play_mp3(path):
             pass
 
 
+EDGE_RETRY = 600  # a voz do Edge recusou: usa a do Windows e só tenta o Edge de novo depois disso (s)
+_edge_off_until = 0.0
+
+
+def _windows_voice(text):
+    """Voz do próprio Windows (SAPI), de reserva quando a do Edge falha. Prefere voz masculina pt-BR (Daniel)."""
+    errors = []
+
+    def run():
+        try:
+            import comtypes
+            import comtypes.client
+            comtypes.CoInitialize()
+            try:
+                voice = comtypes.client.CreateObject("SAPI.SpVoice")
+                voices = voice.GetVoices("Language=416")  # pt-BR
+                tokens = [voices.Item(i) for i in range(voices.Count)]
+                male = [t for t in tokens if "daniel" in t.GetDescription().lower()]
+                if male or tokens:
+                    voice.Voice = (male or tokens)[0]
+                voice.Speak(text, 0)  # 0 = espera terminar de falar
+            finally:
+                comtypes.CoUninitialize()
+        except Exception as e:
+            errors.append(e)
+
+    t = threading.Thread(target=run)  # COM em thread própria, sem mexer na do navegador
+    t.start()
+    t.join()
+    if errors:
+        raise errors[0]
+
+
+def _speak_windows(text, on_state, reason=None):
+    if reason is not None:
+        print(f"Jarvis > (a voz do Edge recusou: {str(reason)[:80]}; falo com a voz do Windows)")
+    speaking.set()
+    if on_state:
+        on_state("falando")
+    try:
+        _windows_voice(text)
+    finally:
+        time.sleep(0.2)
+        speaking.clear()
+        if on_state:
+            on_state("parado")
+
+
 def say(text, on_state=None):
+    global _edge_off_until
     text = clean_for_speech(text)
     if not text:
         return
-    import edge_tts
+    if time.time() < _edge_off_until:
+        return _speak_windows(text, on_state)
+    try:
+        import edge_tts
+    except ImportError:
+        return _speak_windows(text, on_state)
     # Um arquivo por fala: o anterior pode ainda estar preso pelo Windows.
     path = Path(tempfile.gettempdir()) / f"jarvis_fala_{int(time.time() * 1000)}.mp3"
     # Thread própria: o asyncio do edge-tts não se mistura com o loop do navegador (Playwright).
@@ -335,7 +391,8 @@ def say(text, on_state=None):
     t.start()
     t.join()
     if errors:
-        raise errors[0]
+        _edge_off_until = time.time() + EDGE_RETRY
+        return _speak_windows(text, on_state, errors[0])
     speaking.set()
     if on_state:
         on_state("falando")
