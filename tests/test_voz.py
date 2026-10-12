@@ -216,99 +216,86 @@ def test_name_can_be_changed_back():
     assert V.NAME == "Bolha"
 
 
-def test_reator_becomes_a_circle_when_window_is_square():
+def test_reator_is_fullscreen_when_window_is_big():
     html = (ROOT / "windows" / "interface" / "reator.html").read_text(encoding="utf-8")
-    rule = "(min-aspect-ratio: 4/5) and (max-aspect-ratio: 5/4)"
-    assert f"@media {rule}" in html and f"const BOLHA = '{rule}'" in html  # CSS e desenho com a mesma regra
-    assert "window.mostraNome" in html
+    assert "@media (min-width: 600px)" in html and "const CHEIA = '(min-width: 600px)'" in html
+    assert "window.mostraNome" in html and "aspect-ratio: 4/5" not in html  # a versão círculo saiu
 
 
-def test_ui_mode_and_round_are_safe(monkeypatch):
+def test_ui_is_fullscreen_unless_panel(monkeypatch):
     import ui as U
-    assert U.mode() == "bolha"
+    assert U.mode() == "cheia"
     monkeypatch.setenv("JARVIS_TELA", "Painel")
     assert U.mode() == "painel"
-    for value, want in (("cheia", "cheia"), ("Tela cheia", "cheia"), ("clique", "clique"), ("qualquer", "bolha")):
-        monkeypatch.setenv("JARVIS_TELA", value)
-        assert U.mode() == want
-    assert U._round(object()) is False  # fora do Windows (ou sem janela) não quebra
-    assert U._round(object(), circle=False) is False
+    monkeypatch.setenv("JARVIS_TELA", "bolha")  # a bolha saiu: vira tela cheia
+    assert U.mode() == "cheia"
+    assert U.front() is False and U.behind() is False  # sem janela não quebra
 
 
-class FakeWindow:
-    title = "Bolha"
-
-    def __init__(self):
-        self.calls = []
-
-    def restore(self):
-        self.calls.append("restore")
-
-    def toggle_fullscreen(self):
-        self.calls.append("toggle")
-
-    def minimize(self):
-        self.calls.append("minimize")
-
-    def evaluate_js(self, code):
-        self.calls.append(code.split("(")[0])
+def test_request_brings_jarvis_forward_and_opening_sends_him_behind(monkeypatch):
+    j = load_jarvis()
+    moves = []
+    monkeypatch.setattr(j.U, "front", lambda: moves.append("frente"))
+    monkeypatch.setattr(j.U, "behind", lambda: moves.append("atras"))
+    monkeypatch.setattr(j.F, "second_monitor", lambda: None)
+    monkeypatch.setattr(j, "open_target", lambda *a: print("Jarvis > Abrindo calculadora.") or True)
+    j.respond("abre a calculadora")
+    assert moves == ["frente", "atras"]  # sem segunda tela, o que ele abriu fica por cima dele
 
 
-@pytest.fixture
-def janela(monkeypatch):
-    import ui as U
-    w = FakeWindow()
-    monkeypatch.setattr(U, "_window", w)
-    monkeypatch.setattr(U, "_full", False)
-    rounds = []
-    monkeypatch.setattr(U, "_round", lambda window, circle=True: rounds.append(circle) or True)
-    w.rounds = rounds
-    return U, w
+def test_with_second_monitor_the_new_window_goes_there(monkeypatch):
+    j = load_jarvis()
+    expected, moves = [], []
+    monkeypatch.setattr(j.U, "front", lambda: moves.append("frente"))
+    monkeypatch.setattr(j.U, "behind", lambda: moves.append("atras"))
+    monkeypatch.setattr(j.F, "second_monitor", lambda: (1920, 0, 3840, 1040))
+    monkeypatch.setattr(j.F, "expect_window", lambda: expected.append(True))
+    monkeypatch.setattr(j, "open_target", lambda *a: True)
+    j.respond("abre a calculadora")
+    assert expected == [True] and moves == ["frente"]  # ele continua na frente na tela principal
 
 
-def test_bubble_opens_fullscreen_when_you_talk_and_closes_after(janela):
-    U, w = janela
-    U.heard("toca lofi")
-    U.card("Tocando agora", "lofi")  # já está em tela cheia: não alterna de novo
-    assert w.calls == ["restore", "toggle", "mostraVoce", "cartao"]
-    assert w.rounds == [False]  # tirou o recorte redondo antes de crescer
-    U.Api(lambda t: None).recolher()
-    assert w.calls[-1] == "toggle" and w.rounds == [False, True] and U._full is False
+def test_new_window_moves_only_after_jarvis_opened_something(monkeypatch):
+    import ferramentas as F
+    moved = []
+    monkeypatch.setattr(F, "_expect_until", 0.0)
+    monkeypatch.setattr(F, "is_jarvis_window", lambda h: False)
+    monkeypatch.setattr(F, "_on_primary", lambda h: True)
+    monkeypatch.setattr(F, "move_to_second", lambda h: moved.append(h) or True)
+    monkeypatch.setattr(F, "foreground_window", lambda: 10)
+    assert F._maybe_move(20) is False  # você abriu sozinho: fica onde está
+    F.expect_window()
+    assert F._maybe_move(10) is False  # a janela que já estava na frente não conta
+    assert F._maybe_move(20) is True and moved == [20]
+    assert F._maybe_move(30) is False  # só a primeira janela nova
 
 
-def test_minimize_in_fullscreen_goes_back_to_the_bubble(janela):
-    U, w = janela
-    api = U.Api(lambda t: None)
-    api.expandir()
-    api.minimizar()
-    assert w.calls == ["restore", "toggle", "toggle"]
-    api.minimizar()  # já é bolha: aí minimiza de verdade
-    assert w.calls[-1] == "minimize"
+def test_weather_and_pc_become_popups(monkeypatch):
+    j = load_jarvis()
+    cards = []
+    monkeypatch.setattr(j.U, "card", lambda t, x, ms=7000: cards.append((t, x)))
+    monkeypatch.setattr(j.F, "weather", lambda city="": print(
+        "Jarvis > Recife: Sol, +28°C (sensação +31°C), umidade 70%, vento 15km/h") or True)
+    monkeypatch.setattr(j, "think", lambda *a, **k: json.dumps(
+        {"actions": [{"name": "weather", "args": {}}], "reply": "Está 28 graus, senhor."}))
+    j.respond("me fala como vai estar lá fora")
+    assert cards and cards[0][0] == "Clima" and cards[0][1].startswith("Recife: Sol, +28°C")
+    assert "Está 28 graus" not in cards[0][1]
 
 
-def test_click_mode_only_opens_with_a_double_click(janela, monkeypatch):
-    U, w = janela
-    monkeypatch.setenv("JARVIS_TELA", "clique")
-    U.heard("toca lofi")
-    assert "toggle" not in w.calls
-    U.Api(lambda t: None).expandir()
-    assert w.calls.count("toggle") == 1
-
-
-def test_always_fullscreen_never_shrinks(janela, monkeypatch):
-    U, w = janela
-    monkeypatch.setenv("JARVIS_TELA", "cheia")
-    monkeypatch.setattr(U, "_full", True)
-    api = U.Api(lambda t: None)
-    api.recolher()
-    api.minimizar()
-    assert w.calls == ["minimize"]
+def test_sent_whatsapp_becomes_a_popup(monkeypatch):
+    j = load_jarvis()
+    cards = []
+    monkeypatch.setattr(j.U, "card", lambda t, x, ms=7000: cards.append((t, x)))
+    assert j._sent("Enviado para Ana: chego às 8") == "Enviado para Ana: chego às 8"
+    assert j._sent(False) is False
+    assert cards == [("WhatsApp", "Enviado para Ana: chego às 8")]
 
 
 def test_fullscreen_page_has_windows_and_hooks():
     html = (ROOT / "windows" / "interface" / "reator.html").read_text(encoding="utf-8")
     assert "@media (min-width: 600px)" in html and "const CHEIA = '(min-width: 600px)'" in html
-    for hook in ("window.mostraVoce", "api().recolher()", "api().expandir()", "border-radius: var(--raio)"):
+    for hook in ("window.mostraVoce", "border-radius: var(--raio)", "const CLIMA", "const MANDO"):
         assert hook in html
     assert "innerHTML" not in html  # texto de arquivo/IA nunca vira HTML
 

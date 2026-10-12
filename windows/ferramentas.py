@@ -740,8 +740,93 @@ def is_jarvis_window(hwnd):
         return False
 
 
+# ========================= SEGUNDA TELA =========================
+# O Jarvis fica em tela cheia na tela principal. O que ele abre (programa, pasta, navegador) vai para
+# a segunda tela, se existir; senão abre por cima dele na mesma tela.
+
+_expect_until = 0.0  # até quando a próxima janela nova é algo que o Jarvis abriu
+_expect_from = None  # a janela da frente quando ele abriu
+
+
+def monitors():
+    """As telas: [(esquerda, cima, direita, baixo, é_a_principal)], área sem a barra de tarefas, em pixels."""
+    try:
+        from ctypes import wintypes
+        u32 = ctypes.WinDLL("user32")
+
+        class MONITORINFO(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                        ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+
+        found = []
+        PROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HMONITOR, wintypes.HDC,
+                                  ctypes.POINTER(wintypes.RECT), wintypes.LPARAM)
+
+        def each(hmon, hdc, rect, data):
+            info = MONITORINFO()
+            info.cbSize = ctypes.sizeof(MONITORINFO)
+            if u32.GetMonitorInfoW(hmon, ctypes.byref(info)):
+                w = info.rcWork
+                found.append((w.left, w.top, w.right, w.bottom, bool(info.dwFlags & 1)))
+            return True
+
+        u32.EnumDisplayMonitors(None, None, PROC(each), 0)
+        return found
+    except Exception:
+        return []
+
+
+def second_monitor():
+    """A área da segunda tela, ou None se só tem uma."""
+    others = [m[:4] for m in monitors() if not m[4]]
+    return others[0] if others else None
+
+
+def _on_primary(hwnd):
+    try:
+        u32 = ctypes.windll.user32
+        u32.MonitorFromWindow.restype = ctypes.c_void_p
+        u32.MonitorFromPoint.restype = ctypes.c_void_p
+        main = u32.MonitorFromPoint(ctypes.c_longlong(0), 1)  # o ponto (0,0) é sempre da tela principal
+        return u32.MonitorFromWindow(ctypes.c_void_p(hwnd), 2) == main
+    except Exception:
+        return False
+
+
+def move_to_second(hwnd):
+    """Leva a janela para a segunda tela, maximizada. False se não tem segunda tela."""
+    area = second_monitor()
+    if not area or not hwnd:
+        return False
+    try:
+        u32 = ctypes.windll.user32
+        left, top, right, bottom = area
+        u32.ShowWindow(hwnd, 9)  # SW_RESTORE: maximizada ela não sai do lugar
+        u32.SetWindowPos(hwnd, None, left, top, right - left, bottom - top, 0x0014)  # NOZORDER | NOACTIVATE
+        u32.ShowWindow(hwnd, 3)  # SW_MAXIMIZE
+        return True
+    except Exception:
+        return False
+
+
+def expect_window(seconds=10.0):
+    """O Jarvis acabou de abrir algo: a próxima janela nova que aparecer na tela principal vai para a segunda."""
+    global _expect_until, _expect_from
+    _expect_from = foreground_window()
+    _expect_until = time.time() + seconds
+
+
+def _maybe_move(hwnd):
+    global _expect_until
+    if time.time() > _expect_until or not hwnd or hwnd == _expect_from or is_jarvis_window(hwnd):
+        return False
+    _expect_until = 0.0
+    return _on_primary(hwnd) and move_to_second(hwnd)
+
+
 def track_focus(every=0.3):
-    """Lembra qual foi a última janela do usuário (que não é do Jarvis)."""
+    """Lembra qual foi a última janela do usuário (que não é do Jarvis) e manda para a segunda tela
+    a janela que o Jarvis acabou de abrir."""
     if foreground_window() is None:
         return
 
@@ -751,6 +836,7 @@ def track_focus(every=0.3):
             hwnd = foreground_window()
             if hwnd and not is_jarvis_window(hwnd):
                 _last_user_window = hwnd
+                _maybe_move(hwnd)
             time.sleep(every)
 
     threading.Thread(target=loop, daemon=True).start()

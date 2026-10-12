@@ -5,9 +5,8 @@
 <title>Jarvis</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600&family=Share+Tech+Mono&display=swap">
 <style>
-/* Três jeitos, escolhidos pelo tamanho da janela (o ui.py só muda o tamanho):
-   painel (alta e estreita) · bolha (quadrada e pequena: só o círculo) · tela cheia (grande: o reator no meio
-   e as janelas de vidro abrindo por cima dele). */
+/* Dois jeitos, escolhidos pelo tamanho da janela: tela cheia (o padrão: o reator no meio e as janelas
+   de vidro abrindo por cima dele) e painel (janela alta e estreita, com JARVIS_TELA=painel). */
 :root {
   --bg: #02080b;
   --bg-glow: #06222a;
@@ -65,21 +64,6 @@ input {
 input:focus { border-color: var(--cyan); }
 input::placeholder { color: var(--muted); }
 .relogio, #janelas, .legenda { display: none; }
-
-/* Bolha: janela quadrada e pequena (recortada em círculo pelo ui.py) = só o reator se mexendo.
-   O – e o × aparecem quando o mouse passa por cima. Dois cliques abrem a tela cheia. */
-@media (min-aspect-ratio: 4/5) and (max-aspect-ratio: 5/4) and (max-width: 599px) {
-  body { border: none; border-radius: 50%;
-    background: radial-gradient(circle at 50% 50%, var(--bg-glow) 0%, var(--bg) 68%) var(--bg); }
-  header { display: contents; }
-  h1, .estado, .fala, .cartoes, form { display: none; }
-  .reator { position: fixed; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; border-radius: 50%;
-    box-shadow: inset 0 0 0 1px rgba(95, 230, 240, .22), inset 0 0 28px rgba(95, 230, 240, .08); }
-  .botoes { position: fixed; top: 9%; left: 50%; transform: translateX(-50%); z-index: 2;
-    opacity: 0; transition: opacity .25s; pointer-events: none; }
-  body:hover .botoes, .botoes:focus-within { opacity: 1; pointer-events: auto; }
-  .botoes button { width: 24px; height: 20px; font-size: 14px; border-radius: 4px; background: rgba(2, 8, 11, .7); }
-}
 
 /* Tela cheia: o reator no meio, o nome e o relógio em cima, a conversa embaixo
    e as janelas de vidro (cantos arredondados) abrindo do reator para os cantos livres. */
@@ -155,9 +139,24 @@ input::placeholder { color: var(--muted); }
   border: 1px solid var(--line-strong); border-radius: 12px; background: transparent; color: var(--text); }
 .escolha .sim { background: var(--ok); border-color: var(--ok); color: #03140c; }
 .escolha button:hover, .escolha button:focus-visible { filter: brightness(1.15); outline: 2px solid var(--cyan); outline-offset: 2px; }
-.aviso { width: min(340px, calc(100vw - 32px)); }
-.aviso .ponto { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
-.confirmar .ponto { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.clima { display: flex; align-items: center; gap: 16px; }
+.grau { font-size: 64px; font-weight: 500; line-height: .9; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.clima h3 { margin: 0; }
+.detalhes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.detalhes div { border: 1px solid var(--line-soft); border-radius: 12px; padding: 6px 8px; display: grid; gap: 2px; }
+.detalhes small { font: 10px var(--mono); color: var(--muted); letter-spacing: .12em; text-transform: uppercase; }
+.detalhes b { font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
+.contato { display: flex; align-items: center; gap: 10px; }
+.avatar { width: 38px; height: 38px; border-radius: 50%; background: #2c6e57; color: #fff; display: grid; place-items: center;
+  font-weight: 600; font-size: 18px; flex: none; }
+.balao { justify-self: end; max-width: 85%; background: #145c43; color: #eafff5; padding: 8px 12px 6px;
+  border-radius: 14px 14px 4px 14px; overflow-wrap: anywhere; white-space: pre-line; }
+.balao small { display: block; text-align: right; font: 10px var(--mono); opacity: .75; }
+.feito { color: var(--ok); font-weight: 600; }
+.j-zap .ponto { background: #3fd37a; box-shadow: 0 0 8px #3fd37a; }
+.j-aviso { width: min(340px, calc(100vw - 32px)); }
+.j-aviso .ponto { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+.j-confirmar .ponto { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
 @media (prefers-reduced-motion: reduce) { .eq i { animation: none; height: 20px; } }
 </style>
 </head>
@@ -184,31 +183,22 @@ input::placeholder { color: var(--muted); }
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const reduz = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const elEstado = document.getElementById('estado');
-let W, H, dpr, bolha = false, cheia = false, R = 100, cx = 0, cy = 0, tamPonto = 1;
-const BOLHA = '(min-aspect-ratio: 4/5) and (max-aspect-ratio: 5/4)';  // a mesma regra do CSS
-const CHEIA = '(min-width: 600px)';
+let W, H, dpr, cheia = false, R = 100, cx = 0, cy = 0, tamPonto = 1;
+const CHEIA = '(min-width: 600px)';  // a mesma regra do CSS
 function tam() {
   const era = cheia;
   cheia = matchMedia(CHEIA).matches;
-  bolha = !cheia && matchMedia(BOLHA).matches;
   dpr = Math.min(devicePixelRatio || 1, cheia ? 1.5 : 2);
   const r = cv.getBoundingClientRect(); W = r.width; H = r.height;
   cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  // na bolha o reator ocupa o círculo todo (com a voz ele cresce até uns 85% do raio)
-  R = Math.min(W, H) * (cheia ? (W < 900 ? .26 : .22) : bolha ? .32 : .3);
+  R = Math.min(W, H) * (cheia ? (W < 900 ? .26 : .22) : .3);
   cx = W / 2; cy = cheia ? H * .44 : H / 2;
   tamPonto = cheia ? Math.max(1, R / 115) : 1;  // pontos um pouco maiores numa tela grande
   elEstado.style.top = cheia ? (cy + R * 1.42) + 'px' : '';
   // em tela cheia não se arrasta a janela (ela ocupa a tela toda)
   for (const el of document.querySelectorAll('header, .reator')) el.classList.toggle('pywebview-drag-region', !cheia);
-  if (cheia) {
-    abrePendentes();
-    for (const j of abertas.values()) poe(j.el, j.tipo);
-  } else if (era) {  // voltou a ser bolha: na próxima vez abre limpa
-    fechaTudo();
-    lv.textContent = lb.textContent = '';
-  }
-  vigia();
+  if (cheia) for (const j of abertas.values()) poe(j.el, j.tipo);
+  else if (era) fechaTudo();
 }
 
 // Partículas do anel de onda
@@ -267,7 +257,7 @@ function quadro() {
   t += (reduz ? 0.004 : 0.032) * f;
   mistura(ESTADOS[estado], 1 - Math.pow(1 - .06, f));
   // com janelas abertas na tela cheia o reator fica mais apagado, para o conteúdo ficar na frente
-  abafado += ((cheia && camada.querySelector('.janela:not(.aviso)') ? 1 : 0) - abafado) * .05 * f;
+  abafado += ((cheia && camada.querySelector('.janela:not(.j-aviso)') ? 1 : 0) - abafado) * .05 * f;
   const brilho = atual.brilho * (1 - abafado * .35);
   // Voz simulada: a sua (ouvindo) ou a dele (falando), em sílabas irregulares
   const alvoVoz = estado === 'falando' ? Math.abs(Math.sin(t * 9) * Math.sin(t * 3.7 + 1))
@@ -339,19 +329,35 @@ relogio(); setInterval(relogio, 15000);
 
 // ============ Janelas da tela cheia ============
 // Cada aviso do Jarvis vira uma janela de vidro que nasce do reator e vai para um canto livre.
-// Some sozinha depois de um tempo (o mouse em cima segura). Na bolha elas esperam a tela cheia abrir.
+// Some sozinha depois de um tempo (o mouse em cima segura).
 const camada = document.getElementById('janelas');
 const abertas = new Map();  // tipo -> { el, tipo, timer }
-let pendentes = [], z = 10;
+let z = 10;
 const CANTOS = [
   { left: '4vw', top: '14vh' }, { right: '4vw', top: '14vh' },
   { left: '5vw', bottom: '22vh' }, { right: '5vw', bottom: '22vh' },
 ];
-const LUGAR = { musica: { canto: 0 }, lista: { canto: 1 }, texto: { canto: 3 }, confirmar: { centro: true }, aviso: { aviso: true } };
-const TITULO = { 'tocando agora': 'musica', confirmar: 'confirmar', lembrete: 'aviso', 'sugestão': 'aviso', sugestao: 'aviso' };
+const LUGAR = { musica: { canto: 0 }, lista: { canto: 1 }, texto: { canto: 3 }, clima: { canto: 2 }, zap: { canto: 1 },
+  confirmar: { centro: true }, aviso: { aviso: true } };
+const TITULO = { 'tocando agora': 'musica', confirmar: 'confirmar', lembrete: 'aviso', 'sugestão': 'aviso', sugestao: 'aviso',
+  clima: 'clima', whatsapp: 'zap' };
+const CLIMA = /^(.*?):\s*(.*?),\s*([+-]?\d+)\s*°C\s*\(sensação\s*([+-]?\d+)\s*°C\),\s*umidade\s*(\d+%),\s*vento\s*(.*)$/i;
+const MANDO = /^Mando "([\s\S]*)" para (.+?)\?$/;
+const ENVIADO = /^Enviado para (.+?): ([\s\S]*)$/;
+const hora = () => new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+function conversa(nome, mensagem, enviada) {
+  const box = cria('div', 'contato'), quem = cria('div');
+  quem.append(cria('h3', '', nome), cria('p', 'sub', 'WhatsApp'));
+  box.append(cria('span', 'avatar', (nome.trim()[0] || '?').toUpperCase()), quem);
+  const balao = cria('div', 'balao', mensagem);
+  balao.append(cria('small', '', enviada ? `${hora()} ✓✓` : hora()));
+  return [box, balao];
+}
 
 function tipoDe(rotulo, valor) {
   const t = TITULO[String(rotulo).trim().toLowerCase()];
+  if (t === 'clima' && !CLIMA.test(valor.trim())) return 'texto';  // formato diferente: mostra o texto
   if (t) return t;
   return /^\s*\d+[.)]\s/m.test(valor) ? 'lista' : 'texto';
 }
@@ -383,13 +389,29 @@ function conteudo(tipo, valor) {
     }
     if (resto.length) corpo.append(cria('p', 'sub', resto.join('\n')));
     corpo.append(ul);
+  } else if (tipo === 'clima') {
+    const [, cidade, ceu, grau, sensacao, umidade, vento] = valor.trim().match(CLIMA);
+    const topo = cria('div', 'clima'), nome = cria('div');
+    nome.append(cria('h3', '', cidade), cria('p', 'sub', ceu));
+    topo.append(cria('span', 'grau', `${parseInt(grau, 10)}°`), nome);
+    const det = cria('div', 'detalhes');
+    for (const [k, v] of [['sensação', `${parseInt(sensacao, 10)}°`], ['umidade', umidade], ['vento', vento]]) {
+      const d = cria('div'); d.append(cria('small', '', k), cria('b', '', v)); det.append(d);
+    }
+    corpo.append(topo, det);
+  } else if (tipo === 'zap') {
+    const m = valor.match(ENVIADO);
+    if (m) corpo.append(...conversa(m[1], m[2], true), cria('p', 'feito', '✓ Enviada'));
+    else corpo.append(cria('p', 'texto', valor));
   } else if (tipo === 'confirmar') {
+    const zap = valor.match(MANDO);
+    if (zap) corpo.append(...conversa(zap[2], zap[1], false));
     const escolha = cria('div', 'escolha'), sim = cria('button', 'sim', 'Sim'), nao = cria('button', '', 'Não');
     sim.type = nao.type = 'button';
     sim.onclick = () => responde('sim');
     nao.onclick = () => responde('não');
     escolha.append(sim, nao);
-    corpo.append(cria('p', 'pergunta', valor), escolha, cria('p', 'dica', 'Ou diga "sim" ou "não"'));
+    corpo.append(cria('p', 'pergunta', zap ? 'Posso enviar?' : valor), escolha, cria('p', 'dica', 'Ou diga "sim" ou "não"'));
   } else {
     corpo.append(cria('p', 'texto', valor));
   }
@@ -430,7 +452,7 @@ function agenda(j, ms) {
 function abreJanela(rotulo, valor, ms) {
   const tipo = tipoDe(rotulo, valor);
   if (abertas.has(tipo)) fecha(tipo, true);  // do mesmo tipo, a nova troca a velha
-  const el = cria('section', `janela ${tipo}`);
+  const el = cria('section', `janela j-${tipo}`);  // j-: não mistura com as classes de dentro
   el.setAttribute('aria-label', rotulo);
   const barra = cria('div', 'barra'), x = cria('button', 'fechar', '×');
   x.type = 'button'; x.title = 'Fechar'; x.onclick = () => fecha(tipo);
@@ -450,7 +472,6 @@ function abreJanela(rotulo, valor, ms) {
     el.animate([{ transform: `translate(${cx - r.left - r.width / 2}px, ${cy - r.top - r.height / 2}px) scale(.2)`, opacity: 0 },
                 { transform: 'none', opacity: 1 }], { duration: 520, easing: 'cubic-bezier(.2,.8,.2,1)' });
   }
-  vigia();
 }
 
 function fecha(tipo, ja = false) {
@@ -467,30 +488,10 @@ function fecha(tipo, ja = false) {
                 { transform: `translate(${cx - r.left - r.width / 2}px, ${cy - r.top - r.height / 2}px) scale(.2)`, opacity: 0 }],
       { duration: 380, easing: 'cubic-bezier(.6,0,.8,.4)' }).onfinish = () => el.remove();
   }
-  vigia();
 }
 
 function fechaTudo() { for (const tipo of [...abertas.keys()]) fecha(tipo, true); }
 
-function abrePendentes() {
-  const agora = Date.now(), lista = pendentes;
-  pendentes = [];
-  for (const p of lista) {
-    const sobra = p.ms - (agora - p.quando);  // o que já passou do tempo dele não abre mais
-    if (sobra > 1500) abreJanela(p.rotulo, p.valor, sobra);
-  }
-}
-
-// Depois de um tempo parado e sem janelas, a tela cheia volta a ser a bolha (o ui.py decide se pode)
-const RECOLHE = 4000;
-let ocioso = null;
-function vigia() {
-  clearTimeout(ocioso);
-  ocioso = null;
-  if (!cheia || estado !== 'parado' || abertas.size || pendentes.length || campo.value.trim()) return;
-  ocioso = setTimeout(() => { ocioso = null; if (api()) api().recolher(); }, RECOLHE);
-}
-addEventListener('mousemove', () => { if (ocioso) vigia(); });
 
 // Estados, fala e cartões
 const elFala = document.getElementById('fala'), elCartoes = document.getElementById('cartoes');
@@ -499,7 +500,6 @@ function muda(s) {
   if (!ESTADOS[s]) return;
   estado = s; elEstado.textContent = ESTADOS[s].txt;
   if (s === 'pensando') fecha('confirmar');  // a resposta chegou (por voz ou digitada)
-  vigia();
 }
 function cartao(rotulo, valor, ms = 7000) {
   rotulo = String(rotulo ?? ''); valor = String(valor ?? '');
@@ -507,11 +507,6 @@ function cartao(rotulo, valor, ms = 7000) {
   if (tipo === 'confirmar') ms = 60000;  // fica até a resposta (o Jarvis espera 1 minuto)
   else if (tipo === 'aviso') ms = Math.max(ms, 12000);
   if (cheia) return abreJanela(rotulo, valor, ms);
-  if (bolha) {  // a tela cheia ainda vai abrir: guarda (e esquece os que já passaram do tempo)
-    pendentes = pendentes.filter(p => Date.now() - p.quando < p.ms);
-    pendentes.push({ rotulo, valor, ms, quando: Date.now() });
-    return;
-  }
   const d = document.createElement('div'); d.className = 'cartao';
   d.append(cria('small', '', rotulo), cria('strong', '', valor));
   elCartoes.prepend(d);
@@ -538,17 +533,13 @@ const api = () => (window.pywebview && window.pywebview.api) || null;
 // e o clique não deixa o botão com foco (senão o – e o × ficam aparecendo depois de minimizar e voltar)
 document.querySelector('.botoes').addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
 document.getElementById('fechar').onclick = () => api() && api().fechar();
-document.getElementById('minimizar').onclick = () => api() && api().minimizar();  // na tela cheia, volta para a bolha
-// dois cliques: a bolha abre a tela cheia, a tela cheia volta a ser bolha
-document.querySelector('.reator').addEventListener('dblclick', () => api() && (cheia ? api().recolher() : api().expandir()));
+document.getElementById('minimizar').onclick = () => api() && api().minimizar();
 addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || !cheia) return;
   const topo = [...abertas.values()].sort((a, b) => b.el.style.zIndex - a.el.style.zIndex)[0];
   if (topo) fecha(topo.tipo);
-  else if (api()) api().recolher();
 });
 const campo = document.getElementById('pedido');
-campo.addEventListener('input', vigia);
 document.getElementById('form').addEventListener('submit', (e) => {
   e.preventDefault();
   const texto = campo.value.trim();

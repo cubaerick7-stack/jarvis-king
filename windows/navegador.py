@@ -40,16 +40,27 @@ def available():
         return False
 
 
+def _second_monitor():
+    try:
+        import ferramentas
+        return ferramentas.second_monitor()
+    except Exception:
+        return None
+
+
 def _launch():
     global _pw, _ctx
     from playwright.sync_api import sync_playwright
     if _pw is None:
         _pw = sync_playwright().start()
     PROFILE.mkdir(parents=True, exist_ok=True)
+    args = ["--start-maximized", "--autoplay-policy=no-user-gesture-required"]
+    second = _second_monitor()
+    if second:  # o Jarvis fica em tela cheia na principal: o navegador abre na segunda tela
+        args.append(f"--window-position={second[0]},{second[1]}")
     try:
         _ctx = _pw.chromium.launch_persistent_context(
-            str(PROFILE), channel=CHANNEL, headless=False, no_viewport=True,
-            args=["--start-maximized", "--autoplay-policy=no-user-gesture-required"])
+            str(PROFILE), channel=CHANNEL, headless=False, no_viewport=True, args=args)
     except Exception as e:
         if any(x in str(e) for x in ("existing browser session", "has been closed", "ProcessSingleton")):
             raise RuntimeError(f"o perfil {PROFILE} já está aberto em outro Edge (outro Jarvis rodando?)") from e

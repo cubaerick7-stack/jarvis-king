@@ -122,22 +122,20 @@ Fica em G:\Jarvis\config\memoria.json (so no seu PC).
 Ele lembra as ultimas falas, entao "e amanha?" funciona.
 Se voce repete algo no mesmo horario em 3 dias diferentes, ele sugere ao abrir.
 
-INTERFACE (A BOLHA)
+INTERFACE (TELA CHEIA)
 1. python -m pip install pywebview
-2. Ao abrir, so o circulo do reator aparece no canto da tela, sempre por cima.
+2. Ao abrir, ele ocupa a tela principal inteira: o reator no meio, nome e
+   relogio em cima, o que voce disse e o que ele respondeu embaixo.
    Parado ele gira devagar; ouvindo ondula; pensando pulsa; falando pulsa com a voz.
-   Arraste o circulo para mudar de lugar. Passe o mouse em cima para ver
-   o "–" (minimiza) e o "×" (fecha). As respostas sao faladas e aparecem no console.
-3. Quando voce fala com ele (ou chega um lembrete), a bolha vira TELA CHEIA:
-   o reator no meio, o que voce disse e o que ele respondeu embaixo, e as
-   janelas (musica, arquivos achados, "Mando para Ana? Sim/Nao", lembrete)
-   abrindo por cima. Quando ele termina e fica parado, volta a ser bolha.
-   Dois cliques na bolha abrem a tela cheia; Esc, "–" ou dois cliques voltam.
-Outros jeitos (setx JARVIS_TELA ... e abra o PowerShell de novo):
-   setx JARVIS_TELA cheia       (tela cheia o tempo todo; o "–" minimiza)
-   setx JARVIS_TELA clique      (so a bolha; tela cheia so com dois cliques)
-   setx JARVIS_TELA painel      (o painel antigo: titulo, respostas escritas, cartoes)
-   reg delete HKCU\Environment /v JARVIS_TELA /f   (volta ao padrao)
+3. O que voce pede aparece em janelinhas por cima dele: musica tocando, arquivos
+   achados, clima, PC, "Mando para Ana? Sim/Nao", mensagem enviada, lembrete.
+   Elas somem sozinhas (com o mouse em cima ficam). Esc fecha a da frente.
+4. O que ele abre (programa, pasta, navegador do YouTube/WhatsApp) vai para a
+   SEGUNDA TELA, se voce tiver; sem segunda tela, abre por cima dele.
+   Quando voce fala com ele, ele volta para a frente.
+   O "–" minimiza e o "×" fecha.
+Quer o painel antigo (titulo, respostas escritas, cartoes e caixa de pedido)?
+   setx JARVIS_TELA painel      (e abra o PowerShell de novo)
 Para abrir sem a janela:  python windows\jarvis_ai.py --sem-tela
 
 VOZ ("BOLHA", BIPE, PEDIDO)

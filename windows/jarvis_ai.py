@@ -642,12 +642,43 @@ ORDINAL = r"(primeir[oa]|segund[oa]|terceir[oa]|quart[oa]|quint[oa]|sext[oa]|set
 def tool(tool_name, /, **args):
     """Roda uma ferramenta do catálogo pelo nome (usado pelo roteador rápido)."""
     log_action(tool_name, json.dumps(args, ensure_ascii=False))
+    opening(tool_name)
     return TOOLS_BY_NAME[tool_name]["run"](args)
 
 
 def act(name, fn, *args):
     log_action(name, " ".join(str(a) for a in args))
+    opening(name)
     return fn(*args)
+
+
+# Ações que abrem ou mostram algo fora do Jarvis (programa, pasta, navegador)
+SHOWS_OUTSIDE = {"open_target", "open_url", "open_folder", "open_search_result", "show_search_result",
+                 "focus_window", "open_settings", "play_youtube", "youtube_control", "search_web",
+                 "web_search", "web_click", "whatsapp_send"}
+
+
+# Ferramentas cujo resultado vira uma janelinha na tela cheia (título da janela)
+INFO_CARDS = {"weather": "Clima", "system_info": "PC", "battery_status": "Bateria", "network_info": "Rede",
+              "calculate": "Conta", "what_i_know": "O que sei de você", "history": "Histórico",
+              "list_processes": "Programas abertos", "list_windows": "Janelas", "read_clipboard": "Área de transferência",
+              "file_info": "Arquivo", "web_read": "Página", "list_routines": "Rotinas", "add_reminder": "Lembrete marcado",
+              "start_timer": "Timer", "tell_time": "Hora"}
+_ran = []  # ferramentas usadas no pedido atual
+
+
+def opening(name):
+    """Vai abrir algo: com segunda tela, a janela nova vai para lá; sem, o Jarvis sai da frente."""
+    _ran.append(name)
+    if name not in SHOWS_OUTSIDE:
+        return
+    try:
+        if F.second_monitor():
+            F.expect_window()
+        else:
+            U.behind()
+    except Exception:
+        pass
 
 
 COMPOUND = re.compile(
@@ -1343,7 +1374,7 @@ TOOLS = [
      "run": lambda a: B.press(a.get("key", "Enter"))},
     {"name": "whatsapp_send", "args": '{"contact":"nome","message":"texto"}', "group": "navegador",
      "desc": "mandar mensagem no WhatsApp Web (pede confirmação)", "examples": ["manda oi pra mãe no zap"],
-     "run": lambda a: B.whatsapp_send(a.get("contact", ""), a.get("message", ""), confirm)},
+     "run": lambda a: _sent(B.whatsapp_send(a.get("contact", ""), a.get("message", ""), confirm))},
     # ---- memória
     {"name": "set_profile", "args": '{"key":"nome|cidade|apelido|musica_favorita|...","value":"valor"}', "group": "memória",
      "desc": "guardar algo do perfil do usuário", "examples": ["eu moro em Recife"],
@@ -1450,6 +1481,7 @@ def execute_ai_action(name, args):
         print(f"Jarvis > Ação desconhecida: {name}")
         return False
     log_action(f"ia:{name}", json.dumps(args, ensure_ascii=False))
+    opening(name)
     try:
         return tool["run"](args)
     except Exception as e:
@@ -1726,6 +1758,7 @@ def speak(text):
 def announce(text, title):
     """Aviso que parte do Jarvis (lembrete, sugestão): mostra, vira cartão e fala."""
     print(f"Jarvis > {text}")
+    U.front()
     U.card(title, text)
     speak(text)
 
@@ -1773,9 +1806,30 @@ def spoken(head, rest):
     return head
 
 
+def _sent(result):
+    """Mensagem enviada no WhatsApp vira a janelinha do zap ("Enviado para Ana: chego às 8")."""
+    if isinstance(result, str) and result.startswith("Enviado para "):
+        U.card("WhatsApp", result, 9000)
+    return result
+
+
+def info_card(out, head):
+    """Clima, PC, bateria...: o que a ferramenta mostrou vira uma janelinha (a fala final fica na legenda)."""
+    titles = [INFO_CARDS[n] for n in _ran if n in INFO_CARDS]
+    if not titles:
+        return
+    lines = [line[len("Jarvis > "):].strip() for line in out.splitlines() if line.startswith("Jarvis > ")]
+    lines = [line for line in lines if line and not line.startswith("(")]
+    if len(lines) > 1 and lines[-1] == head:
+        lines = lines[:-1]  # a resposta da IA já está na legenda
+    if lines:
+        U.card(titles[0], "\n".join(lines)[:900], 12000)
+
+
 def respond(text):
     """Executa o pedido; mostra a fala do Jarvis no reator (listas viram cartão) e fala em voz alta."""
-    U.heard(text)  # a bolha abre em tela cheia com o seu pedido na legenda
+    _ran.clear()
+    U.heard(text)  # ele vem para a frente com o seu pedido na legenda
     set_state("pensando")
     tee = _Tee(sys.stdout)
     with contextlib.redirect_stdout(tee):
@@ -1784,11 +1838,14 @@ def respond(text):
         except Exception as e:  # o erro também é falado e aparece no reator
             log_action("erro", f"{text}: {e}")
             print(f"Jarvis > Desculpe, senhor, não consegui: {e}")
-    head, rest = last_said(tee.getvalue())
+    out = tee.getvalue()
+    head, rest = last_said(out)
     say = spoken(head, rest)
     U.speech(say if head.endswith("...") else head)
     if rest:
         U.card(head.rstrip(":. ") or "Jarvis", _short_paths(rest)[:900], 15000)
+    else:
+        info_card(out, head)
     try:
         M.add_talk(text, say)
     except Exception:
