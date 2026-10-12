@@ -360,3 +360,21 @@ def test_continuation_wait_is_quiet_when_nobody_talks(monkeypatch, capsys):
     monkeypatch.setattr(V, "record_command", lambda *a, **k: b"")
     assert lis._hear(lambda: block(0), 300.0, no_speech=V.GO_ON_WAIT, quiet=True) is None
     assert "Não ouvi" not in capsys.readouterr().out
+
+
+def test_question_listens_for_answer_without_name(monkeypatch):
+    j = load_jarvis()
+
+    class L:
+        n = 0
+
+        def follow_up(self):
+            L.n += 1
+
+    monkeypatch.setattr(j, "listener", L())
+    monkeypatch.setattr(j, "handle", lambda t: print("Jarvis > Qual cidade, senhor?"))
+    j.respond("como tá o tempo")
+    assert L.n == 1
+    monkeypatch.setattr(j, "handle", lambda t: print("Jarvis > Pronto, senhor."))
+    j.respond("abre a calculadora")
+    assert L.n == 1

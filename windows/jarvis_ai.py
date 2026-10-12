@@ -1987,6 +1987,8 @@ def respond(text):
         speak(say)  # volta para "parado" sozinho, até se a fala falhar
     else:
         set_state("parado")
+    if say.rstrip().endswith("?") and listener is not None:
+        listener.follow_up()  # ele perguntou algo: a resposta vem sem precisar dizer "Bolha"
 
 
 def handle_spoken(text):

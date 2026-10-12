@@ -43,6 +43,7 @@ JARVIS_WHISPER = {"jarvis", "jarbas", "jarbis", "javis", "jarves", "jervis", "ja
 MAX_COMMAND = 12.0  # segundos
 END_SILENCE = 1.5  # segundos de silêncio que encerram o pedido (uma pausa para pensar não corta a frase)
 NO_SPEECH = 5.0  # desiste se você não falar nada
+FOLLOW_UP_WAIT = 6.0  # ele te fez uma pergunta: escuta a resposta sem precisar dizer o nome
 GO_ON_WAIT = 4.0  # frase parou no meio ("abre o..."): espera até isso você continuar, sem bipe
 # No fim da fala, estas palavras mostram que a frase ficou pela metade ("pesquisa sobre tipo", "abre o").
 UNFINISHED = {"tipo", "e", "que", "pra", "para", "de", "do", "da", "dos", "das", "no", "na", "nos", "nas", "o", "a",
@@ -393,10 +394,15 @@ class Listener(threading.Thread):
         self.model_path = model_path or find_model()
         self.answer_wanted = threading.Event()  # confirmação: ouve sem precisar dizer "Jarvis"
         self.ready = threading.Event()
+        self.follow_wanted = threading.Event()
         self.error = None
 
     def ask_answer(self):
         self.answer_wanted.set()
+
+    def follow_up(self):
+        """Depois de uma pergunta dele: escuta uma vez sem o nome; se ninguém falar, volta a esperar o nome."""
+        self.follow_wanted.set()
 
     def _hear(self, read_block, noise, before=(), no_speech=NO_SPEECH, quiet=False):
         """Grava (com o som do PC baixinho) e transcreve. None = ninguém falou.
@@ -485,6 +491,17 @@ class Listener(threading.Thread):
                     text = self._hear(read_block, noise)
                     self.answer_wanted.clear()
                     self.put(("voz", strip_wake(text or "")))
+                    continue
+                if self.follow_wanted.is_set():
+                    while speaking.is_set():
+                        read_block()
+                    self.follow_wanted.clear()
+                    beep()
+                    text = self._hear(read_block, noise, no_speech=FOLLOW_UP_WAIT, quiet=True)
+                    if text and text.strip():
+                        self.put(("voz", strip_wake(text)))
+                    else:
+                        self.on_state("parado")
                     continue
                 block = read_block()
                 if speaking.is_set():
