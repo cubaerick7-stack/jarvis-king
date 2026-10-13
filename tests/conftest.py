@@ -1,4 +1,10 @@
+import sys
+from pathlib import Path
+
 import pytest
+
+# Disponível antes de qualquer fixture, inclusive ao rodar um único arquivo.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "windows"))
 
 
 @pytest.fixture(autouse=True)

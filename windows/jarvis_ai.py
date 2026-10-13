@@ -863,6 +863,12 @@ def fast_local_router(user_text):
         tool("web_click", target=str(ordinal_to_number(clean)))
         return True
     files = last_results if last_kind != "web" else []
+    shows_result = re.fullmatch(
+        rf"(?:mostra|mostre) (?:o |a )?{ORDINAL}(?: resultado)?(?: na pasta)?", clean
+    )
+    if last_kind != "web" and not files and (picks_result or shows_result):
+        print("Jarvis > Faça uma busca primeiro para escolher um resultado.")
+        return True
 
     # resultados da última busca: "mostra o segundo na pasta", "onde ele está"
     if files and (
