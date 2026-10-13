@@ -301,10 +301,10 @@ def _plain(text):
     return " ".join("".join(c for c in text if c.isalnum() or c.isspace()).split())
 
 
-def _groq_transcribe(wav, key):
+def _groq_transcribe(wav, key, name="fala.wav", mime="audio/wav"):
     body, ctype = _multipart({"model": STT_MODEL, "language": "pt", "temperature": "0",
                               "response_format": "verbose_json", "prompt": STT_PROMPT},
-                             "fala.wav", wav, "audio/wav")
+                             name, wav, mime)
     req = urllib.request.Request(GROQ_STT, data=body, method="POST", headers={
         "Content-Type": ctype, "Authorization": f"Bearer {key}", "User-Agent": "jarvis/1.0"})
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
@@ -318,11 +318,11 @@ def _groq_transcribe(wav, key):
     return "" if _plain(text) in HALLUCINATIONS else text.strip()
 
 
-def _gemini_transcribe(wav, key):
+def _gemini_transcribe(wav, key, name="fala.wav", mime="audio/wav"):
     import base64
     body = {"contents": [{"role": "user", "parts": [
         {"text": "Transcreva exatamente o que foi falado neste áudio, em português. Responda só com o texto."},
-        {"inlineData": {"mimeType": "audio/wav", "data": base64.b64encode(wav).decode()}},
+        {"inlineData": {"mimeType": mime, "data": base64.b64encode(wav).decode()}},
     ]}], "generationConfig": {"temperature": 0}}
     for model in models():
         try:
@@ -336,17 +336,18 @@ def _gemini_transcribe(wav, key):
     return ""
 
 
-def transcribe(wav):
-    """Texto falado num WAV: Whisper no Groq; se faltar (ou falhar), o Gemini ouve o áudio.
+def transcribe(wav, name="fala.wav", mime="audio/wav"):
+    """Texto falado num áudio (WAV do microfone do PC; webm/m4a do celular): Whisper no Groq; se faltar
+    (ou falhar), o Gemini ouve o áudio.
     Se o Whisper respondeu "nada", é nada mesmo (o Gemini só inventaria algo como "não há fala")."""
     errors = []
-    for name, key, fn in (("Groq", groq_key(), _groq_transcribe), ("Gemini", api_key(), _gemini_transcribe)):
+    for backend, key, fn in (("Groq", groq_key(), _groq_transcribe), ("Gemini", api_key(), _gemini_transcribe)):
         if not key:
             continue
         try:
-            return fn(wav, key).strip()
+            return fn(wav, key, name, mime).strip()
         except Exception as e:
-            errors.append(f"{name}: {e}")
+            errors.append(f"{backend}: {e}")
     if errors:
         raise CloudError("não consegui entender o áudio (" + "; ".join(errors) + ")")
     return ""

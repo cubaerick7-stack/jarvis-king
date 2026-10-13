@@ -550,6 +550,22 @@ def say(text, on_state=None):
             pass
 
 
+def synth_mp3(text):
+    """A fala em MP3, sem tocar no PC (vai para o celular), com as mesmas vozes e reservas do say()."""
+    text = clean_for_speech(text)
+    if not text:
+        return b""
+    path = Path(tempfile.gettempdir()) / f"jarvis_celular_{int(time.time() * 1000)}.mp3"
+    try:
+        _synth(text, path)
+        return path.read_bytes()
+    finally:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
 def beep():
     try:
         import winsound

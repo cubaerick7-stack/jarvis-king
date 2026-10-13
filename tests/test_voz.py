@@ -61,8 +61,8 @@ def test_speech_text_has_no_links_or_emoji():
 def test_transcribe_prefers_groq_then_gemini(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "g")
     monkeypatch.setenv("GEMINI_API_KEY", "k")
-    monkeypatch.setattr(N, "_groq_transcribe", lambda wav, key: (_ for _ in ()).throw(OSError("caiu")))
-    monkeypatch.setattr(N, "_gemini_transcribe", lambda wav, key: " toca lofi ")
+    monkeypatch.setattr(N, "_groq_transcribe", lambda wav, key, *_: (_ for _ in ()).throw(OSError("caiu")))
+    monkeypatch.setattr(N, "_gemini_transcribe", lambda wav, key, *_: " toca lofi ")
     assert N.transcribe(b"x") == "toca lofi"
 
 

@@ -211,6 +211,32 @@ No seu PC (PowerShell), e depois abra outro PowerShell:
 Pedidos: "manda pra Ana que eu chego as 8", "tem mensagem nova no zap?",
 "le as mensagens da Ana". Sem WAHA_URL ele usa o WhatsApp Web no navegador dele.
 
+CELULAR (O REATOR NO CELULAR, DE QUALQUER LUGAR)
+O celular abre a mesma tela do reator: voce digita ou toca no microfone e fala,
+o Bolha faz no PC e responde la, com a voz tocando no celular (o PC fica quieto).
+Clima, listas e "Mando para Ana? Sim/Nao" aparecem em cartoes com botao.
+O PC precisa estar ligado com o Bolha aberto. Quem leva o celular ate o PC e o
+ngrok (gratis), com https, que o microfone do celular exige.
+No seu PC (PowerShell), uma vez:
+1. setx BOLHA_SENHA "uma-senha-sua"    (8 ou mais caracteres; e a senha do celular)
+2. Crie a conta gratis em ngrok.com e instale:  winget install ngrok.ngrok
+   (ou baixe o ngrok.exe e ponha em G:\Jarvis)
+3. No painel do ngrok, copie o seu Authtoken e rode:
+   ngrok config add-authtoken O-TOKEN
+4. No painel do ngrok, em Domains, pegue o seu dominio gratis (ex.: bolha-joao.ngrok-free.app):
+   setx BOLHA_NGROK "bolha-joao.ngrok-free.app"
+5. Abra outro PowerShell e abra o Bolha. Ele mostra: "Celular: abra https://... no celular"
+   e abre o ngrok sozinho, escondido (e fecha junto com ele).
+No celular:
+6. Abra o link no Chrome. Na primeira vez o ngrok mostra um aviso: toque em "Visit Site".
+7. Digite a senha (so na primeira vez) e libere o microfone quando ele pedir.
+8. Menu do Chrome (3 pontinhos) > "Adicionar a tela inicial": vira um app com o reator.
+Seguranca: sem a senha nada funciona; 5 senhas erradas bloqueiam por 10 minutos;
+apagar, mandar e publicar continuam pedindo "sim". Trocar a BOLHA_SENHA desconecta
+todos os celulares. A senha e o token do ngrok NUNCA vao para arquivo nem para o GitHub.
+O dominio gratis do ngrok e um so: use ele para o celular e o WAHA pelo IP da rede de casa.
+Sem o ngrok, a tela funciona no proprio PC em http://localhost:8765 (porta: setx BOLHA_CELULAR_PORTA).
+
 YOUTUBE
 Se o YouTube der "Algo deu errado" no navegador do Bolha, ele toca no seu navegador
 padrao e continua usando ele (pausar, proximo etc. vao para la). Para usar sempre o

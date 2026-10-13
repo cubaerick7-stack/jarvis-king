@@ -56,7 +56,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
   max-height: 11em; overflow: hidden; }
 @keyframes entra { from { opacity: 0; transform: translateY(12px); } }
 @keyframes sai { to { opacity: 0; transform: translateY(12px); } }
-form { display: flex; gap: 6px; padding: 10px 14px 14px; border-top: 1px solid var(--line); margin-top: 8px; }
+#form { display: flex; gap: 6px; padding: 10px 14px 14px; border-top: 1px solid var(--line); margin-top: 8px; }
 input {
   flex: 1; min-width: 0; background: rgba(8, 40, 48, .4); border: 1px solid var(--line); color: var(--text);
   font: 15px var(--display); padding: 7px 10px; outline: none;
@@ -91,7 +91,7 @@ input::placeholder { color: var(--muted); }
   .legenda p:has(span:empty) { visibility: hidden; }
   .legenda b { font: 11px var(--mono); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); margin-right: 10px; }
   .legenda .eu span { color: var(--cyan); }
-  form { position: fixed; left: 50%; transform: translateX(-50%); bottom: 20px; z-index: 4; margin: 0; padding: 0;
+  #form { position: fixed; left: 50%; transform: translateX(-50%); bottom: 20px; z-index: 4; margin: 0; padding: 0;
     border: none; width: min(560px, calc(100vw - 32px)); }
   input { border-radius: 999px; padding: 9px 18px; background: rgba(5, 24, 30, .7); border-color: var(--line-soft); }
 }
@@ -157,6 +157,46 @@ input::placeholder { color: var(--muted); }
 .j-aviso { width: min(340px, calc(100vw - 32px)); }
 .j-aviso .ponto { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
 .j-confirmar .ponto { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.cartao .escolha { margin-top: 8px; }
+.cartao .corpo { padding: 8px 0 2px; gap: 10px; }
+.cartao .corpo .escolha { margin-top: 0; }
+.cartao .grau { font-size: 52px; }
+
+/* Celular (a página vem do celular.py, pelo ngrok): a mesma tela, com senha, microfone e a voz tocando nele */
+.disse, .mic { display: none; }
+.celular { -webkit-tap-highlight-color: transparent; }
+.celular .botoes { display: none; }
+.celular input { font-size: 16px; }  /* menos que 16px faz o iPhone dar zoom ao tocar */
+.celular .mic { display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 0; border-radius: 50%;
+  border: 1px solid var(--line-strong); background: rgba(95, 230, 240, .1); color: var(--cyan); cursor: pointer; }
+.mic svg { width: 22px; height: 22px; }
+.mic .i-enviar, .mic.escrito .i-mic { display: none; }
+.mic.escrito .i-enviar { display: block; }
+.mic.gravando { background: #e0505a; border-color: #e0505a; color: #fff; animation: grava .9s ease-in-out infinite alternate; }
+@keyframes grava { to { box-shadow: 0 0 0 9px rgba(224, 80, 90, .22); } }
+.celular.offline .estado { color: var(--warn); }
+@media (max-width: 599.98px) {
+  .celular { height: 100dvh; border: none; padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
+  .celular header { cursor: default; justify-content: center; }
+  .celular .reator { width: min(100%, 46dvh); margin: 0 auto; }
+  .celular .disse { display: block; margin: 6px 16px 0; text-align: center; color: var(--muted); font-size: 14px;
+    min-height: 1.3em; overflow-wrap: anywhere; }
+  .celular .fala { margin-top: 2px; font-size: 17px; min-height: 2.6em; }
+  .celular .cartoes { overflow-y: auto; }
+  .celular .cartao strong { max-height: none; }
+  .celular #form { align-items: center; padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+  .celular #form input { border-radius: 999px; padding: 11px 16px; }
+}
+#entrada { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px;
+  background: rgba(2, 8, 11, .94); }
+#entrada[hidden] { display: none; }
+.caixa-senha { width: min(340px, 100%); display: grid; gap: 12px; text-align: center; }
+.caixa-senha h2 { margin: 0 0 4px; font-weight: 500; letter-spacing: .45em; font-size: 24px; }
+.caixa-senha p { margin: 0; color: var(--muted); }
+.caixa-senha input { border-radius: 12px; padding: 12px 14px; text-align: center; }
+.caixa-senha button { padding: 12px; border-radius: 12px; border: 1px solid var(--cyan); background: var(--cyan); color: var(--bg);
+  font: 600 16px var(--display); letter-spacing: .12em; cursor: pointer; }
+.caixa-senha .erro { color: var(--warn); min-height: 1.3em; }
 @media (prefers-reduced-motion: reduce) { .eq i { animation: none; height: 20px; } }
 </style>
 </head>
@@ -171,6 +211,7 @@ input::placeholder { color: var(--muted); }
 </header>
 <div class="reator pywebview-drag-region"><canvas id="c"></canvas></div>
 <div class="estado" id="estado">● em espera</div>
+<p class="disse" id="disse"></p>
 <div class="fala" id="fala"></div>
 <div class="cartoes" id="cartoes"></div>
 <div id="janelas" aria-live="polite"></div>
@@ -178,8 +219,18 @@ input::placeholder { color: var(--muted); }
   <p class="voce"><b>Você</b><span id="lv"></span></p>
   <p class="eu"><b id="eu">Bolha</b><span id="lb"></span></p>
 </div>
-<form id="form"><input id="pedido" placeholder="Digite um pedido ou diga &quot;Bolha&quot;" autocomplete="off"></form>
+<form id="form"><input id="pedido" placeholder="Digite um pedido ou diga &quot;Bolha&quot;" autocomplete="off" enterkeyhint="send"><button type="button" class="mic" id="acao" title="Falar"><svg class="i-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><svg class="i-enviar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12l16-8-6 16-2.5-6.5z"/></svg></button></form>
+<div id="entrada" hidden>
+  <form class="caixa-senha" id="formSenha">
+    <h2 id="nomeSenha">BOLHA</h2>
+    <p>Digite a senha do celular</p>
+    <input type="password" id="senha" autocomplete="current-password" required>
+    <button type="submit">Entrar</button>
+    <p class="erro" id="erroSenha" aria-live="polite"></p>
+  </form>
+</div>
 <script>
+const remoto = document.body.classList.contains('celular');  // aberta no celular (celular.py)
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const reduz = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const elEstado = document.getElementById('estado');
@@ -203,7 +254,7 @@ function tam() {
 
 // Partículas do anel de onda
 // 6 membranas onduladas sobrepostas + poeira solta em volta
-const CAMADAS = 6, N = 5200, parts = [];
+const CAMADAS = 6, N = remoto ? 2600 : 5200, parts = [];
 const fases = Array.from({ length: CAMADAS }, (_, k) => ({ f1: 2 + k % 3, f2: 5 + k, ph: k * 1.7, v: .6 + k * .15, r: .96 + k * .025 }));
 for (let i = 0; i < N; i++) {
   const poeira = Math.random() < .18;
@@ -212,7 +263,7 @@ for (let i = 0; i < N; i++) {
 }
 // Pontos espalhados na superfície da esfera
 // Esfera de Fibonacci: pontos distribuídos por igual na superfície
-const NE = 2600, ouro = Math.PI * (3 - Math.sqrt(5));
+const NE = remoto ? 1400 : 2600, ouro = Math.PI * (3 - Math.sqrt(5));
 const pontosEsfera = Array.from({ length: NE }, (_, i) => {
   const y = 1 - 2 * (i + .5) / NE, q = Math.sqrt(1 - y * y), th = i * ouro;
   const lon = Math.atan2(Math.sin(th), Math.cos(th));
@@ -406,20 +457,28 @@ function conteudo(tipo, valor) {
   } else if (tipo === 'confirmar') {
     const zap = valor.match(MANDO);
     if (zap) corpo.append(...conversa(zap[2], zap[1], false));
-    const escolha = cria('div', 'escolha'), sim = cria('button', 'sim', 'Sim'), nao = cria('button', '', 'Não');
-    sim.type = nao.type = 'button';
-    sim.onclick = () => responde('sim');
-    nao.onclick = () => responde('não');
-    escolha.append(sim, nao);
-    corpo.append(cria('p', 'pergunta', zap ? 'Posso enviar?' : valor), escolha, cria('p', 'dica', 'Ou diga "sim" ou "não"'));
+    corpo.append(cria('p', 'pergunta', zap ? 'Posso enviar?' : valor), simNao(),
+      cria('p', 'dica', remoto ? 'Ou toque no microfone e diga "sim"' : 'Ou diga "sim" ou "não"'));
   } else {
     corpo.append(cria('p', 'texto', valor));
   }
   return corpo;
 }
 
+function simNao() {
+  const escolha = cria('div', 'escolha'), sim = cria('button', 'sim', 'Sim'), nao = cria('button', '', 'Não');
+  sim.type = nao.type = 'button';
+  sim.onclick = () => responde('sim');
+  nao.onclick = () => responde('não');
+  escolha.append(sim, nao);
+  return escolha;
+}
+
+function tiraConfirmar() { elCartoes.querySelectorAll('.cartao.confirmar').forEach(c => c.remove()); }
+
 function responde(texto) {
   fecha('confirmar');
+  tiraConfirmar();
   if (api()) api().pedido(texto);
 }
 
@@ -499,16 +558,19 @@ const lv = document.getElementById('lv'), lb = document.getElementById('lb');
 function muda(s) {
   if (!ESTADOS[s]) return;
   estado = s; elEstado.textContent = ESTADOS[s].txt;
-  if (s === 'pensando') fecha('confirmar');  // a resposta chegou (por voz ou digitada)
+  if (s === 'pensando') { fecha('confirmar'); tiraConfirmar(); }  // a resposta chegou (por voz ou digitada)
 }
 function cartao(rotulo, valor, ms = 7000) {
   rotulo = String(rotulo ?? ''); valor = String(valor ?? '');
   const tipo = tipoDe(rotulo, valor);
   if (tipo === 'confirmar') ms = 60000;  // fica até a resposta (o Jarvis espera 1 minuto)
   else if (tipo === 'aviso') ms = Math.max(ms, 12000);
+  else if (remoto) ms = Math.max(ms * 4, 30000);  // no celular dá mais tempo para ler
   if (cheia) return abreJanela(rotulo, valor, ms);
   const d = document.createElement('div'); d.className = 'cartao';
-  d.append(cria('small', '', rotulo), cria('strong', '', valor));
+  // no celular o cartão mostra igual às janelas (clima grande, lista, balão do zap, sim/não)
+  d.append(cria('small', '', rotulo), remoto ? conteudo(tipo, valor) : cria('strong', '', valor));
+  if (tipo === 'confirmar') { d.classList.add('confirmar'); if (!remoto) d.append(simNao()); }
   elCartoes.prepend(d);
   while (elCartoes.children.length > 3) elCartoes.lastChild.remove();
   setTimeout(() => { d.classList.add('sai'); setTimeout(() => d.remove(), 400); }, ms);
@@ -517,18 +579,24 @@ function cartao(rotulo, valor, ms = 7000) {
 // Chamado pelo Python (ui.py)
 window.setEstado = muda;
 window.mostraFala = (texto) => { elFala.textContent = lb.textContent = texto || ''; };
-window.mostraVoce = (texto) => { lv.textContent = texto || ''; lb.textContent = ''; };
+const elDisse = document.getElementById('disse');
+window.mostraVoce = (texto) => {
+  lv.textContent = texto || ''; lb.textContent = '';
+  if (remoto) { elDisse.textContent = texto ? `Você: ${texto}` : ''; elFala.textContent = ''; }
+};
 window.cartao = cartao;
 window.mostraNome = (nome) => {
   nome = String(nome || '').trim();
   if (!nome) return;
   document.querySelector('h1').textContent = nome.toUpperCase();
   document.getElementById('eu').textContent = nome;
-  document.getElementById('pedido').placeholder = `Digite um pedido ou diga "${nome}"`;
+  document.getElementById('nomeSenha').textContent = nome.toUpperCase();
+  document.title = nome;
+  document.getElementById('pedido').placeholder = remoto ? 'Digite ou toque no microfone' : `Digite um pedido ou diga "${nome}"`;
 };
 
-// Botões e caixa de texto falam com o Python (ui.py -> Api)
-const api = () => (window.pywebview && window.pywebview.api) || null;
+// Botões e caixa de texto falam com o Python (ui.py -> Api); no celular, pela internet (celular.py)
+const api = () => remoto ? celular : (window.pywebview && window.pywebview.api) || null;
 // Apertar o – ou o × não começa a arrastar a janela (senão, ao soltar depois de arrastar, fecharia o Jarvis),
 // e o clique não deixa o botão com foco (senão o – e o × ficam aparecendo depois de minimizar e voltar)
 document.querySelector('.botoes').addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
@@ -540,11 +608,166 @@ addEventListener('keydown', (e) => {
   if (topo) fecha(topo.tipo);
 });
 const campo = document.getElementById('pedido');
-document.getElementById('form').addEventListener('submit', (e) => {
-  e.preventDefault();
+function enviaTexto() {
   const texto = campo.value.trim();
+  if (remoto) destrava();  // o Enter do teclado também conta como toque: a voz da resposta pode tocar
   if (texto && api()) { api().pedido(texto); campo.value = ''; }
+  if (remoto) atualizaBotao();
+}
+document.getElementById('form').addEventListener('submit', (e) => { e.preventDefault(); enviaTexto(); });
+
+// ============ Celular ============
+// Aberta pelo celular: pede a senha uma vez, busca as novidades do Bolha (estado, legendas, janelas e a voz)
+// e manda os pedidos digitados, o áudio do microfone e o "sim". A voz da resposta toca aqui, não no PC.
+const CABECALHO = { 'X-Bolha': '1', 'ngrok-skip-browser-warning': '1' };
+const SILENCIO = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+const somFala = new Audio(), botao = document.getElementById('acao'), entrada = document.getElementById('entrada');
+let ultimo = 0, buscando = false, tocando = false, destravado = false, pendente = false, gravador = null;
+
+async function envia(caminho, corpo, tipo = 'application/json') {
+  const r = await fetch(caminho, { method: 'POST', credentials: 'same-origin', headers: { ...CABECALHO, 'Content-Type': tipo },
+    body: tipo === 'application/json' ? JSON.stringify(corpo) : corpo });
+  const d = await r.json().catch(() => ({}));
+  if (r.status === 401 && caminho !== '/entrar') pedeSenha();
+  if (!r.ok) throw new Error(d.erro || `O PC não respondeu (erro ${r.status}).`);
+  return d;
+}
+const avisa = (texto) => mostraFala(texto);
+const celular = { pedido: (texto) => { envia('/pedido', { texto }).catch(e => avisa(e.message)); } };
+
+function chegou(e) {
+  if (e.tipo === 'estado') { if (!gravador && !(tocando && e.valor === 'parado')) muda(e.valor); }
+  else if (e.tipo === 'voce') mostraVoce(e.valor);
+  else if (e.tipo === 'fala') mostraFala(e.valor);
+  else if (e.tipo === 'nome') mostraNome(e.valor);
+  else if (e.tipo === 'cartao') cartao(e.titulo, e.texto, e.ms);
+  else if (e.tipo === 'audio') toca(e.url);
+}
+
+function semConexao(sim) {
+  document.body.classList.toggle('offline', sim);
+  elEstado.textContent = sim ? '● sem conexão com o PC' : ESTADOS[estado].txt;
+}
+
+// Pergunta "tem novidade?" e o PC segura a resposta até ter (ou 25 s): chega na hora, sem gastar bateria à toa
+async function novidades() {
+  if (buscando || !entrada.hidden) return;
+  buscando = true;
+  let deNovo = 0;
+  try {
+    for (;;) {
+      const r = await fetch(`/eventos?desde=${ultimo}`, { headers: CABECALHO, credentials: 'same-origin', cache: 'no-store' });
+      if (r.status === 401) { pedeSenha(); return; }
+      if (!r.ok) throw new Error(r.status);
+      const d = await r.json();
+      semConexao(false);
+      for (const e of d.eventos) chegou(e);
+      ultimo = d.ultimo;
+    }
+  } catch {
+    semConexao(true);
+    deNovo = 3000;
+  } finally {
+    buscando = false;
+    if (deNovo) setTimeout(novidades, deNovo);
+  }
+}
+
+// O celular só toca som depois de um toque na tela: o primeiro toque "destrava" o tocador da voz
+function destrava() {
+  if (destravado) return;
+  destravado = true;
+  somFala.src = SILENCIO;
+  somFala.play().catch(() => { destravado = false; });
+}
+async function toca(url) {
+  try {
+    const r = await fetch(url, { headers: CABECALHO, credentials: 'same-origin' });
+    if (!r.ok) return;
+    const antigo = somFala.src;
+    somFala.src = URL.createObjectURL(await r.blob());
+    if (antigo.startsWith('blob:')) URL.revokeObjectURL(antigo);
+    await somFala.play();
+  } catch {
+    pendente = true;
+    avisa('Toque na tela para ouvir a resposta.');
+  }
+}
+somFala.onplaying = () => { if (somFala.src.startsWith('blob:')) { tocando = true; pendente = false; muda('falando'); } };
+somFala.onended = somFala.onpause = () => { if (tocando) { tocando = false; muda('parado'); } };
+
+// Microfone: toca uma vez para falar, outra para mandar (para sozinho em 30 s)
+async function microfone() {
+  if (gravador) { gravador.stop(); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+    avisa(location.protocol === 'https:' ? 'Este navegador não grava áudio. Digite o pedido.'
+      : 'O microfone só funciona pelo link https (ngrok). Digite o pedido.');
+    return;
+  }
+  let fluxo;
+  try { fluxo = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+  catch { avisa('Libere o microfone para este site nas configurações do navegador.'); return; }
+  const tipo = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(t => MediaRecorder.isTypeSupported(t));
+  const g = new MediaRecorder(fluxo, tipo ? { mimeType: tipo } : undefined), pedacos = [], inicio = Date.now();
+  const limite = setTimeout(() => g.state !== 'inactive' && g.stop(), 30000);
+  gravador = g;
+  g.ondataavailable = (e) => { if (e.data.size) pedacos.push(e.data); };
+  g.onstop = async () => {
+    fluxo.getTracks().forEach(t => t.stop());
+    clearTimeout(limite);
+    gravador = null;
+    botao.classList.remove('gravando');
+    atualizaBotao();
+    if (Date.now() - inicio < 500) { muda('parado'); return; }  // foi só um toque
+    const audio = new Blob(pedacos, { type: g.mimeType || tipo || 'audio/webm' });
+    muda('pensando');
+    try {
+      const d = await envia('/ouvir', audio, audio.type);
+      if (!d.texto) { muda('parado'); avisa('Não entendi. Toque no microfone e fale de novo.'); }
+    } catch (e) { muda('parado'); avisa(e.message); }
+  };
+  g.start();
+  botao.classList.add('gravando');
+  botao.title = 'Parar e enviar';
+  muda('ouvindo');
+}
+
+function atualizaBotao() {
+  const escrito = campo.value.trim() !== '';
+  botao.classList.toggle('escrito', escrito && !gravador);
+  if (!gravador) botao.title = escrito ? 'Enviar' : 'Falar';
+}
+
+function pedeSenha() {
+  entrada.hidden = false;
+  setTimeout(() => document.getElementById('senha').focus(), 50);
+}
+document.getElementById('formSenha').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const senha = document.getElementById('senha'), erro = document.getElementById('erroSenha');
+  erro.textContent = '';
+  try {
+    await envia('/entrar', { senha: senha.value });
+    senha.value = '';
+    entrada.hidden = true;
+    ultimo = 0;
+    novidades();
+  } catch (err) { erro.textContent = err.message; }
 });
+
+if (remoto) {
+  campo.placeholder = 'Digite ou toque no microfone';
+  botao.onclick = () => { if (campo.value.trim() && !gravador) enviaTexto(); else microfone(); };
+  campo.addEventListener('input', atualizaBotao);
+  addEventListener('pointerdown', () => {  // qualquer toque destrava o som (e toca a resposta que ficou esperando)
+    destrava();
+    if (pendente) { pendente = false; somFala.play().catch(() => {}); }
+  }, true);
+  atualizaBotao();
+  novidades();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) novidades(); });
+}
+
 addEventListener('resize', tam); tam();
 requestAnimationFrame(quadro);
 </script>

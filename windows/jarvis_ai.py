@@ -32,6 +32,7 @@ import voz as V  # noqa: E402
 import nuvem as N  # noqa: E402
 import instagram as IG  # noqa: E402
 import waha as W  # noqa: E402
+import celular as C  # noqa: E402
 
 try:
     import pyautogui
@@ -1195,6 +1196,7 @@ commands = queue.Queue()  # (origem, texto) vindos do teclado e da voz; um só l
 queue_mode = False  # ligado no main(); nos testes a confirmação usa input() direto
 listener = None  # voz.Listener quando a voz está ligada
 voice_out = False  # fala as respostas em voz alta (ligado no run() se o edge-tts estiver instalado)
+origin = ""  # de onde veio o pedido que está sendo feito agora: "voz", "teclado", "janela", "celular"...
 
 
 def answer_kind(answer):
@@ -1223,24 +1225,24 @@ def confirm(question):
     U.card("Confirmar", question)
     speak(question)
     set_state("parado")
-    if listener is not None:
+    if listener is not None and origin != "celular":  # do celular, o "sim" vem de lá (o microfone do PC não)
         listener.ask_answer()
     deadline, later = time.time() + 60, []
     try:
         while (left := deadline - time.time()) > 0:
             try:
-                origin, answer = commands.get(timeout=left)
+                source, answer = commands.get(timeout=left)
             except queue.Empty:
                 break
             answer = (answer or "").strip()
-            if origin == "lembrete":  # avisa depois; não é a resposta
-                later.append((origin, answer))
+            if source == "lembrete":  # avisa depois; não é a resposta
+                later.append((source, answer))
                 continue
             if not answer:  # o microfone não ouviu nada: ainda dá para digitar ou dizer "Jarvis, sim"
                 continue
             kind = answer_kind(answer)
             if kind is None:  # outro pedido no meio: cancela este e faz o novo em seguida
-                later.append((origin, answer))
+                later.append((source, answer))
                 return False
             return kind
         return False
@@ -1837,11 +1839,14 @@ def set_state(state):
 
 
 def speak(text):
-    """Fala em voz alta (voz Antônio). Desliga com --mudo."""
+    """Fala em voz alta. Se o pedido veio do celular, a voz toca no celular e o PC fica quieto. Desliga com --mudo."""
     if not voice_out:
         return
     try:
-        V.say(text, set_state)
+        if origin == "celular" and C.running():
+            C.say(text)
+        else:
+            V.say(text, set_state)
     except Exception as e:
         print(f"Jarvis > (não consegui falar: {e})")
     finally:
@@ -2085,7 +2090,7 @@ def respond(text):
         speak(say)  # volta para "parado" sozinho, até se a fala falhar
     else:
         set_state("parado")
-    if say.rstrip().endswith("?") and listener is not None:
+    if say.rstrip().endswith("?") and listener is not None and origin != "celular":
         listener.follow_up()  # ele perguntou algo: a resposta vem sem precisar dizer "Bolha"
 
 
@@ -2131,9 +2136,27 @@ def start_voice():
     print(f'Voz ligada{" (" + mic + ")" if mic else ""}: diga "{NAME}" e faça o pedido depois do bipe.')
 
 
+def hear_phone(audio, name, mime):
+    """Áudio gravado no celular -> texto (o mesmo Whisper do microfone do PC), sem o "Bolha" do começo."""
+    return V.strip_wake(N.transcribe(audio, name, mime))
+
+
+def start_phone():
+    """O Bolha no celular (veja CELULAR no LEIA-ME): liga se tiver a BOLHA_SENHA."""
+    try:
+        line = C.start(lambda text: commands.put(("celular", text)), NAME, hear_phone,
+                       V.synth_mp3 if voice_out else None)
+    except Exception as e:
+        line = f"Celular desligado: {e}"
+    if line:
+        print(line)
+    if C.running():
+        U.watch(C.publish)
+
+
 def run():
     """Laço do Jarvis: executa, um de cada vez, os pedidos digitados e falados."""
-    global queue_mode, voice_out
+    global queue_mode, voice_out, origin
     threading.Thread(target=warm_up_ai, daemon=True).start()
     voice_out = "--mudo" not in sys.argv and V.can_speak()
     if not voice_out and "--mudo" not in sys.argv:
@@ -2142,6 +2165,7 @@ def run():
         print(V.voices_summary())
     if "--sem-voz" not in sys.argv:
         start_voice()
+    start_phone()
     print("")
     queue_mode = True
     threading.Thread(target=keyboard_reader, daemon=True).start()
@@ -2166,7 +2190,7 @@ def run():
         user_text = (user_text or "").strip()
         if not user_text:
             continue
-        if origin in ("voz", "janela"):
+        if origin in ("voz", "janela", "celular"):
             print(f"Você ({origin}) > {user_text}")
         if origin == "lembrete":
             announce(f"Senhor, lembrete: {user_text}", "Lembrete")

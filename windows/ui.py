@@ -20,6 +20,7 @@ BACKGROUND = "#02080b"
 MARGIN = 16
 
 _window = None
+_watchers = []  # quem mais acompanha o reator (o celular): fn(tipo, dados)
 
 
 def mode():
@@ -152,19 +153,36 @@ def _js(code):
         pass  # janela ainda carregando ou já fechada
 
 
+def watch(fn):
+    """fn(tipo, dados) recebe tudo o que o reator mostra: estado, voce, fala e cartao (o celular usa)."""
+    _watchers.append(fn)
+
+
+def _tell(kind, **data):
+    for fn in list(_watchers):
+        try:
+            fn(kind, data)
+        except Exception:
+            pass  # o celular nunca atrapalha o reator do PC
+
+
 def state(name):
+    _tell("estado", valor=name)
     _js(f"setEstado({json.dumps(name)})")
 
 
 def heard(text):
     """O pedido que chegou (falado ou digitado): o Jarvis vem para a frente com ele na legenda "Você"."""
+    _tell("voce", valor=text)
     front()
     _js(f"mostraVoce({json.dumps(text)})")
 
 
 def speech(text):
+    _tell("fala", valor=text)
     _js(f"mostraFala({json.dumps(text)})")
 
 
 def card(title, text, ms=7000):
+    _tell("cartao", titulo=title, texto=text, ms=int(ms))
     _js(f"cartao({json.dumps(title)}, {json.dumps(text)}, {int(ms)})")

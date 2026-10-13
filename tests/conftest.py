@@ -7,7 +7,8 @@ def sem_nuvem(monkeypatch):
     for var in ("GEMINI_API_KEY", "GROQ_API_KEY", "GROQ_MODEL", "JARVIS_LOCAL"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.delenv("JARVIS_NUVEM", raising=False)
-    for var in ("WAHA_URL", "WAHA_API_KEY", "WAHA_SESSION", "ELEVENLABS_API_KEY", "JARVIS_YOUTUBE"):
+    for var in ("WAHA_URL", "WAHA_API_KEY", "WAHA_SESSION", "ELEVENLABS_API_KEY", "JARVIS_YOUTUBE",
+                "BOLHA_SENHA", "BOLHA_NGROK", "BOLHA_CELULAR_PORTA"):
         monkeypatch.delenv(var, raising=False)  # testes nunca falam com o WhatsApp nem com a ElevenLabs de verdade
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
     import sys
