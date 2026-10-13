@@ -106,3 +106,17 @@ def test_read_recent_and_from_contact(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "Últimas mensagens com Ana Paula:" in out
     assert out.index("Você: oi") < out.index("Ana Paula: tudo bem?")
+
+
+def test_bolha_sends_by_waha_without_moving_the_reactor(monkeypatch):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("jarvis_waha", ROOT / "windows" / "jarvis_ai.py")
+    J = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(J)
+    fake = FakeWaha(monkeypatch)
+    moved = []
+    monkeypatch.setattr(J, "confirm", lambda q: True)
+    monkeypatch.setattr(J.U, "behind", lambda: moved.append("atrás"))
+    J.execute_ai_action("whatsapp_send", {"contact": "Ana", "message": "oi"})
+    assert fake.calls[-1][2]["text"] == "oi"
+    assert moved == []  # pelo WAHA nada abre na tela, então o reator fica onde está

@@ -31,6 +31,7 @@ import ui as U  # noqa: E402
 import voz as V  # noqa: E402
 import nuvem as N  # noqa: E402
 import instagram as IG  # noqa: E402
+import waha as W  # noqa: E402
 
 try:
     import pyautogui
