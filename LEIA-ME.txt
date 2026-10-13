@@ -193,6 +193,24 @@ Se voce ja tinha feito "setx GROQ_MODEL" com um modelo que sumiu, apague com:
    reg delete HKCU\Environment /v GROQ_MODEL /f
 As chaves NUNCA vao para arquivo nem para o GitHub.
 
+WHATSAPP (WAHA)
+O Bolha manda e le mensagens pelo WAHA (WhatsApp HTTP API) rodando no Docker, de
+preferencia no outro PC sempre ligado. Mandar SEMPRE pergunta antes.
+No outro PC (PowerShell):
+1. Instale o Docker Desktop e deixe abrir com o Windows.
+2. docker run -d --name waha --restart always -p 3000:3000 -e WAHA_API_KEY=SUA-SENHA -v waha_data:/app/.sessions devlikeapro/waha
+3. Abra http://localhost:3000/dashboard, inicie a sessao "default" e leia o QR
+   (celular > WhatsApp > Aparelhos conectados).
+4. Libere a porta no firewall (PowerShell como administrador):
+   New-NetFirewallRule -DisplayName WAHA -Direction Inbound -LocalPort 3000 -Protocol TCP -Action Allow
+5. Veja o IP dele com ipconfig (ex.: 192.168.0.15) e deixe o PC sem suspender.
+No seu PC (PowerShell), e depois abra outro PowerShell:
+   setx WAHA_URL "http://192.168.0.15:3000"     (com ngrok: o link https do ngrok)
+   setx WAHA_API_KEY "SUA-SENHA"
+   setx WAHA_SESSION "default"                   (so se o nome da sessao for outro)
+Pedidos: "manda pra Ana que eu chego as 8", "tem mensagem nova no zap?",
+"le as mensagens da Ana". Sem WAHA_URL ele usa o WhatsApp Web no navegador dele.
+
 YOUTUBE
 Se o YouTube der "Algo deu errado" no navegador do Bolha, ele toca no seu navegador
 padrao e continua usando ele (pausar, proximo etc. vao para la). Para usar sempre o

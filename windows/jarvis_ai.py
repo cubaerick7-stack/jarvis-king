@@ -706,12 +706,13 @@ INFO_CARDS = {"weather": "Clima", "system_info": "PC", "battery_status": "Bateri
 _ran = []  # ferramentas usadas no pedido atual
 # Ferramentas cujo resultado ele conta de volta numa conversa ("Verifiquei, senhor. Em Curitiba está...")
 TALK_ABOUT = {"weather", "system_info", "battery_status", "network_info"}
+TALK_ABOUT_LIST = {"whatsapp_read"}  # mostra a lista na tela e conta o principal em voz
 
 
 def opening(name):
     """Vai abrir algo: com segunda tela, a janela nova vai para lá; sem, o Jarvis sai da frente."""
     _ran.append(name)
-    if name not in SHOWS_OUTSIDE:
+    if name not in SHOWS_OUTSIDE or (name == "whatsapp_send" and W.configured()):  # pelo WAHA nada abre na tela
         return
     try:
         if F.second_monitor():
@@ -977,6 +978,12 @@ def fast_local_router(user_text):
         minutes = n / 60 if unit.startswith("seg") else n * 60 if unit.startswith("h") else n
         tool("start_timer", minutes=minutes, message=(m.group(3) or "Tempo esgotado!").strip())
         return True
+    if re.search(r"\b(?:zap|whats ?app|mensage(?:m|ns)? nova)", clean) and not re.match(r"^(?:manda|mande|envia|envie|responde)", clean):
+        m = re.search(r"\b(?:mensage(?:m|ns)|mandou|falou|escreveu)\b.*?\b(?:d[aoe]|que (?:a|o))\s+(?!zap\b|whats)(\w[\w ]*?)"
+                      r"(?:\s+(?:no|pelo)\s+(?:zap|whats ?app))?\??$", clean)
+        if re.search(r"\b(?:le|ler|leia|ve|ver|veja|tem|chegou|quais|mostra|mostre)\b", clean):
+            tool("whatsapp_read", contact=(m.group(1).strip() if m else ""))
+            return True
     m = re.search(r"\b(?:clima|previsao do tempo|como (?:esta|ta) o tempo|temperatura|vai chover)\b(?:.*?\b(?:em|de|no|na)\s+(.+?))?\??$", clean)
     if m:
         for city in weather_cities(m.group(1) or ""):
@@ -1279,7 +1286,7 @@ def show_help():
 
 
 TOOL_GROUPS = ["som", "programas e sites", "arquivos e pastas", "ler e resumir", "mídia", "navegador", "memória", "janelas e teclado",
-               "sistema", "energia", "informação", "rotinas", "instagram"]
+               "sistema", "energia", "informação", "rotinas", "whatsapp", "instagram"]
 
 TOOLS = [
     {"name": "set_volume", "args": '{"percent":0-100}', "group": "som",
@@ -1451,9 +1458,13 @@ TOOLS = [
     {"name": "instagram_post", "args": '{"image_url":"https://...","caption":"legenda"}', "group": "instagram",
      "desc": "publicar foto que já está num link público (pede confirmação)", "examples": ["posta essa foto com a legenda bom dia"],
      "run": lambda a: ig_post(a.get("image_url", ""), a.get("caption", ""))},
-    {"name": "whatsapp_send", "args": '{"contact":"nome","message":"texto"}', "group": "navegador",
-     "desc": "mandar mensagem no WhatsApp Web (pede confirmação)", "examples": ["manda oi pra mãe no zap"],
+    {"name": "whatsapp_send", "args": '{"contact":"nome ou número","message":"texto"}', "group": "whatsapp",
+     "desc": "mandar mensagem no WhatsApp (pede confirmação)", "examples": ["manda oi pra mãe no zap"],
      "run": lambda a: _sent(B.whatsapp_send(a.get("contact", ""), a.get("message", ""), confirm))},
+    {"name": "whatsapp_read", "args": '{"contact":"nome (vazio = últimas conversas)"}', "group": "whatsapp",
+     "desc": "ler as mensagens do WhatsApp (últimas conversas ou as de um contato)",
+     "examples": ["tem mensagem nova no zap?", "lê as mensagens da Ana"],
+     "run": lambda a: B.whatsapp_read(a.get("contact", ""))},
     # ---- memória
     {"name": "set_profile", "args": '{"key":"nome|cidade|apelido|musica_favorita|...","value":"valor"}', "group": "memória",
      "desc": "guardar algo do perfil do usuário", "examples": ["eu moro em Recife"],
@@ -1539,6 +1550,7 @@ Regras:
   próximo passo. Quando terminar, "continue":false e a resposta final em reply (até 5 frases)
 - pesquisar para escolher/comparar/responder = web_search, depois web_click no melhor e web_read
 - mandar mensagem no WhatsApp = whatsapp_send (ele mesmo pede confirmação)
+- ler/ver mensagens do WhatsApp ("tem mensagem nova?", "o que a Ana mandou?") = whatsapp_read
 - use o perfil, as coisas lembradas e a conversa recente (no começo do pedido) para entender "e amanhã?", "lá", "ele"
 - clima sem cidade = cidade do perfil. Datas relativas ("sexta", "amanhã") viram AAAA-MM-DD a partir de "Agora"
 - "lembra que tenho prova sexta" = add_reminder; algo sem data ("sou alérgico a camarão") = remember;
@@ -1904,7 +1916,9 @@ CLIMA = re.compile(r"^(.*?):\s*(.*?),\s*\+?(-?\d+)\s*°C\s*\(sensação\s*\+?(-?
 
 
 def _tool_lines(out):
-    lines = [line[len("Jarvis > "):].strip() for line in out.splitlines() if line.startswith("Jarvis > ")]
+    """O que as ferramentas mostraram: as linhas "Jarvis > ..." e as da lista logo abaixo delas."""
+    lines = [line[len("Jarvis > "):].strip() if line.startswith("Jarvis > ") else line.strip()
+             for line in out.splitlines()]
     return [line for line in lines if line and not line.startswith("(")]
 
 
@@ -2055,7 +2069,7 @@ def respond(text):
     head, rest = last_said(out)
     say = spoken(head, rest)
     caption = say if head.endswith("...") else head
-    if not rest and any(n in TALK_ABOUT for n in _ran):
+    if (not rest and any(n in TALK_ABOUT for n in _ran)) or any(n in TALK_ABOUT_LIST for n in _ran):
         say = caption = talk_about(text, out) or say  # "Verifiquei, senhor. A previsão é..."
     U.speech(caption)
     if rest:

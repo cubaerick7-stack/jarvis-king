@@ -347,3 +347,20 @@ def test_weather_falls_back_to_open_meteo(monkeypatch, capsys):
     monkeypatch.setattr(F, "_get_json", lambda url, timeout=8: pages["geocoding" if "geocoding" in url else "forecast"])
     assert F.weather("sao paulo") is True
     assert "São Paulo: Chuva fraca, +24°C (sensação +26°C), umidade 60%, vento 11km/h" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("text, contact", [
+    ("tem mensagem nova no zap?", ""),
+    ("lê as mensagens da Ana no whatsapp", "ana"),
+    ("ve o whatsapp", ""),
+])
+def test_whatsapp_read_routes(jarvis, monkeypatch, text, contact):
+    asked = []
+    monkeypatch.setattr(jarvis.B, "whatsapp_read", lambda c="": asked.append(c) or True)
+    assert jarvis.fast_local_router(text)
+    assert asked == [contact]
+
+
+def test_open_whatsapp_still_opens_the_site(jarvis):
+    assert route(jarvis, "abre o whatsapp") != "IA"
+    assert not any(n == "whatsapp_read" for n, _ in jarvis.calls)

@@ -402,12 +402,71 @@ def _first_visible(p, selectors, timeout):
     return None
 
 
+def _waha_send(contact, message, confirm):
+    """Pelo WAHA: acha o contato, pergunta e manda. Erro antes de perguntar sobe (aí vai pelo WhatsApp Web)."""
+    import waha
+    chat_id, name = waha.find_contact(contact, same_person)
+    if not chat_id:
+        _say(f"Não achei {contact} nos contatos do WhatsApp.")
+        return False
+    if not confirm(f'Mando "{message}" para {name}?'):
+        _say("Cancelado, não enviei.")
+        return False
+    try:
+        waha.send_text(chat_id, message)
+    except waha.WahaError as e:  # depois do "sim" não tenta de novo por outro caminho: podia mandar duas vezes
+        _say(f"Não consegui enviar: {e}.")
+        return False
+    _say(f"Mensagem enviada para {name}.")
+    return f"Enviado para {name}: {message}"
+
+
+def whatsapp_read(contact=""):
+    """Lê as últimas conversas (ou as mensagens de um contato) pelo WAHA."""
+    import waha
+    if not waha.configured():
+        _say("Para ler as mensagens eu preciso do WAHA ligado (veja WHATSAPP no LEIA-ME).")
+        return False
+    contact = str(contact or "").strip()
+    try:
+        if contact:
+            chat_id, name = waha.find_contact(contact, same_person)
+            if not chat_id:
+                _say(f"Não achei {contact} nos contatos do WhatsApp.")
+                return False
+            msgs = waha.messages(chat_id)
+            if not msgs:
+                _say(f"Não tem mensagens com {name}.")
+                return True
+            _say(f"Últimas mensagens com {name}:")
+            for mine, text, when in msgs:
+                print(f"  {when} {'Você' if mine else name}: {text}")
+        else:
+            chats = waha.recent_chats()
+            if not chats:
+                _say("Não achei conversas no WhatsApp.")
+                return True
+            _say("Últimas conversas no WhatsApp:")
+            for name, who, text, when in chats:
+                print(f"  {when} {name}: {'(você) ' if who == 'você' else ''}{text}")
+    except waha.WahaError as e:
+        _say(f"O WhatsApp não respondeu: {e}.")
+        return False
+    return True
+
+
 def whatsapp_send(contact, message, confirm):
-    """Manda mensagem pelo WhatsApp Web. Sempre confirma antes de enviar, com o nome da conversa que abriu."""
+    """Manda mensagem pelo WAHA (se configurado) ou pelo WhatsApp Web. Sempre confirma antes de enviar."""
     contact, message = str(contact).strip(), str(message).strip()
     if not contact or not message:
         _say("Preciso do nome do contato e da mensagem.")
         return False
+    import waha
+    if waha.configured():
+        try:
+            return _waha_send(contact, message, confirm)
+        except waha.WahaError as e:
+            _say(f"O WAHA falhou ({e}); vou pelo WhatsApp Web.")
     p = page("zap")
     if "web.whatsapp.com" not in p.url:
         p.goto(WHATSAPP, wait_until="domcontentloaded", timeout=30000)
