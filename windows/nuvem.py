@@ -21,6 +21,8 @@ API = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateC
 DEFAULT_MODELS = ["gemini-flash-latest", "gemini-flash-lite-latest"]
 TIMEOUT = 20
 GEN_TIMEOUT = 15  # o Gemini que passa disso costuma estar "pensando" demais: o lite responde em segundos
+SEARCH_TIMEOUT = 40  # pesquisar no Google antes de responder demora mais que uma resposta comum
+GROQ_SEARCH_MODELS = ["groq/compound-mini", "groq/compound"]  # modelos do Groq que pesquisam na internet sozinhos
 
 
 GROQ_API = "https://api.groq.com/openai/v1/chat/completions"
@@ -70,6 +72,10 @@ def _request(url, body, headers, timeout=TIMEOUT):
 
 def _post(model, body, key):
     return _request(API.format(model=model), body, {"x-goog-api-key": key}, GEN_TIMEOUT)
+
+
+def _search_post(model, body, key):
+    return _request(API.format(model=model), body, {"x-goog-api-key": key}, SEARCH_TIMEOUT)
 
 
 def _timed_out(e):
@@ -202,11 +208,55 @@ def generate(system, user, json_mode=False, max_tokens=2048, temperature=0.0):
 
 
 def search_generate(system, user, max_tokens=1800):
-    """Gemini com a busca do Google ligada: responde com informação atual e devolve (texto, fontes).
-    As fontes vêm como [{"nome": "g1.globo.com", "titulo": "...", "url": "..."}]. Levanta CloudError se falhar."""
+    """Responde com informação atual da internet e devolve (texto, fontes): primeiro o Gemini com a busca do
+    Google; se ele falhar (cota, demora), o Groq Compound, que também pesquisa. Levanta CloudError se nenhum der.
+    As fontes vêm como [{"nome": "g1.globo.com", "titulo": "...", "url": "..."}]."""
+    errors = []
+    if available():
+        try:
+            return _gemini_search(system, user, max_tokens)
+        except CloudError as e:
+            if "recusada" in str(e) and not groq_available():
+                raise
+            errors.append(str(e))
+    if groq_available():
+        try:
+            return _groq_search(system, user, max_tokens)
+        except CloudError as e:
+            errors.append(str(e))
+    if not errors:
+        raise CloudError("sem GEMINI_API_KEY nem GROQ_API_KEY")
+    raise CloudError("; ".join(errors))
+
+
+def _groq_search(system, user, max_tokens):
+    key, errors = groq_key(), []
+    for model in GROQ_SEARCH_MODELS:
+        body = {"model": model, "temperature": 0.2, "max_tokens": max_tokens,
+                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+        try:
+            data = _call(_groq_post, body, key)
+            text = data["choices"][0]["message"]["content"] or ""
+        except _Http as h:
+            errors.append(f"{model}: HTTP {h.code} {_message(h.body)}".strip())
+            fail = _http_fail("Groq", h, h.body)
+            if fail:
+                raise fail from h
+            continue
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            errors.append(f"{model}: {getattr(e, 'reason', e)}")
+            continue
+        except (KeyError, IndexError, TypeError):
+            errors.append(f"{model}: resposta vazia")
+            continue
+        if text.strip():
+            return text, []
+        errors.append(f"{model}: resposta vazia")
+    raise CloudError("o Groq não pesquisou (" + "; ".join(errors) + ")")
+
+
+def _gemini_search(system, user, max_tokens):
     key = api_key()
-    if not key:
-        raise CloudError("sem GEMINI_API_KEY")
     body = {
         "systemInstruction": {"parts": [{"text": system}]},
         "contents": [{"role": "user", "parts": [{"text": user}]}],
@@ -216,7 +266,7 @@ def search_generate(system, user, max_tokens=1800):
     errors, limited = [], False
     for model in _in_order([m for m in models() if m not in _dead]):
         try:
-            data = _call(_post, model, _with_thinking(body, model not in _no_thinking_cfg), key)
+            data = _call(_search_post, model, _with_thinking(body, model not in _no_thinking_cfg), key)
         except _Http as h:
             errors.append(f"{model}: HTTP {h.code} {_message(h.body)}".strip())
             fail = _http_fail("Gemini", h, h.body)
@@ -225,7 +275,7 @@ def search_generate(system, user, max_tokens=1800):
             if h.code == 400 and model not in _no_thinking_cfg:
                 _no_thinking_cfg.add(model)  # talvez só recuse o thinkingConfig: repete sem
                 try:
-                    data = _call(_post, model, body, key)
+                    data = _call(_search_post, model, body, key)
                 except _Http as h2:
                     errors.append(f"{model}: HTTP {h2.code} {_message(h2.body)}".strip())
                     continue
@@ -238,7 +288,7 @@ def search_generate(system, user, max_tokens=1800):
                 continue
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             if _timed_out(e):
-                errors.append(f"{model}: demorou mais de {GEN_TIMEOUT} s")
+                errors.append(f"{model}: demorou mais de {SEARCH_TIMEOUT} s")
                 continue
             raise CloudError(f"sem conexão com o Gemini ({getattr(e, 'reason', e)})") from e
         try:

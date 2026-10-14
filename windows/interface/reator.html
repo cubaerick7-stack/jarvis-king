@@ -92,13 +92,13 @@ input::placeholder { color: var(--muted); }
   .botoes button { width: 30px; height: 30px; border-radius: 50%; border-color: var(--line-soft); background: rgba(5, 24, 30, .6); }
   .botoes button:hover, .botoes button:focus-visible { border-color: var(--cyan); outline: none; }
   .reator { position: fixed; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; }
-  .estado { position: fixed; top: 11vh; left: 50%; transform: translateX(-50%); z-index: 4; letter-spacing: .55em;
+  .estado { position: fixed; top: max(11vh, 112px); left: 50%; transform: translateX(-50%); z-index: 4; letter-spacing: .55em;
     font-size: 14px; white-space: nowrap; pointer-events: none; text-shadow: 0 0 12px var(--cyan); padding-left: .55em; }
   .estado::after { content: ""; display: block; width: 190px; height: 6px; margin: 9px auto 0; opacity: .7;
     background: repeating-linear-gradient(90deg, var(--line-strong) 0 1px, transparent 1px 4px);
     -webkit-mask: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent); mask: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent); }
   .orbe { display: grid; }
-  .hud-topo { display: flex; position: fixed; top: 74px; left: 50%; transform: translateX(-50%); z-index: 4; gap: 12px; align-items: center;
+  .hud-topo { display: flex; position: fixed; top: 66px; left: 50%; transform: translateX(-50%); z-index: 4; gap: 12px; align-items: center;
     font: 10px var(--mono); letter-spacing: .26em; color: var(--muted); white-space: nowrap; pointer-events: none;
     padding: 5px 16px; border: 1px solid var(--line-soft); border-radius: 999px; background: rgba(4, 20, 54, .55); }
   .hud-topo .led { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); animation: led 2.4s ease-in-out infinite; }
@@ -783,7 +783,7 @@ function bate(a, b) { return !(a.right <= b.left || b.right <= a.left || a.botto
 function poe(el, tipo) {
   const lugar = LUGAR[tipo];
   if (lugar.aviso) { aplica(el, { left: `calc(50% - ${Math.min(340, innerWidth - 32) / 2}px)`, top: '11vh' }); return; }
-  if (lugar.pesquisa) { aplica(el, { left: `calc(50% - ${Math.min(540, innerWidth - 32) / 2}px)`, top: `${Math.max(120, innerHeight * .17)}px` }); return; }
+  if (lugar.pesquisa) { aplica(el, { left: `calc(50% - ${Math.min(540, innerWidth - 32) / 2}px)`, top: `${Math.max(150, innerHeight * .19)}px` }); return; }
   if (lugar.metrica) {
     const direita = [...abertas.values()].filter(j => j.el !== el && j.tipo === 'metrica').length % 2;  // a segunda vai para a esquerda
     aplica(el, direita ? { left: '7vw', top: `${Math.max(120, cy - 70)}px` } : { right: '7vw', top: `${Math.max(120, cy - 70)}px` });

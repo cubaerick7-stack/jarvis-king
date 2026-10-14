@@ -599,14 +599,15 @@ def research(query):
     if not query:
         print("Jarvis > O que o senhor quer que eu pesquise?")
         return False
-    if not N.available():
-        print("Jarvis > Para pesquisar na internet preciso da chave do Gemini (setx GEMINI_API_KEY).")
+    if not N.available() and not N.groq_available():
+        print("Jarvis > Para pesquisar na internet preciso da chave do Gemini ou do Groq (setx GEMINI_API_KEY).")
         return False
     set_state("pensando")
+    U.speech("Pesquisando, senhor...")  # a busca leva alguns segundos: a legenda já mostra que ele está nisso
     try:
         raw, sources = N.search_generate(RESEARCH_PROMPT, f"Hoje é {time.strftime('%d/%m/%Y')}. Pergunta: {query}")
     except Exception as e:
-        print(f"Jarvis > Não consegui pesquisar agora: {e}")
+        print(f"Jarvis > Não consegui pesquisar agora, senhor. ({e})")
         return False
     data = _clean_research(raw)
     if data is None:  # a IA respondeu em texto solto: vira só o resumo
@@ -1819,6 +1820,15 @@ def run_actions(actions):
     return failed, seen
 
 
+def _failure_reason(entry):
+    """O que uma ação que FALHOU disse (a última linha "Jarvis > ..."), ou "" se não disse nada."""
+    head, _, shown = entry.partition("\n")
+    if not head.endswith("-> FALHOU"):
+        return ""
+    said = [line for line in shown.splitlines() if line.startswith("Jarvis > ") and not line.startswith("Jarvis > (")]
+    return said[-1] if said else ""
+
+
 def ask_ai_router(user_text):
     """Modo ciclo: a IA age, vê o resultado e decide o próximo passo, até terminar."""
     history = []
@@ -1848,7 +1858,9 @@ def ask_ai_router(user_text):
             print("Jarvis > Parei aqui para não gastar o limite grátis da IA; o que achei está na tela.")
             return True
         if failed:
-            print(f"Jarvis > Não deu certo: {', '.join(failed)}.")
+            # a ferramenta que falhou já disse o motivo ("Não consegui pesquisar agora..."): ele fica na legenda
+            if not any(_failure_reason(entry) for entry in seen):
+                print(f"Jarvis > Não deu certo: {', '.join(failed)}.")
         elif reply:
             print(f"Jarvis > {reply}")
         return True

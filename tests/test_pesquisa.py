@@ -34,7 +34,7 @@ def test_search_generate_turns_on_google_search_and_lists_sources_once(monkeypat
         bodies.append(body)
         return grounded("resposta")
 
-    monkeypatch.setattr(N, "_post", fake_post)
+    monkeypatch.setattr(N, "_search_post", fake_post)
     text, sources = N.search_generate("sistema", "pergunta")
     assert text == "resposta" and bodies[0]["tools"] == [{"google_search": {}}]
     assert [s["nome"] for s in sources] == ["g1.globo.com", "elpais.com"]
@@ -76,6 +76,33 @@ def test_research_without_key_or_question_does_not_call_the_cloud(monkeypatch, c
     assert j.research("") is False
     assert j.research("quem ganhou") is False  # sem GEMINI_API_KEY
     assert "GEMINI_API_KEY" in capsys.readouterr().out
+
+
+def test_search_falls_back_to_groq_compound_when_gemini_fails(monkeypatch):
+    import urllib.error
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setenv("GROQ_API_KEY", "g")
+    monkeypatch.setattr(N, "_search_post", lambda *a: (_ for _ in ()).throw(urllib.error.URLError(TimeoutError("timed out"))))
+    asked = []
+
+    def fake_groq(body, key):
+        asked.append(body["model"])
+        return {"choices": [{"message": {"content": "resposta do groq"}}]}
+
+    monkeypatch.setattr(N, "_groq_post", fake_groq)
+    assert N.search_generate("s", "u") == ("resposta do groq", [])
+    assert asked == ["groq/compound-mini"]
+
+
+def test_failed_tool_reason_stays_in_the_caption(monkeypatch, capsys):
+    j = load_jarvis()
+    monkeypatch.setattr(j, "think", lambda *a, **k: {"actions": [{"name": "research", "args": {"query": "eleição"}}],
+                                                     "reply": "Pesquisei."})
+    monkeypatch.setattr(j, "research", lambda q: print("Jarvis > Não consegui pesquisar agora, senhor.") or False)
+    monkeypatch.setitem(j.TOOLS_BY_NAME["research"], "run", lambda a: j.research(a.get("query")))
+    j.ask_ai_router("como está a eleição")
+    out = capsys.readouterr().out
+    assert "Não deu certo" not in out and out.strip().endswith("Não consegui pesquisar agora, senhor.")
 
 
 def pytest_fail():
