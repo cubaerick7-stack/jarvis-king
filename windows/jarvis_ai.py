@@ -835,6 +835,12 @@ POLITE_END = re.compile(r"(?:[\s,]+(?:por favor|pfv|pra mim|para mim)|\s*,\s*ai|
 POLITE_START = re.compile(r"^por favor[,\s]+", re.I)
 
 
+NEWS = re.compile(r"\b(?:eleic\w*|segundo turno|primeiro turno|apuracao|noticias?|placar|cotacao|dolar|bitcoin|"
+                  r"resultado d[oa] jogo|o que aconteceu)\b")
+COMMAND_START = re.compile(r"^(?:abre|abra|abrir|toca|toque|tocar|coloca|bota|pesquisa|pesquise|procura|procure|busca|"
+                           r"busque|fecha|feche|manda|mande|lembra|lembre|anota|digita)\b")
+
+
 def fast_local_router(user_text):
     full = clean_prefix(user_text)  # do jeito que veio (para "digita ...")
     # por voz chega "abre o Chrome, por favor." / "abre o Spotify aí": o fim atrapalha achar o programa
@@ -842,6 +848,11 @@ def fast_local_router(user_text):
     clean = normalize(text)
 
     if small_talk(normalize(user_text)) or small_talk(clean):
+        return True
+
+    # pergunta de notícia/fato atual: direto para a pesquisa (a IA às vezes respondia de memória que "não dá")
+    if NEWS.search(clean) and not COMMAND_START.match(clean):
+        act("research", research, text)
         return True
 
     # memória
@@ -1654,7 +1665,8 @@ Regras:
 - MODO CICLO: se precisar VER o resultado antes de decidir (pesquisar na web, ler página, procurar arquivo,
   escolher entre opções), faça essa ação e coloque "continue":true. Você recebe o resultado e decide o
   próximo passo. Quando terminar, "continue":false e a resposta final em reply (até 5 frases)
-- pergunta de fato ATUAL (notícia, eleição, placar, cotação, "quem ganhou", "o que aconteceu") = research (a janela com o resultado aparece na tela)
+- pergunta de fato ATUAL (notícia, eleição, placar, cotação, "quem ganhou", "o que aconteceu") = research (a janela com o resultado aparece na tela).
+  SEMPRE chame research de novo, mesmo que a conversa recente diga que a pesquisa falhou ou a cota acabou: nunca responda de memória que não dá
 - pesquisar para escolher/comparar/responder = web_search, depois web_click no melhor e web_read
 - mandar mensagem no WhatsApp = whatsapp_send (ele mesmo pede confirmação)
 - ler/ver mensagens do WhatsApp ("tem mensagem nova?", "o que a Ana mandou?") = whatsapp_read

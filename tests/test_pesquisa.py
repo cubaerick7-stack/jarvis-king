@@ -277,3 +277,16 @@ def test_research_uses_the_request_when_the_ai_forgets_the_query(monkeypatch):
     assert j._research_query({"pergunta": "segundo turno"}) == "segundo turno"
     assert j._research_query({}) == "como está o segundo turno"
     assert j._research_query({"query": "  "}) == "como está o segundo turno"
+
+
+def test_news_questions_go_straight_to_research(monkeypatch):
+    j = load_jarvis()
+    asked = []
+    monkeypatch.setattr(j, "research", lambda q: asked.append(q) or True)
+    for text in ("OLÁ AS ELEIÇOES ESTAO COMO AGR????", "como está o segundo turno", "quanto está o dólar hoje", "qual o resultado do jogo do Flamengo"):
+        assert j.fast_local_router(text) is True, text
+    assert len(asked) == 4
+    asked.clear()
+    monkeypatch.setattr(j, "search_web", lambda *a: True)
+    j.fast_local_router("pesquisa eleições 2026")  # "pesquisa X" continua abrindo o navegador
+    assert asked == []
