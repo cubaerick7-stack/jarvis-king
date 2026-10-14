@@ -348,3 +348,17 @@ def test_whatsapp_sent_line_is_the_caption_not_the_ai_reply(monkeypatch, capsys)
                         lambda a: print("Jarvis > Enviei print_1.png para Erick Cuba.") or True)
     j.ask_ai_router("manda um print pro erick")
     assert capsys.readouterr().out.strip().endswith("Enviei print_1.png para Erick Cuba.")
+
+
+def test_scheduled_request_arriving_during_a_question_waits_its_turn(monkeypatch):
+    j = load_jarvis()
+    j.queue_mode = True
+    for fn in ("speak", "set_state"):
+        monkeypatch.setattr(j, fn, lambda *a: None)
+    monkeypatch.setattr(j.U, "card", lambda *a, **k: None)
+    monkeypatch.setattr(j.U, "speech", lambda *a: None)
+    j.commands.put(("agendado", "toca evidências"))  # chegou a hora no meio do "Posso enviar?"
+    j.commands.put(("janela", "sim"))
+    assert j.confirm("Mando oi para Ana?") is True  # não cancelou
+    assert j.commands.get_nowait() == ("agendado", "toca evidências")  # e ele faz logo depois
+    assert any(t["name"] == "schedule_request" for t in j.TOOLS)

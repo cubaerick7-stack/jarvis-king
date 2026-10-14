@@ -158,6 +158,9 @@ INTERFACE (TELA CHEIA)
    Varios cards: o novo abre no centro e o anterior vai minimizado para a
    coluna JANELAS na esquerda. Clique nele para trazer de volta; "–" minimiza,
    "×" fecha, arraste pela barra ou pelo titulo. Esc fecha o da frente.
+   Pedido com hora: "coloca evidencias as 7h", "amanha as 8h abre o Spotify",
+   "as 22h manda boa noite pra mae". Na hora ele FAZ o pedido (o PC ligado e o
+   Bolha aberto); se ele estava fechado e passou mais de 30 min, so avisa.
 7. Bateria e PC viram um widget com icone brilhando e os numeros de verdade.
 8. Disco com a camera no meio do reator ("identidade confirmada", opcional):
    setx JARVIS_CAMERA 1      (e abra o PowerShell de novo)

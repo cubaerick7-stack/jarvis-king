@@ -158,8 +158,9 @@ def what_i_know():
 
 # ------------------------- lembretes -------------------------
 
-def add_reminder(text, day, hour=""):
-    """day = AAAA-MM-DD; hour = HH:MM (sem hora, avisa às 9h ou ao abrir o Jarvis)."""
+def add_reminder(text, day, hour="", pedido=False):
+    """day = AAAA-MM-DD; hour = HH:MM (sem hora, avisa às 9h ou ao abrir o Jarvis).
+    pedido=True: na hora ele FAZ o pedido ("toca evidências"), em vez de só avisar."""
     try:
         d = date.fromisoformat(str(day).strip())
     except ValueError:
@@ -177,14 +178,43 @@ def add_reminder(text, day, hour=""):
         hour = f"{h:02d}:{mi:02d}"
     with _lock:
         data = load()
-        data["lembretes"].append({"texto": str(text).strip(), "data": d.isoformat(), "hora": hour, "avisado": False})
+        item = {"texto": str(text).strip(), "data": d.isoformat(), "hora": hour, "avisado": False}
+        if pedido:
+            item["pedido"] = True
+        data["lembretes"].append(item)
         save(data)
-    _say(f"Lembrete marcado para {d:%d/%m}{' às ' + hour if hour else ''}: {text}.")
+    if pedido:
+        _say(f"Combinado, senhor: {d:%d/%m}{' às ' + hour if hour else ''} eu faço \"{text}\".")
+    else:
+        _say(f"Lembrete marcado para {d:%d/%m}{' às ' + hour if hour else ''}: {text}.")
     return True
 
 
 def due_reminders(now=None):
     """Lembretes que já venceram e ainda não foram avisados (marca como avisados)."""
+    return [r.get("texto", "lembrete") for r, _ in _due(now)]
+
+
+LATE = 30 * 60  # pedido agendado com mais de 30 min de atraso (o Bolha estava fechado) não é feito: só avisa
+
+
+def due_items(now=None):
+    """Para a fila do Jarvis: ("lembrete", texto) para avisar ou ("agendado", pedido) para fazer agora."""
+    now = now or datetime.now()
+    out = []
+    for r, when in _due(now):
+        text = r.get("texto", "lembrete")
+        if not r.get("pedido"):
+            out.append(("lembrete", text))
+        elif (now - when).total_seconds() > LATE:
+            out.append(("lembrete", f'não fiz "{text}" às {when:%H:%M} de {when:%d/%m} porque eu estava desligado'))
+        else:
+            out.append(("agendado", text))
+    return out
+
+
+def _due(now=None):
+    """[(lembrete, quando)] dos que venceram e não foram avisados (marca como avisados)."""
     now = now or datetime.now()
     with _lock:
         data = load()
@@ -198,7 +228,7 @@ def due_reminders(now=None):
                 when = now
             if when <= now:
                 r["avisado"] = True
-                due.append(r.get("texto", "lembrete"))
+                due.append((r, when))
         if due:
             save(data)
     return due
@@ -211,8 +241,8 @@ def reminder_watcher(put, every=30):
     def loop():
         while True:
             try:
-                for text in due_reminders():
-                    put(("lembrete", text))
+                for item in due_items():
+                    put(item)
             except Exception:
                 pass
             time.sleep(every)

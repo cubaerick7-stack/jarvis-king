@@ -152,3 +152,15 @@ def test_broken_reminder_does_not_block_others():
                          {"texto": "certo", "data": "2026-10-16", "hora": "07:00"}]
     M.save(data)
     assert M.due_reminders(datetime(2026, 10, 16, 8, 0)) == ["estragado", "certo"]
+
+
+def test_scheduled_request_is_done_on_time_and_late_ones_only_warn(tmp_path, monkeypatch):
+    from datetime import datetime
+    M.add_reminder("toca evidências", "2026-10-15", "7h", pedido=True)
+    M.add_reminder("prova de inglês", "2026-10-15", "7h")
+    assert M.due_items(datetime(2026, 10, 15, 6, 59)) == []
+    assert M.due_items(datetime(2026, 10, 15, 7, 0, 20)) == [("agendado", "toca evidências"), ("lembrete", "prova de inglês")]
+    assert M.due_items(datetime(2026, 10, 15, 7, 1)) == []  # cada um só uma vez
+    M.add_reminder("abre o spotify", "2026-10-15", "08:00", pedido=True)
+    late = M.due_items(datetime(2026, 10, 15, 9, 0))  # o Bolha estava fechado às 8h: não abre fora de hora
+    assert late == [("lembrete", 'não fiz "abre o spotify" às 08:00 de 15/10 porque eu estava desligado')]

@@ -1395,7 +1395,7 @@ def confirm(question):
             except queue.Empty:
                 break
             answer = (answer or "").strip()
-            if source == "lembrete":  # avisa depois; não é a resposta
+            if source in ("lembrete", "agendado"):  # avisa/faz depois; não é a resposta
                 later.append((source, answer))
                 continue
             if not answer:  # o microfone não ouviu nada: ainda dá para digitar ou dizer "Jarvis, sim"
@@ -1651,6 +1651,10 @@ TOOLS = [
     {"name": "remember", "args": '{"fact":"texto"}', "group": "memória",
      "desc": "guardar uma informação que o usuário pediu para lembrar", "examples": ["lembra que eu sou alérgico a camarão"],
      "run": lambda a: M.remember(a.get("fact", ""))},
+    {"name": "schedule_request", "args": '{"request":"o pedido como o senhor falaria (ex.: toca evidências)","day":"AAAA-MM-DD","hour":"HH:MM"}',
+     "group": "memória", "desc": "FAZER um pedido mais tarde, numa data e hora (tocar música, abrir programa, mandar mensagem)",
+     "examples": ["coloca evidências às 7h", "amanhã às 8h abre o Spotify", "às 22h manda boa noite pra mãe"],
+     "run": lambda a: M.add_reminder(a.get("request", ""), a.get("day", ""), a.get("hour", ""), pedido=True)},
     {"name": "add_reminder", "args": '{"text":"o que lembrar","day":"AAAA-MM-DD","hour":"HH:MM ou vazio"}', "group": "memória",
      "desc": "marcar um lembrete para um dia (e hora)", "examples": ["me lembra da prova na sexta"],
      "run": lambda a: M.add_reminder(a.get("text", ""), a.get("day", ""), a.get("hour", ""))},
@@ -1740,6 +1744,8 @@ Regras:
 - ler/ver mensagens do WhatsApp ("tem mensagem nova?", "o que a Ana mandou?") = whatsapp_read
 - use o perfil, as coisas lembradas e a conversa recente (no começo do pedido) para entender "e amanhã?", "lá", "ele"
 - clima sem cidade = cidade do perfil. Datas relativas ("sexta", "amanhã") viram AAAA-MM-DD a partir de "Agora"
+- pedido para FAZER algo num horário ("coloca tal música às 7h", "amanhã 8h abre o Spotify") = schedule_request
+  com o pedido escrito como o senhor falaria; só AVISAR de algo ("me lembra da prova") = add_reminder
 - "lembra que tenho prova sexta" = add_reminder; algo sem data ("sou alérgico a camarão") = remember;
   nome, cidade, gostos = set_profile
 - se nenhuma ferramenta serve, diga isso em reply; nunca finja que fez
@@ -2418,6 +2424,8 @@ def run():
         if origin == "lembrete":
             announce(f"Senhor, lembrete: {user_text}", "Lembrete")
             continue
+        if origin == "agendado":  # pedido marcado para esta hora: faz como se o senhor tivesse pedido agora
+            print(f"Jarvis > (agendado) {user_text}")
         if normalize(user_text) in {"sair", "exit", "quit"}:
             print("Jarvis > Até mais.")
             break
