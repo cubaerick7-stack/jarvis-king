@@ -2161,6 +2161,11 @@ def wake_up(music=""):
     U.front()  # vem para a frente na tela principal, mesmo minimizado ou atrás de outra janela
     print("Jarvis > (despertador) Hora de acordar, senhor.")
     play_youtube(music or MUSICA_DESPERTAR or MUSICA_BOM_DIA)
+    # o YouTube abre por cima: o Bolha volta para a frente (de novo depois, o navegador demora a carregar),
+    # para o ACORDEI estar na tela quando o senhor abrir o olho
+    U.front()
+    for wait in (3, 8):
+        threading.Timer(wait, U.front).start()
     U.card("Despertador", datetime.now().strftime("%H:%M"), WAIT_AWAKE * 1000)
     U.speech("Hora de acordar, senhor. Aperte ACORDEI quando estiver de pé.")
     if listener is not None:
