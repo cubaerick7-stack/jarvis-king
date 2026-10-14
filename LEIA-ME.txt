@@ -155,6 +155,9 @@ INTERFACE (TELA CHEIA)
    de busca acabar, le as noticias do Google Noticias e do Bing (RSS, sem chave)
    e a IA que tiver cota (Gemini ou Groq) monta a janela com isso.
    Outro modelo para a busca:  setx GEMINI_SEARCH_MODEL nome-do-modelo
+   Varios cards: o novo abre no centro e o anterior vai minimizado para a
+   coluna JANELAS na esquerda. Clique nele para trazer de volta; "–" minimiza,
+   "×" fecha, arraste pela barra ou pelo titulo. Esc fecha o da frente.
 7. Bateria e PC viram um widget com icone brilhando e os numeros de verdade.
 8. Disco com a camera no meio do reator ("identidade confirmada", opcional):
    setx JARVIS_CAMERA 1      (e abra o PowerShell de novo)

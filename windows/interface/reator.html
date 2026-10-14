@@ -301,6 +301,28 @@ body.foco .legenda, body.foco .estado, body.foco .hud-topo { opacity: 0; }
 .cartao .mt-icone::before { width: 88px; height: 88px; } .cartao .mt-icone::after { width: 62px; height: 62px; }
 
 
+/* ---- doca: os cards minimizados ficam na lateral esquerda; clique traz de volta ao centro ---- */
+#doca { position: absolute; left: 18px; top: 19vh; display: flex; flex-direction: column; gap: 8px; width: min(250px, 26vw);
+  pointer-events: none; transition: opacity .3s; }
+#doca::before { content: "JANELAS"; font: 9px var(--mono); letter-spacing: .3em; color: var(--muted); padding-left: 4px; }
+#doca:empty::before { display: none; }
+body.foco #doca { opacity: 0; pointer-events: none; }
+.chip { pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 10px; text-align: left; cursor: pointer;
+  color: var(--text); font: inherit; background: var(--glass); border: 1px solid var(--line-soft); border-left: 2px solid var(--cyan);
+  border-radius: 12px; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); transition: transform .2s, border-color .2s, box-shadow .2s; }
+.chip:hover, .chip:focus-visible { transform: translateX(4px); border-color: var(--line-strong); box-shadow: 0 0 18px rgba(53, 200, 255, .25); outline: none; }
+.chip .icone-tipo { width: 26px; height: 26px; }
+.chip-txt { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.chip-txt small { font: 9px var(--mono); letter-spacing: .18em; color: var(--muted); text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip-txt b { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip-x { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 50%; color: var(--muted); font: 14px/1 var(--mono); }
+.chip-x:hover { color: var(--cyan); background: rgba(53, 200, 255, .12); }
+.janela[hidden] { display: none !important; }
+.j-lista, .j-texto, .j-zap { width: min(520px, calc(100vw - 32px)); }
+.mini { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line-soft); background: transparent;
+  color: var(--cyan); font: 15px/1 var(--mono); cursor: pointer; flex: none; padding: 0; }
+.mini:hover, .mini:focus-visible { background: rgba(95, 230, 240, .14); outline: none; }
+
 /* ---- disco central (câmera) ---- */
 .disco { position: fixed; z-index: 2; border-radius: 50%; pointer-events: none; opacity: 0; transform: scale(.6);
   transition: opacity .6s, transform .6s cubic-bezier(.2, .8, .2, 1); }
@@ -408,7 +430,7 @@ function tam() {
   posDisco();
   // em tela cheia não se arrasta a janela (ela ocupa a tela toda)
   for (const el of document.querySelectorAll('header, .reator')) el.classList.toggle('pywebview-drag-region', !cheia);
-  if (cheia) for (const j of abertas.values()) poe(j.el, j.tipo);
+  if (cheia) for (const j of abertas.values()) if (!j.min) poe(j.el, j.tipo);
   else if (era) fechaTudo();
 }
 
@@ -464,7 +486,7 @@ function quadro(agora) {
   t += (reduz ? 0.004 : 0.032) * f;
   mistura(ESTADOS[estado], 1 - Math.pow(1 - .06, f));
   // com janelas abertas na tela cheia o reator fica mais apagado, para o conteúdo ficar na frente
-  abafado += ((cheia && camada.querySelector('.janela:not(.j-aviso)') ? 1 : 0) - abafado) * .05 * f;
+  abafado += ((cheia && camada.querySelector('.janela:not(.j-aviso):not(.min)') ? 1 : 0) - abafado) * .05 * f;
   const brilho = atual.brilho * (1 - abafado * .35);
   // Voz simulada: a sua (ouvindo) ou a dele (falando), em sílabas irregulares
   const alvoVoz = estado === 'falando' ? Math.abs(Math.sin(t * 9) * Math.sin(t * 3.7 + 1))
@@ -612,7 +634,9 @@ const CANTOS = [
   { left: '4vw', top: '14vh' }, { right: '4vw', top: '14vh' },
   { left: '5vw', bottom: '22vh' }, { right: '5vw', bottom: '22vh' },
 ];
-const LUGAR = { musica: { canto: 0 }, lista: { canto: 1 }, texto: { canto: 3 }, clima: { canto: 2 }, zap: { canto: 1 },
+// Os cards grandes vão para o PALCO (centro); o anterior minimiza para a doca da esquerda
+const PALCO = new Set(['pesquisa', 'lista', 'texto', 'clima', 'zap']);
+const LUGAR = { musica: { canto: 1 }, lista: { palco: true }, texto: { palco: true }, clima: { palco: true }, zap: { palco: true },
   confirmar: { centro: true }, aviso: { aviso: true }, pesquisa: { pesquisa: true }, metrica: { metrica: true } };
 const TITULO = { 'tocando agora': 'musica', confirmar: 'confirmar', lembrete: 'aviso', 'sugestão': 'aviso', sugestao: 'aviso',
   clima: 'clima', whatsapp: 'zap' };
@@ -817,8 +841,9 @@ function bate(a, b) { return !(a.right <= b.left || b.right <= a.left || a.botto
 
 function poe(el, tipo) {
   const lugar = LUGAR[tipo];
-  if (lugar.aviso) { aplica(el, { left: `calc(50% - ${Math.min(340, innerWidth - 32) / 2}px)`, top: `calc(max(11vh, 112px) + 46px)` }); return; }
+  if (lugar.aviso) { aplica(el, { right: '4vw', bottom: '22vh' }); return; }  // lembrete: canto de baixo, fora do palco
   if (lugar.pesquisa) { tamanhoPesquisa(el); return; }
+  if (lugar.palco) { aplica(el, { left: `calc(50% - ${el.offsetWidth / 2}px)`, top: `${Math.round(Math.max(140, innerHeight * .17))}px` }); return; }
   if (lugar.metrica) {
     const direita = [...abertas.values()].filter(j => j.el !== el && j.tipo === 'metrica').length % 2;  // a segunda vai para a esquerda
     aplica(el, direita ? { left: '7vw', top: `${Math.max(120, cy - 70)}px` } : { right: '7vw', top: `${Math.max(120, cy - 70)}px` });
@@ -862,7 +887,7 @@ function expande(el, sim) {
 // Arrastar a janela pela barra
 function arrasta(el, barra) {
   barra.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.fechar, .expandir')) return;
+    if (e.target.closest('button')) return;
     const r = el.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
     el.classList.add('arrasta'); barra.setPointerCapture(e.pointerId);
     aplica(el, { left: `${r.left}px`, top: `${r.top}px` });
@@ -893,17 +918,25 @@ function frente(el) {
 
 function agenda(j, ms) {
   clearTimeout(j.timer);
-  if (ms > 0) { j.fim = Date.now() + ms; j.timer = setTimeout(() => fecha(j.tipo), ms); }
+  // o card do palco, quando acaba o tempo, vai para a doca (não some); os outros fecham
+  if (ms > 0) { j.fim = Date.now() + ms; j.timer = setTimeout(() => (PALCO.has(j.tipo) && !j.min ? minimiza(j) : fecha(j.chave)), ms); }
 }
 
 function abreJanela(rotulo, valor, ms) {
-  const tipo = tipoDe(rotulo, valor);
-  if (abertas.has(tipo)) fecha(tipo, true);  // do mesmo tipo, a nova troca a velha
+  const tipo = tipoDe(rotulo, valor), palco = PALCO.has(tipo);
+  const chave = palco ? `${tipo}#${++seqJanela}` : tipo;
+  if (!palco && abertas.has(chave)) fecha(chave, true);  // aviso, música...: o novo troca o velho
+  if (palco) for (const o of [...abertas.values()]) if (PALCO.has(o.tipo) && !o.min) minimiza(o);  // o do centro vai para a doca
   const el = cria('section', `janela j-${tipo}`);  // j-: não mistura com as classes de dentro
   el.setAttribute('aria-label', rotulo);
   const barra = cria('div', 'barra'), x = cria('button', 'fechar', '×');
-  x.type = 'button'; x.title = 'Fechar'; x.onclick = () => fecha(tipo);
+  x.type = 'button'; x.title = 'Fechar'; x.onclick = () => fecha(chave);
   barra.append(cria('span', 'ponto'), cria('small', '', rotulo));
+  if (palco) {
+    const mn = cria('button', 'mini', '–');
+    mn.type = 'button'; mn.title = 'Minimizar para a lateral'; mn.onclick = () => minimiza(abertas.get(chave));
+    barra.append(mn);
+  }
   if (tipo === 'pesquisa') {
     const ex = cria('button', 'expandir', '⤢');
     ex.type = 'button'; ex.title = 'Expandir'; ex.onclick = () => expande(el, !el.classList.contains('expandida'));
@@ -914,15 +947,16 @@ function abreJanela(rotulo, valor, ms) {
   el.append(cria('i', 'varre'), barra, conteudo(tipo, valor));
   if (tipo === 'pesquisa') el.querySelector('.pq-topo').addEventListener('dblclick', () => expande(el, !el.classList.contains('expandida')));
   el.classList.add('nova'); setTimeout(() => el.classList.remove('nova'), 1200);
-  const j = { el, tipo, timer: null };
+  const j = { el, tipo, chave, rotulo, titulo: tituloCurto(tipo, valor), timer: null };
   el.addEventListener('pointerdown', () => frente(el));
   arrasta(el, barra);
+  if (tipo === 'pesquisa') arrasta(el, el.querySelector('.pq-topo'));  // a pesquisa também arrasta pelo título
   if (tipo === 'pesquisa') rolaDevagar(el.querySelector('.corpo'), j, ms);
   el.addEventListener('mouseenter', () => { clearTimeout(j.timer); j.parado = true; });  // lendo: não some
-  el.addEventListener('mouseleave', () => { j.parado = false; agenda(j, Math.max(3000, (j.fim || 0) - Date.now())); });
+  el.addEventListener('mouseleave', () => { j.parado = false; if (!j.min) agenda(j, Math.max(3000, (j.fim || 0) - Date.now())); });
   camada.append(el);  // precisa estar na tela para medir onde cabe
   poe(el, tipo);
-  abertas.set(tipo, j);
+  abertas.set(chave, j);
   frente(el);
   agenda(j, ms);
   if (!reduz) {  // nasce do reator e voa até o lugar
@@ -932,14 +966,15 @@ function abreJanela(rotulo, valor, ms) {
   }
 }
 
-function fecha(tipo, ja = false) {
-  const j = abertas.get(tipo);
+function fecha(chave, ja = false) {
+  const j = abertas.get(chave);
   if (!j) return;
-  abertas.delete(tipo);
+  abertas.delete(chave);
   clearTimeout(j.timer);
+  if (j.chip) j.chip.remove();
   const el = j.el;
   if (el.classList.contains('expandida')) document.body.classList.remove('foco');  // o HUD volta
-  if (ja || reduz || !cheia) el.remove();
+  if (ja || reduz || !cheia || j.min) el.remove();
   else {  // volta para dentro do reator
     const r = el.getBoundingClientRect();
     el.style.pointerEvents = 'none';
@@ -949,7 +984,69 @@ function fecha(tipo, ja = false) {
   }
 }
 
-function fechaTudo() { for (const tipo of [...abertas.keys()]) fecha(tipo, true); }
+function fechaTudo() { for (const chave of [...abertas.keys()]) fecha(chave, true); }
+
+// ---------- doca: minimizar e trazer de volta ----------
+const doca = cria('div'); doca.id = 'doca'; camada.append(doca);
+const DOCA_MAX = 6, DOCA_MS = 10 * 60000;  // até 6 na lateral; cada um fica 10 minutos
+let seqJanela = 0;
+
+function tituloCurto(tipo, valor) {
+  const d = jsonDe(valor);
+  const t = tipo === 'pesquisa' && d ? d.titulo || d.tema : tipo === 'clima' ? valor.split(':')[0] : valor.split('\n').find(l => l.trim());
+  return String(t || '').trim().slice(0, 80);
+}
+
+function minimiza(j) {
+  if (!j || j.min || !abertas.has(j.chave)) return;
+  if (j.el.classList.contains('expandida')) expande(j.el, false);
+  j.min = true; j.parado = false; clearTimeout(j.timer);
+  const chip = cria('button', `chip c-${j.tipo}`);
+  chip.type = 'button'; chip.title = 'Trazer para o centro';
+  const ic = cria('span', 'icone-tipo'), txt = cria('span', 'chip-txt'), x = cria('span', 'chip-x', '×');
+  ic.append(icone(ICONE_TIPO[j.tipo]));
+  txt.append(cria('small', '', j.rotulo), cria('b', '', j.titulo || j.rotulo));
+  x.title = 'Fechar'; x.onclick = (e) => { e.stopPropagation(); fecha(j.chave); };
+  chip.append(ic, txt, x);
+  chip.onclick = () => restaura(j.chave);
+  doca.prepend(chip); j.chip = chip;
+  for (const c of [...doca.children].slice(DOCA_MAX)) {  // doca cheia: o mais antigo sai
+    const velho = [...abertas.values()].find(o => o.chip === c);
+    if (velho) fecha(velho.chave, true); else c.remove();
+  }
+  j.el.classList.add('min');
+  if (reduz || !cheia) j.el.hidden = true;
+  else {  // encolhe até a miniatura
+    const r = j.el.getBoundingClientRect(), c = chip.getBoundingClientRect();
+    j.el.style.pointerEvents = 'none'; j.el.style.transformOrigin = '0 0';
+    j.el.animate([{ transform: 'none', opacity: 1 },
+                  { transform: `translate(${c.left - r.left}px, ${c.top - r.top}px) scale(${c.width / r.width}, ${c.height / r.height})`, opacity: 0 }],
+      { duration: 420, easing: 'cubic-bezier(.6,0,.4,1)' }).onfinish = () => {
+        j.el.style.pointerEvents = ''; j.el.style.transformOrigin = '';
+        if (j.min) j.el.hidden = true;
+      };
+    chip.animate([{ opacity: 0, transform: 'translateX(-24px)' }, { opacity: 1, transform: 'none' }], { duration: 320, delay: 260, fill: 'backwards' });
+  }
+  j.timer = setTimeout(() => fecha(j.chave, true), DOCA_MS);
+}
+
+function restaura(chave) {
+  const j = abertas.get(chave);
+  if (!j || !j.min) return;
+  const c = j.chip.getBoundingClientRect();
+  for (const o of [...abertas.values()]) if (o !== j && PALCO.has(o.tipo) && !o.min) minimiza(o);  // troca de lugar com o do centro
+  j.chip.remove(); j.chip = null;
+  j.min = false; j.el.hidden = false; j.el.classList.remove('min');
+  poe(j.el, j.tipo); frente(j.el);
+  if (!reduz) {  // cresce da miniatura até o centro
+    const r = j.el.getBoundingClientRect();
+    j.el.style.transformOrigin = '0 0';
+    j.el.animate([{ transform: `translate(${c.left - r.left}px, ${c.top - r.top}px) scale(${c.width / r.width}, ${c.height / r.height})`, opacity: 0 },
+                  { transform: 'none', opacity: 1 }], { duration: 420, easing: 'cubic-bezier(.2,.8,.2,1)' })
+      .onfinish = () => { j.el.style.transformOrigin = ''; };
+  }
+  agenda(j, 30000);
+}
 
 
 // Estados, fala e cartões
@@ -1007,8 +1104,8 @@ document.getElementById('fechar').onclick = () => api() && api().fechar();
 document.getElementById('minimizar').onclick = () => api() && api().minimizar();
 addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || !cheia) return;
-  const topo = [...abertas.values()].sort((a, b) => b.el.style.zIndex - a.el.style.zIndex)[0];
-  if (topo) fecha(topo.tipo);
+  const topo = [...abertas.values()].filter(j => !j.min).sort((a, b) => b.el.style.zIndex - a.el.style.zIndex)[0];
+  if (topo) fecha(topo.chave);
 });
 const campo = document.getElementById('pedido');
 function enviaTexto() {
