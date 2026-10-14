@@ -1,4 +1,10 @@
+import sys
+from pathlib import Path
+
 import pytest
+
+# Disponível antes de qualquer fixture, inclusive ao rodar um único arquivo.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "windows"))
 
 
 @pytest.fixture(autouse=True)
@@ -8,7 +14,7 @@ def sem_nuvem(monkeypatch):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.delenv("JARVIS_NUVEM", raising=False)
     for var in ("WAHA_URL", "WAHA_API_KEY", "WAHA_SESSION", "ELEVENLABS_API_KEY", "JARVIS_YOUTUBE",
-                "BOLHA_SENHA", "BOLHA_NGROK", "BOLHA_CELULAR_PORTA"):
+                "BOLHA_SENHA", "BOLHA_NGROK", "BOLHA_CELULAR_PORTA", "BOLHA_TOM"):
         monkeypatch.delenv(var, raising=False)  # testes nunca falam com o WhatsApp nem com a ElevenLabs de verdade
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
     import sys

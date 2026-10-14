@@ -257,3 +257,24 @@ Ele le seguidores, posts e comentarios, responde comentario e publica foto
 Pedidos: "como ta meu instagram", "le os comentarios do meu ultimo post",
 "responde o primeiro comentario com obrigado".
 Publicar: a API so aceita foto que ja esta num link publico (https).
+
+
+ENTONACAO DA ELEVENLABS (MORDOMO)
+A fala usa ajustes por pedido: neutra no cotidiano, mais estavel e um pouco mais
+lenta em alertas e confirmacoes. O texto tambem pede respostas sobrias e pausas naturais.
+O timbre continua sendo o da voz escolhida (George, Elvis ou outra).
+O perfil automatico identifica palavras de aviso/confirmacao; nao e uma analise emocional completa.
+
+Padrao: BOLHA_TOM=auto. Para fixar o tom nesta janela do PowerShell:
+   $env:BOLHA_TOM="serio"
+   python windows\jarvis_ai.py
+Ou use "neutro"; para voltar ao automatico, use "auto". Reinicie a Bolha depois de mudar.
+O modelo Flash v2.5 continua sendo o padrao. Os parametros variam conforme o modelo;
+a intensidade real depende da voz e do modelo e deve ser calibrada ouvindo.
+
+Teste de audio direto (usa a ElevenLabs e consome creditos, sem depender do Bing):
+   python -c 'import sys; sys.path.insert(0, "windows"); import voz; from pathlib import Path; voz._eleven_mp3("Boa noite, senhor. Tudo pronto por aqui.", Path("voz-neutra.mp3")); voz._eleven_mp3("Atencao, senhor. Confirma que posso desligar o computador?", Path("voz-seria.mp3"))'
+Ouça voz-neutra.mp3 e voz-seria.mp3 para comparar. O caminho normal da Bolha ainda
+tenta o Bing primeiro, usando a ElevenLabs como reserva.
+
+Referencia: https://elevenlabs.io/docs/api-reference/text-to-speech/convert

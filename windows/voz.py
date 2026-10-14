@@ -398,9 +398,32 @@ class ElevenError(RuntimeError):
         self.code, self.detail = code, detail
 
 
+def eleven_delivery(text, model):
+    """Entrega contida: neutra no dia a dia, mais estável em avisos e confirmações.
+
+    São ajustes de síntese, não instruções escritas que a voz poderia ler em voz alta.
+    """
+    tone = os.environ.get("BOLHA_TOM", "auto").strip().lower()
+    plain = unicodedata.normalize("NFD", text.lower())
+    plain = "".join(c for c in plain if unicodedata.category(c) != "Mn")
+    serious = tone in ("serio", "sério") or (tone == "auto" and re.search(
+        r"\b(?:atencao|cuidado|confirma|confirmar|confirmacao|apagar|excluir|desligar|"
+        r"reiniciar|falhou|falha|erro|nao consegui|nao deu certo|bateria fraca|mando|envio|posso mandar)\b", plain
+    ))
+    settings = {"stability": 0.72 if serious else 0.58, "similarity_boost": 0.75}
+    # v3 usa presets de estabilidade; v4 não aceita style/speed.
+    if model.startswith("eleven_v3"):
+        settings["stability"] = 1.0 if serious else 0.5
+    if not model.startswith("eleven_v4"):
+        settings.update(style=0.0, speed=0.94 if serious else 0.98)
+        if not model.startswith("eleven_v3"):
+            settings["use_speaker_boost"] = True
+    return settings
+
+
 def _eleven_request(text, path, voice, model):
     import urllib.error
-    body = {"text": text, "model_id": model}
+    body = {"text": text, "model_id": model, "voice_settings": eleven_delivery(text, model)}
     if model.endswith("_v2_5"):
         body["language_code"] = "pt"
     req = urllib.request.Request(

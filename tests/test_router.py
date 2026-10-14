@@ -364,3 +364,34 @@ def test_whatsapp_read_routes(jarvis, monkeypatch, text, contact):
 def test_open_whatsapp_still_opens_the_site(jarvis):
     assert route(jarvis, "abre o whatsapp") != "IA"
     assert not any(n == "whatsapp_read" for n, _ in jarvis.calls)
+
+
+@pytest.mark.parametrize("text", [
+    "abre o quarto", "abre o segundo resultado", "executa o 2", "2", "o segundo",
+    "mostra o segundo na pasta",
+])
+def test_selection_without_results_does_not_open_an_app(jarvis, capsys, text):
+    jarvis.last_results = []
+    jarvis.last_kind = None
+    assert route(jarvis, text) == []
+    assert "Faça uma busca primeiro" in capsys.readouterr().out
+
+
+def test_selection_with_result_suffix_stays_in_file_results(jarvis):
+    assert route(jarvis, "abre o segundo resultado") == [("open_search_result", (2,))]
+
+
+
+def test_named_program_without_results_still_opens(jarvis):
+    jarvis.last_results = []
+    jarvis.last_kind = None
+    assert route(jarvis, "abre a calculadora") == [("open_target", ("calculadora",))]
+
+
+def test_web_selection_uses_links_instead_of_old_files(jarvis, monkeypatch):
+    jarvis.last_kind = "web"
+    monkeypatch.setattr(jarvis.B, "last_links", [{"url": "https://example.com"}])
+    used = []
+    monkeypatch.setattr(jarvis, "tool", lambda name, **args: used.append((name, args)))
+    assert route(jarvis, "abre o primeiro") == []
+    assert used == [("web_click", {"target": "1"})]
