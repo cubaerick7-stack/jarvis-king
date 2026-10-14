@@ -318,6 +318,41 @@ def _open_meteo(city):
             f"vento {round(now['wind_speed_10m'])}km/h")
 
 
+def web_snippets(query, limit=6):
+    """Resultados do DuckDuckGo (título, site e o trechinho de texto), sem abrir navegador e sem IA.
+    Serve de reserva quando a cota de pesquisa da IA acabou. [] se não conseguiu ler."""
+    import html as _html
+    url = "https://html.duckduckgo.com/html/?kl=br-pt&q=" + urllib.parse.quote_plus(str(query))
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                                               "Accept-Language": "pt-BR,pt;q=0.9"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            page = r.read().decode("utf-8", "replace")
+    except Exception:
+        return []
+
+    def text(fragment):
+        return re.sub(r"\s+", " ", _html.unescape(re.sub(r"<[^>]+>", "", fragment))).strip()
+
+    found = []
+    for block in page.split('result__body')[1:]:
+        title = re.search(r'class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>', block, re.S)
+        snippet = re.search(r'class="result__snippet"[^>]*>(.*?)</a>', block, re.S)
+        if not title:
+            continue
+        link = _html.unescape(title.group(1))
+        m = re.search(r"uddg=([^&]+)", link)
+        link = urllib.parse.unquote(m.group(1)) if m else link
+        if "duckduckgo.com/y.js" in link or not link.startswith("http"):
+            continue  # anúncio
+        site = urllib.parse.urlparse(link).netloc.removeprefix("www.")
+        found.append({"titulo": text(title.group(2)), "site": site, "trecho": text(snippet.group(1)) if snippet else "",
+                      "url": link})
+        if len(found) >= limit:
+            break
+    return found
+
+
 def weather(city=""):
     city = str(city).strip()
     fmt = urllib.parse.quote("%l: %C, %t (sensação %f), umidade %h, vento %w", safe="%")

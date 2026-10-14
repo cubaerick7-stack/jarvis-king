@@ -604,11 +604,29 @@ def research(query):
         return False
     set_state("pensando")
     U.speech("Pesquisando, senhor...")  # a busca leva alguns segundos: a legenda já mostra que ele está nisso
+    question = f"Hoje é {time.strftime('%d/%m/%Y')}. Pergunta: {query}"
     try:
-        raw, sources = N.search_generate(RESEARCH_PROMPT, f"Hoje é {time.strftime('%d/%m/%Y')}. Pergunta: {query}")
+        raw, sources = N.search_generate(RESEARCH_PROMPT, question)
     except Exception as e:
-        print(f"Jarvis > Não consegui pesquisar agora, senhor. ({e})")
-        return False
+        # cota de pesquisa da IA acabou (ou demorou): lê o DuckDuckGo e a IA que ainda tiver cota monta a resposta
+        print(f"Jarvis > (pesquisa da IA falhou: {e}; usando os resultados do DuckDuckGo)")
+        found = F.web_snippets(query)
+        if not found:
+            print("Jarvis > Não consegui pesquisar agora, senhor. A cota grátis da IA acabou e a busca não respondeu.")
+            return False
+        results = "\n".join(f"- {r['titulo']} ({r['site']}): {r['trecho']}" for r in found)
+        try:
+            raw = think(RESEARCH_PROMPT + " Use SÓ os resultados de busca recebidos; se não bastarem, diga isso.",
+                        f"{question}\nResultados de busca de agora:\n{results}", json_mode=True, temperature=0.2)
+        except Exception as e2:
+            print(f"Jarvis > (sem IA para resumir: {e2})")
+            print("Jarvis > Não consegui pesquisar agora, senhor. A cota grátis da IA acabou por hoje.")
+            return False
+        seen, sources = set(), []
+        for r in found:
+            if r["site"] and r["site"] not in seen:
+                seen.add(r["site"])
+                sources.append({"nome": r["site"][:40], "titulo": r["titulo"]})
     data = _clean_research(raw)
     if data is None:  # a IA respondeu em texto solto: vira só o resumo
         text = re.sub(r"[*_#`]", "", str(raw)).strip()

@@ -150,6 +150,10 @@ INTERFACE (TELA CHEIA)
 6. Pesquisa na internet (precisa de GEMINI_API_KEY): "como esta a eleicao",
    "quanto esta o dolar", "quem ganhou o jogo". Abre uma janela com a manchete,
    o placar com barras, o resumo, os pontos e as fontes, e ele resume em voz.
+   A busca do Google no Gemini tem cota separada do chat: ele tenta primeiro o
+   gemini-2.5-flash (que tem busca gratis), depois o Groq Compound e, se a
+   cota de busca acabar, le o DuckDuckGo e a IA monta a janela com isso.
+   Outro modelo para a busca:  setx GEMINI_SEARCH_MODEL nome-do-modelo
 7. Bateria e PC viram um widget com icone brilhando e os numeros de verdade.
 8. Disco com a camera no meio do reator ("identidade confirmada", opcional):
    setx JARVIS_CAMERA 1      (e abra o PowerShell de novo)

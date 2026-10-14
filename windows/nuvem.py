@@ -22,6 +22,9 @@ DEFAULT_MODELS = ["gemini-flash-latest", "gemini-flash-lite-latest"]
 TIMEOUT = 20
 GEN_TIMEOUT = 15  # o Gemini que passa disso costuma estar "pensando" demais: o lite responde em segundos
 SEARCH_TIMEOUT = 40  # pesquisar no Google antes de responder demora mais que uma resposta comum
+# A busca do Google tem cota própria, separada do chat: no plano grátis os modelos mais novos (flash-latest)
+# podem ter cota zero de busca mesmo com o chat funcionando. Os 2.5 têm busca grátis por dia: vão primeiro.
+SEARCH_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
 GROQ_SEARCH_MODELS = ["groq/compound-mini", "groq/compound"]  # modelos do Groq que pesquisam na internet sozinhos
 
 
@@ -255,6 +258,12 @@ def _groq_search(system, user, max_tokens):
     raise CloudError("o Groq não pesquisou (" + "; ".join(errors) + ")")
 
 
+def search_models():
+    custom = os.environ.get("GEMINI_SEARCH_MODEL", "").strip()
+    order = ([custom] if custom else []) + SEARCH_MODELS + models()
+    return list(dict.fromkeys(order))
+
+
 def _gemini_search(system, user, max_tokens):
     key = api_key()
     body = {
@@ -264,7 +273,7 @@ def _gemini_search(system, user, max_tokens):
         "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_tokens},
     }
     errors, limited = [], False
-    for model in _in_order([m for m in models() if m not in _dead]):
+    for model in _in_order([m for m in search_models() if m not in _dead]):
         try:
             data = _call(_search_post, model, _with_thinking(body, model not in _no_thinking_cfg), key)
         except _Http as h:
@@ -281,8 +290,7 @@ def _gemini_search(system, user, max_tokens):
                     continue
             else:
                 if h.code == 429:
-                    limited = True
-                    _limited[model] = time.time()
+                    limited = True  # cota da BUSCA: não tira o modelo do chat (a cota do chat é outra)
                 elif h.code == 404:
                     _dead.add(model)
                 continue

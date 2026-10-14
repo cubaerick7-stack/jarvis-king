@@ -149,3 +149,63 @@ def test_page_has_research_and_metric_windows_without_innerhtml():
                    "FALANDO", "EM RESUMO", "function arrasta("):
         assert marker in HTML, marker
     assert "innerHTML" not in HTML
+
+
+def test_search_tries_models_with_free_google_search_first_and_keeps_chat_quota(monkeypatch):
+    import urllib.error
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    tried = []
+
+    def fake_post(model, body, key):
+        tried.append(model)
+        if model == "gemini-2.5-flash":
+            raise urllib.error.HTTPError("u", 429, "x", {}, __import__("io").BytesIO(b"{}"))
+        return grounded("ok")
+
+    monkeypatch.setattr(N, "_search_post", fake_post)
+    assert N.search_generate("s", "u")[0] == "ok"
+    assert tried == ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
+    assert "gemini-2.5-flash" not in N._limited  # o 429 da busca não estraga a fila do chat
+
+
+DDG = """<div class="result results_links results_links_deep web-result "><div class="links_main links_deep result__body">
+<h2 class="result__title"><a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fg1.globo.com%2Felei%C3%A7%C3%B5es&amp;rut=x">Segundo turno &amp; <b>2026</b></a></h2>
+<a class="result__snippet" href="x">Flávio e Lula disputam o <b>segundo turno</b> em 25 de outubro.</a></div></div>
+<div class="result results_links"><div class="links_main result__body"><a class="result__a" href="https://duckduckgo.com/y.js?ad=1">Anúncio</a></div></div>"""
+
+
+def test_duckduckgo_results_are_read_without_browser(monkeypatch):
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return DDG.encode("utf-8")
+
+    monkeypatch.setattr(F.urllib.request, "urlopen", lambda req, timeout=10: Resp())
+    found = F.web_snippets("segundo turno")
+    assert found == [{"titulo": "Segundo turno & 2026", "site": "g1.globo.com",
+                      "trecho": "Flávio e Lula disputam o segundo turno em 25 de outubro.",
+                      "url": "https://g1.globo.com/eleições"}]
+
+
+def test_research_uses_duckduckgo_and_any_ai_when_search_quota_is_over(monkeypatch, capsys):
+    j = load_jarvis()
+    cards = []
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setattr(j.N, "search_generate", lambda *a, **k: (_ for _ in ()).throw(N.CloudError("HTTP 429")))
+    monkeypatch.setattr(j.F, "web_snippets", lambda q: [{"titulo": "Segundo turno", "site": "g1.globo.com",
+                                                         "trecho": "dia 25", "url": "https://g1.globo.com/x"}])
+    seen = []
+    monkeypatch.setattr(j, "think", lambda system, user, **k: seen.append(user) or json.dumps(
+        {"titulo": "Segundo turno dia 25", "resumo": "Dia 25.", "fala": "Verifiquei, senhor. É dia 25."}))
+    monkeypatch.setattr(j.U, "card", lambda t, x, ms=7000: cards.append((t, x)))
+    monkeypatch.setattr(j.U, "speech", lambda t: None)
+    monkeypatch.setattr(j, "set_state", lambda s: None)
+    assert j.research("segundo turno") is True
+    assert "g1.globo.com): dia 25" in seen[0]
+    assert json.loads(cards[0][1])["fontes"] == [{"nome": "g1.globo.com", "titulo": "Segundo turno"}]
+    assert capsys.readouterr().out.strip().endswith("Verifiquei, senhor. É dia 25.")
