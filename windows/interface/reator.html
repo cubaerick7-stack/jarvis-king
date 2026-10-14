@@ -47,7 +47,7 @@ h1 { margin: 0; font-weight: 400; letter-spacing: .45em; font-size: 22px; }
 canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .estado { text-align: center; font-family: var(--mono); color: var(--cyan); font-size: 12px; letter-spacing: .2em; text-transform: uppercase; }
 .fala { margin: 8px 16px 0; text-align: center; font-size: 16px; min-height: 2.6em; overflow-wrap: anywhere; }
-.cartoes { flex: 1; min-height: 0; overflow: hidden; margin: 8px 14px 0; display: flex; flex-direction: column; gap: 8px; }
+.cartoes { flex: 1; min-height: 0; overflow: hidden auto; scrollbar-width: thin; margin: 8px 14px 0; display: flex; flex-direction: column; gap: 8px; }
 .cartao { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--cyan); padding: 8px 12px;
   animation: entra .35s ease-out both; }
 .cartao.sai { animation: sai .4s ease-in forwards; }
@@ -296,6 +296,7 @@ body.foco .legenda, body.foco .estado, body.foco .hud-topo { opacity: 0; }
 .cartao .corpo .pq-topo, .cartao .corpo .pq-sec, .cartao .corpo .pq-pontos, .cartao .corpo .pq-fontes, .cartao .corpo .pq-resumo, .cartao .corpo .pq-nota, .cartao .corpo .pq-pe { margin-left: 0; margin-right: 0; padding-left: 0; padding-right: 0; }
 .cartao .corpo .pq-resumo { padding: 10px 12px; }
 .cartao .corpo .pq-pontos { grid-template-columns: minmax(0, 1fr); }
+.cartao .corpo:has(.mt-icone) { grid-auto-flow: column; justify-content: start; align-items: center; gap: 14px; }
 .cartao .mt-icone { width: 90px; height: 90px; } .cartao .mt-icone svg { width: 44px; height: 44px; }
 .cartao .mt-icone::before { width: 88px; height: 88px; } .cartao .mt-icone::after { width: 62px; height: 62px; }
 
@@ -320,6 +321,8 @@ body.foco .legenda, body.foco .estado, body.foco .hud-topo { opacity: 0; }
 .celular { -webkit-tap-highlight-color: transparent; }
 .celular .botoes { display: none; }
 .celular input { font-size: 16px; }  /* menos que 16px faz o iPhone dar zoom ao tocar */
+.celular #form { opacity: 1; pointer-events: auto; }
+@media (min-width: 600px) { .celular #form { transform: translate(-50%, 0); } }
 .celular .mic { display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 0; border-radius: 50%;
   border: 1px solid var(--line-strong); background: rgba(95, 230, 240, .1); color: var(--cyan); cursor: pointer; }
 .mic svg { width: 22px; height: 22px; }
@@ -582,11 +585,12 @@ function caixa(abre) {
 document.getElementById('orbe').addEventListener('click', () => caixa(!elForm.classList.contains('aberto')));
 addEventListener('keydown', (e) => {
   if (!cheia || remoto || e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.key.length === 1 && document.activeElement !== elPedido) caixa(true);
+  if (e.target !== elPedido && e.target.closest && e.target.closest('button, input, textarea, select')) return;
+  if (e.key.length === 1 && (document.activeElement !== elPedido || !elForm.classList.contains('aberto'))) caixa(true);
   else if (e.key === 'Escape' && elForm.classList.contains('aberto') && !abertas.size) caixa(false);
 });
 elPedido.addEventListener('blur', () => setTimeout(() => { if (!elPedido.value.trim() && document.activeElement !== elPedido) elForm.classList.remove('aberto'); }, 4000));
-document.getElementById('form').addEventListener('submit', () => setTimeout(() => elForm.classList.remove('aberto'), 150));
+document.getElementById('form').addEventListener('submit', () => setTimeout(() => caixa(false), 150));
 
 // Relógio (tela cheia)
 const DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
@@ -726,13 +730,15 @@ function pesquisa(d) {
   tt.append(cria('h3', '', txt(d.titulo || d.tema || 'Resultado')));
   topo.append(ic, tt); saida.push(topo);
   const barras = [];
-  const ranking = lista(d.ranking).slice(0, 6);
+  const obj = (x) => x && typeof x === 'object';
+  const ranking = lista(d.ranking).filter(obj).slice(0, 6);
   if (ranking.length) {
     const sec = cria('div', 'pq-sec'), rot = cria('div', 'pq-rotulo');
     rot.append(cria('span', '', txt(d.contexto || 'Resultado')));
-    if (d.progresso && d.progresso.valor !== undefined) {
-      const pr = cria('span', '', txt(d.progresso.rotulo || `${d.progresso.valor}%`)), tr = cria('span', 'pq-prog'), bi = cria('i');
-      tr.append(bi); barras.push([bi, d.progresso.valor]); rot.append(pr, tr);
+    const prog = obj(d.progresso) ? parseFloat(String(d.progresso.valor ?? '').replace(',', '.')) : NaN;
+    if (!isNaN(prog)) {
+      const pr = cria('span', '', txt(d.progresso.rotulo || `${prog}%`)), tr = cria('span', 'pq-prog'), bi = cria('i');
+      tr.append(bi); barras.push([bi, Math.min(100, Math.max(0, prog))]); rot.append(pr, tr);
     }
     sec.append(rot);
     ranking.forEach((r, i) => {
@@ -740,9 +746,9 @@ function pesquisa(d) {
       if (r.sigla) nome.append(cria('small', '', txt(r.sigla)));
       l.append(cria('span', 'pq-n', String(i + 1).padStart(2, '0')), nome);
       const pct = parseFloat(String(r.pct ?? r.valor ?? '').replace(',', '.'));
-      if (r.pct !== undefined || r.valor !== undefined) l.append(cria('span', 'pq-pct', /[%a-z]/i.test(txt(r.pct ?? r.valor)) ? txt(r.pct ?? r.valor) : `${txt(r.pct ?? r.valor)}%`));
+      if ((r.pct ?? r.valor) != null && txt(r.pct ?? r.valor).trim()) l.append(cria('span', 'pq-pct', /[%a-z]/i.test(txt(r.pct ?? r.valor)) ? txt(r.pct ?? r.valor) : `${txt(r.pct ?? r.valor)}%`));
       it.append(l);
-      if (!isNaN(pct)) { const br = cria('div', 'pq-barra'), bi = cria('i'); br.append(bi); it.append(br); barras.push([bi, Math.min(100, pct)]); }
+      if (!isNaN(pct)) { const br = cria('div', 'pq-barra'), bi = cria('i'); br.append(bi); it.append(br); barras.push([bi, Math.min(100, Math.max(0, pct))]); }
       if (r.detalhe || r.selo) {
         const sb = cria('div', 'pq-sub'); sb.append(cria('span', '', txt(r.detalhe)));
         if (r.selo) sb.append(cria('span', 'pq-selo', txt(r.selo)));
@@ -756,7 +762,7 @@ function pesquisa(d) {
   if (d.resumo) { const r = cria('div', 'pq-resumo'); r.append(cria('small', '', 'EM RESUMO'), cria('p', '', txt(d.resumo))); saida.push(r); }
   const pontos = lista(d.pontos).slice(0, 6);
   if (pontos.length) { const g = cria('div', 'pq-pontos'); for (const t of pontos) g.append(cria('div', 'pq-ponto', txt(t))); saida.push(g); }
-  const fontes = lista(d.fontes).slice(0, 4);
+  const fontes = lista(d.fontes).filter(obj).slice(0, 4);
   if (fontes.length) {
     const g = cria('div', 'pq-fontes');
     for (const f of fontes) {
@@ -780,7 +786,7 @@ function metrica(d) {
   ic.style.setProperty('--cor', CORES[d.cor] || CORES.azul);
   dados.style.setProperty('--cor', CORES[d.cor] || CORES.azul);
   ic.append(icone(d.icone, true));
-  for (const i of (Array.isArray(d.itens) ? d.itens : []).slice(0, 4)) {
+  for (const i of (Array.isArray(d.itens) ? d.itens : []).filter(x => x && typeof x === 'object').slice(0, 4)) {
     const x = cria('div', 'mt-dado');
     x.append(cria('small', '', String(i.r ?? '')), cria('b', '', String(i.v ?? '')));
     if (i.s) x.append(cria('span', '', String(i.s)));
@@ -811,7 +817,7 @@ function bate(a, b) { return !(a.right <= b.left || b.right <= a.left || a.botto
 
 function poe(el, tipo) {
   const lugar = LUGAR[tipo];
-  if (lugar.aviso) { aplica(el, { left: `calc(50% - ${Math.min(340, innerWidth - 32) / 2}px)`, top: '11vh' }); return; }
+  if (lugar.aviso) { aplica(el, { left: `calc(50% - ${Math.min(340, innerWidth - 32) / 2}px)`, top: `calc(max(11vh, 112px) + 46px)` }); return; }
   if (lugar.pesquisa) { tamanhoPesquisa(el); return; }
   if (lugar.metrica) {
     const direita = [...abertas.values()].filter(j => j.el !== el && j.tipo === 'metrica').length % 2;  // a segunda vai para a esquerda
@@ -887,7 +893,7 @@ function frente(el) {
 
 function agenda(j, ms) {
   clearTimeout(j.timer);
-  if (ms > 0) j.timer = setTimeout(() => fecha(j.tipo), ms);
+  if (ms > 0) { j.fim = Date.now() + ms; j.timer = setTimeout(() => fecha(j.tipo), ms); }
 }
 
 function abreJanela(rotulo, valor, ms) {
@@ -913,7 +919,7 @@ function abreJanela(rotulo, valor, ms) {
   arrasta(el, barra);
   if (tipo === 'pesquisa') rolaDevagar(el.querySelector('.corpo'), j, ms);
   el.addEventListener('mouseenter', () => { clearTimeout(j.timer); j.parado = true; });  // lendo: não some
-  el.addEventListener('mouseleave', () => { j.parado = false; agenda(j, 3000); });
+  el.addEventListener('mouseleave', () => { j.parado = false; agenda(j, Math.max(3000, (j.fim || 0) - Date.now())); });
   camada.append(el);  // precisa estar na tela para medir onde cabe
   poe(el, tipo);
   abertas.set(tipo, j);
@@ -1058,7 +1064,7 @@ async function novidades() {
       if (!r.ok) throw new Error(r.status);
       const d = await r.json();
       semConexao(false);
-      for (const e of d.eventos) chegou(e);
+      for (const e of d.eventos) { try { chegou(e); } catch (err) { console.error(err); } }  // um evento ruim não trava a fila
       ultimo = d.ultimo;
     }
   } catch {
