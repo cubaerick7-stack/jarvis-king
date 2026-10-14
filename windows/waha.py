@@ -134,7 +134,7 @@ def send_file(chat_id, path, caption=""):
         return _call("/api/sendImage" if ext in IMAGES else "/api/sendFile", body=body, timeout=90)
     except WahaError as e:
         if re.search(r"HTTP (?:403|422|501)", str(e)):
-            raise WahaError("este WAHA não manda arquivos (na versão grátis só texto; imagem precisa do WAHA Plus)") from e
+            raise WahaError("este WAHA não manda arquivos: atualize o WAHA (docker pull devlikeapro/waha; desde a versão 2026.6 a grátis manda imagem)") from e
         raise
 
 
