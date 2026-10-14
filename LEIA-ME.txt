@@ -1,36 +1,59 @@
-JARVIS LITE V2
+JARVIS PARA WINDOWS
 
-Essa versão corrige o problema em que o Qwen 1.7B escrevia:
-    mute_audio mute
-    search_files query="FO 1102"
-mas não executava nada.
+Assistente de voz e texto: comandos rapidos rodam direto no Python
+(volume, arquivos, programas, midia) e o resto vai para a IA na nuvem
+(Gemini, com o Groq de reserva). Ele fala com a voz Antonio e acorda
+quando voce diz o nome dele: "Bolha".
 
-AGORA:
-- volume, mute, arquivos, abrir programas, mídia etc. rodam direto no Python;
-- o Qwen só é usado como fallback para pedidos mais difíceis;
-- isso reduz bastante o uso de CPU.
+PASSO A PASSO (primeira vez)
 
-PASSO A PASSO
-
-1. Extraia o ZIP.
-
-2. Copie:
-   windows\jarvis_ai.py
-
-para:
-   G:\Jarvis\cozmo-esp32\windows\jarvis_ai.py
-
-Substitua o anterior.
-
-3. No PowerShell:
+1. No PowerShell:
 
    G:
-   cd G:\Jarvis\cozmo-esp32
-   python -m pip install ollama pycaw pyautogui mss pypdf
+   cd G:\Jarvis\jarvis-king
+   python -m pip install -U -r requirements.txt
 
-4. Rode:
+2. Chaves da IA (uma vez so; veja "IA NA NUVEM" no fim deste arquivo):
 
+   setx GEMINI_API_KEY "sua-chave"
+   setx GROQ_API_KEY "sua-chave"
+
+   Depois feche e abra o PowerShell de novo.
+
+3. Rode:
+
+   cd G:\Jarvis\jarvis-king
    python windows\jarvis_ai.py
+
+   (ou: powershell -ExecutionPolicy Bypass -File iniciar.ps1)
+
+   O reator aparece no canto da tela e o console mostra
+   "Voz ligada (nome do microfone)". Diga "Bolha, toca lofi".
+
+ATUALIZAR (quando tiver versao nova no GitHub)
+
+   cd G:\Jarvis\jarvis-king
+   git pull
+   python -m pip install -U -r requirements.txt
+
+SE ALGO NAO FUNCIONAR
+- Nao ouve: rode assim para ver o que ele escuta e o volume do microfone:
+     $env:JARVIS_VOZ_DEBUG=1; python windows\jarvis_ai.py
+  Se aparecer "Nao ouvi o pedido (som mais alto X, precisa de Y)", fale mais
+  perto do microfone ou aumente o volume dele no Windows.
+- Nao fala: python -m pip install -U edge-tts  (e confira o som do PC).
+  Se a voz do Bing (Edge) recusar (erro 403), ele usa as reservas e tenta o Bing
+  de novo depois de 10 minutos. Reservas, nesta ordem:
+  1. ElevenLabs (voz mais natural, creditos gratis limitados por mes): crie conta em
+     elevenlabs.io > Developers > API Keys > crie a chave e faca
+     setx ELEVENLABS_API_KEY "a-chave"   (nunca em arquivo).
+     A voz padrao e a Elvis: no site, Voices > Library > procure "Elvis" (portugues do Brasil)
+     > Add to my voices. Sem ela, usa a George. Outra voz: setx ELEVENLABS_VOICE "nome ou id".
+  2. Google (gTTS): gratis e sem chave. python -m pip install gTTS
+  Quando o Bing voltar a funcionar: python -m pip install -U edge-tts
+- "procura o arquivo" so olha algumas pastas: instale o Everything (secao
+  "BUSCA NO PC INTEIRO" abaixo).
+- Qualquer erro aparece no console e o Jarvis fala o motivo.
 
 TESTE:
    mn muta o volume
@@ -45,3 +68,213 @@ TESTE:
    mostra o primeiro na pasta
    abre a calculadora
    abre youtube
+
+TESTES AUTOMATICOS
+   python -m pip install pytest
+   python -m pytest -q
+
+Os testes simulam as acoes (nao mexem no volume nem abrem nada),
+entao rodam em qualquer PC e tambem no GitHub a cada push.
+
+LOG
+Toda acao executada fica registrada em G:\Jarvis\logs\acoes.log
+(horario, acao e detalhe), inclusive as escolhidas pelo Qwen.
+
+O QUE O JARVIS SABE FAZER
+Digite "o que voce sabe fazer" (ou "ajuda") com o Jarvis aberto.
+
+ROTINAS
+"modo estudo", "modo relaxar" e "modo foco" ja vem prontas.
+Para criar as suas, crie G:\Jarvis\config\rotinas.json assim:
+
+{
+  "jogo": [
+    {"name": "set_volume", "args": {"percent": 70}},
+    {"name": "close_app", "args": {"name": "chrome"}},
+    {"name": "open_target", "args": {"target": "omori"}}
+  ]
+}
+
+e diga "modo jogo". Os nomes das acoes sao os da lista TOOLS.
+
+COMO CRIAR UMA FERRAMENTA NOVA
+1. Escreva a funcao em windows\ferramentas.py. Ela imprime o resultado
+   e devolve True (deu certo) ou False (falhou).
+2. Adicione uma entrada em TOOLS (windows\jarvis_ai.py):
+   {"name": "minha_ferramenta", "args": '{"x":"..."}', "group": "sistema",
+    "desc": "o que ela faz", "examples": ["como o usuario pede"],
+    "run": lambda a: F.minha_ferramenta(a.get("x", ""))},
+   So isso ja coloca ela no prompt do Qwen e na ajuda.
+3. (Opcional) Para responder sem IA, adicione uma regra em
+   fast_local_router chamando tool("minha_ferramenta", x=...).
+4. Adicione um teste em tests\ e rode python -m pytest -q.
+
+BUSCA NO PC INTEIRO (EVERYTHING)
+1. Instale o Everything (voidtools.com). Tambem serve a versao portatil: deixe o
+   Everything.exe em G:\Jarvis\tools\Everything\Everything.exe
+   (o Jarvis abre ele escondido, perto do relogio, se estiver fechado).
+2. Baixe o ES (Everything command line) no mesmo site e coloque o es.exe em
+   G:\Jarvis\tools\es.exe
+Pronto: "procura o arquivo X" acha em todos os discos na hora.
+Se o G: for pendrive ou exFAT, o Everything nao indexa ele; o Jarvis percebe e
+procura no G: do jeito antigo.
+Pastas do sistema (Windows, Program Files, AppData) ficam de fora.
+Sem o Everything, o Jarvis volta a procurar so no G:, Desktop, Documentos e Downloads.
+
+MEMORIA
+Fica em G:\Jarvis\config\memoria.json (so no seu PC).
+- "meu nome e Joao", "eu moro em Recife"  -> perfil (o clima ja usa sua cidade)
+- "lembra que sou alergico a camarao"     -> guarda
+- "me lembra da prova na sexta as 7h"     -> lembrete (ele avisa na hora, falando)
+- "o que eu te pedi ontem?"               -> historico
+- "o que voce sabe sobre mim?" / "esquece a prova"
+Ele lembra as ultimas falas, entao "e amanha?" funciona.
+Se voce repete algo no mesmo horario em 3 dias diferentes, ele sugere ao abrir.
+
+INTERFACE (TELA CHEIA)
+1. python -m pip install pywebview
+2. Ao abrir, ele ocupa a tela principal inteira: o reator no meio, nome e
+   relogio em cima, o que voce disse e o que ele respondeu embaixo.
+   Parado ele gira devagar; ouvindo ondula; pensando pulsa; falando pulsa com a voz.
+3. O que voce pede aparece em janelinhas por cima dele: musica tocando, arquivos
+   achados, clima, PC, "Mando para Ana? Sim/Nao", mensagem enviada, lembrete.
+   Elas somem sozinhas (com o mouse em cima ficam). Esc fecha a da frente.
+4. O que ele abre (programa, pasta, navegador do YouTube/WhatsApp) vai para a
+   SEGUNDA TELA, se voce tiver; sem segunda tela, abre por cima dele.
+   Quando voce fala com ele, ele volta para a frente.
+   O "–" minimiza e o "×" fecha.
+Quer o painel antigo (titulo, respostas escritas, cartoes e caixa de pedido)?
+   setx JARVIS_TELA painel      (e abra o PowerShell de novo)
+Para abrir sem a janela:  python windows\jarvis_ai.py --sem-tela
+
+VOZ ("BOLHA", BIPE, PEDIDO)
+1. python -m pip install vosk sounddevice edge-tts
+2. Na primeira vez o Jarvis baixa sozinho o modelo de voz (uns 30 MB) para
+   G:\Jarvis\modelos\vosk-pt. Se voce ja tinha baixado, pode deixar a pasta
+   do zip dentro dela: ele acha.
+3. Para entender o pedido ele usa o Whisper do Groq (GROQ_API_KEY) ou o Gemini.
+4. Diga "Bolha, toca lofi" de uma vez, ou "Bolha", espere o bipe e fale.
+   Ele responde com a voz Antonio. Digitar continua funcionando junto.
+   Outro nome? setx JARVIS_NOME Jarvis   (ou o nome que quiser; abra o PowerShell de novo)
+   Pode pensar no meio da frase: se ela parar em "abre o...", "tipo...", ele espera
+   voce terminar. "Calma", "peraí" e "ainda nao falei" nao fazem nada.
+   A TV falando "a bolha imobiliaria" ou "sair da bolha" nao chama ele.
+Microfone mudo? Configuracoes > Privacidade > Microfone > ligue
+"Permitir que aplicativos da area de trabalho acessem o microfone"
+(o Jarvis abre essa tela sozinho quando percebe o microfone mudo).
+Para abrir sem voz:  python windows\jarvis_ai.py --sem-voz
+
+NAVEGADOR DO JARVIS (YOUTUBE, PESQUISA, WHATSAPP)
+1. python -m pip install playwright
+   (usa o Edge que ja vem no Windows; nao precisa baixar navegador)
+2. Pronto. O Jarvis abre um Edge so dele (perfil em G:\Jarvis\navegador) e
+   reaproveita a mesma aba: "toca evidencias" clica no video de verdade,
+   "pausa", "pula esse video", "tela cheia" funcionam nessa aba.
+3. WhatsApp: na primeira vez, "manda oi pra Ana no zap" abre o WhatsApp Web;
+   leia o QR code com o celular. Depois fica logado. Ele SEMPRE pergunta antes de enviar.
+Modo ciclo: pedidos como "escolhe a melhor receita de bolo de cenoura" fazem a IA
+pesquisar, abrir, ler e decidir sozinha (no maximo 6 passos por pedido).
+
+IA NA NUVEM (GEMINI + GROQ)
+O Jarvis pensa na nuvem: Gemini primeiro e, se ele falhar ou bater no limite,
+o Groq responde. Nao pesa a CPU. Os comandos rapidos funcionam sem internet.
+1. No PowerShell (uma vez so):
+   setx GEMINI_API_KEY "sua-chave"      (aistudio.google.com)
+   setx GROQ_API_KEY "sua-chave"        (console.groq.com -> API Keys)
+2. Feche e abra o PowerShell de novo.
+Opcional:
+   setx GEMINI_MODEL gemini-3.8-flash   (escolher o modelo do Gemini)
+   setx GROQ_MODEL openai/gpt-oss-120b  (escolher o modelo do Groq)
+   setx JARVIS_LOCAL 1                  (usar tambem o Qwen local, por ultimo)
+Nao precisa trocar modelo quando o Groq aposenta um: o Jarvis pergunta ao Groq
+quais existem hoje e usa esses. Se um modelo do Gemini demorar, ele tenta o
+proximo (mais leve) em vez de desistir.
+Se voce ja tinha feito "setx GROQ_MODEL" com um modelo que sumiu, apague com:
+   reg delete HKCU\Environment /v GROQ_MODEL /f
+As chaves NUNCA vao para arquivo nem para o GitHub.
+
+WHATSAPP (WAHA)
+O Bolha manda e le mensagens pelo WAHA (WhatsApp HTTP API) rodando no Docker, de
+preferencia no outro PC sempre ligado. Mandar SEMPRE pergunta antes.
+No outro PC (PowerShell):
+1. Instale o Docker Desktop e deixe abrir com o Windows.
+2. docker run -d --name waha --restart always -p 3000:3000 -e WAHA_API_KEY=SUA-SENHA -v waha_data:/app/.sessions devlikeapro/waha
+3. Abra http://localhost:3000/dashboard, inicie a sessao "default" e leia o QR
+   (celular > WhatsApp > Aparelhos conectados).
+4. Libere a porta no firewall (PowerShell como administrador):
+   New-NetFirewallRule -DisplayName WAHA -Direction Inbound -LocalPort 3000 -Protocol TCP -Action Allow
+5. Veja o IP dele com ipconfig (ex.: 192.168.0.15) e deixe o PC sem suspender.
+No seu PC (PowerShell), e depois abra outro PowerShell:
+   setx WAHA_URL "http://192.168.0.15:3000"     (com ngrok: o link https do ngrok)
+   setx WAHA_API_KEY "SUA-SENHA"
+   setx WAHA_SESSION "default"                   (so se o nome da sessao for outro)
+Pedidos: "manda pra Ana que eu chego as 8", "tem mensagem nova no zap?",
+"le as mensagens da Ana". Sem WAHA_URL ele usa o WhatsApp Web no navegador dele.
+
+CELULAR (O REATOR NO CELULAR, DE QUALQUER LUGAR)
+O celular abre a mesma tela do reator: voce digita ou toca no microfone e fala,
+o Bolha faz no PC e responde la, com a voz tocando no celular (o PC fica quieto).
+Clima, listas e "Mando para Ana? Sim/Nao" aparecem em cartoes com botao.
+O PC precisa estar ligado com o Bolha aberto. Quem leva o celular ate o PC e o
+ngrok (gratis), com https, que o microfone do celular exige.
+No seu PC (PowerShell), uma vez:
+1. setx BOLHA_SENHA "uma-senha-sua"    (8 ou mais caracteres; e a senha do celular)
+2. Crie a conta gratis em ngrok.com e instale:  winget install ngrok.ngrok
+   (ou baixe o ngrok.exe e ponha em G:\Jarvis)
+3. No painel do ngrok, copie o seu Authtoken e rode:
+   ngrok config add-authtoken O-TOKEN
+4. No painel do ngrok, em Domains, pegue o seu dominio gratis (ex.: bolha-joao.ngrok-free.app):
+   setx BOLHA_NGROK "bolha-joao.ngrok-free.app"
+5. Abra outro PowerShell e abra o Bolha. Ele mostra: "Celular: abra https://... no celular"
+   e abre o ngrok sozinho, escondido (e fecha junto com ele).
+No celular:
+6. Abra o link no Chrome. Na primeira vez o ngrok mostra um aviso: toque em "Visit Site".
+7. Digite a senha (so na primeira vez) e libere o microfone quando ele pedir.
+8. Menu do Chrome (3 pontinhos) > "Adicionar a tela inicial": vira um app com o reator.
+Seguranca: sem a senha nada funciona; 5 senhas erradas bloqueiam por 10 minutos;
+apagar, mandar e publicar continuam pedindo "sim". Trocar a BOLHA_SENHA desconecta
+todos os celulares. A senha e o token do ngrok NUNCA vao para arquivo nem para o GitHub.
+O dominio gratis do ngrok e um so: use ele para o celular e o WAHA pelo IP da rede de casa.
+Sem o ngrok, a tela funciona no proprio PC em http://localhost:8765 (porta: setx BOLHA_CELULAR_PORTA).
+
+YOUTUBE
+Se o YouTube der "Algo deu errado" no navegador do Bolha, ele toca no seu navegador
+padrao e continua usando ele (pausar, proximo etc. vao para la). Para usar sempre o
+navegador padrao: setx JARVIS_YOUTUBE fora
+
+INSTAGRAM (API OFICIAL DA META)
+O Bolha usa so a API oficial (nada de robo no navegador, que pode bloquear a conta).
+Ele le seguidores, posts e comentarios, responde comentario e publica foto
+(responder e publicar SEMPRE perguntam antes). Mensagens diretas ainda nao.
+1. No app do Instagram: Configuracoes > Tipo de conta > Mudar para conta profissional
+   (Criador de conteudo). E gratis.
+2. Em developers.facebook.com: Meus apps > Criar app > tipo "Empresa".
+   No app, adicione o produto "Instagram" > "API com login do Instagram".
+3. Em "Gerar tokens de acesso", adicione sua conta do Instagram e gere o token.
+4. No PowerShell:  setx INSTAGRAM_TOKEN "o-token"   (e abra outro PowerShell)
+   O token NUNCA vai para arquivo nem para o GitHub. Ele vence em uns 60 dias:
+   quando o Bolha avisar, gere outro e faca o setx de novo.
+Pedidos: "como ta meu instagram", "le os comentarios do meu ultimo post",
+"responde o primeiro comentario com obrigado".
+Publicar: a API so aceita foto que ja esta num link publico (https).
+
+
+ENTONACAO DA ELEVENLABS (MORDOMO)
+A fala usa ajustes por pedido: neutra no cotidiano, mais estavel e um pouco mais
+lenta em alertas e confirmacoes. O texto tambem pede respostas sobrias e pausas naturais.
+O timbre continua sendo o da voz escolhida (George, Elvis ou outra).
+O perfil automatico identifica palavras de aviso/confirmacao; nao e uma analise emocional completa.
+
+Padrao: BOLHA_TOM=auto. Para fixar o tom nesta janela do PowerShell:
+   $env:BOLHA_TOM="serio"
+   python windows\jarvis_ai.py
+Ou use "neutro"; para voltar ao automatico, use "auto". Reinicie a Bolha depois de mudar.
+O modelo Flash v2.5 continua sendo o padrao. Os parametros variam conforme o modelo;
+a intensidade real depende da voz e do modelo e deve ser calibrada ouvindo.
+
+Teste de audio direto (usa a ElevenLabs e consome creditos, sem depender do Bing):
+   python -c 'import sys; sys.path.insert(0, "windows"); import voz; from pathlib import Path; voz._eleven_mp3("Boa noite, senhor. Tudo pronto por aqui.", Path("voz-neutra.mp3")); voz._eleven_mp3("Atencao, senhor. Confirma que posso desligar o computador?", Path("voz-seria.mp3"))'
+Ouça voz-neutra.mp3 e voz-seria.mp3 para comparar. O caminho normal da Bolha ainda
+tenta o Bing primeiro, usando a ElevenLabs como reserva.
+
+Referencia: https://elevenlabs.io/docs/api-reference/text-to-speech/convert

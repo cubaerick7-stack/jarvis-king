@@ -1,5 +1,13 @@
-ollama
 pycaw
 pyautogui
 mss
 pypdf
+psutil
+pyperclip
+pygetwindow
+playwright
+vosk
+sounddevice
+edge-tts
+pywebview
+gTTS

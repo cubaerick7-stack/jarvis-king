@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="brilho" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#5fe6f0" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#5fe6f0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="esfera" cx="42%" cy="38%" r="65%">
+      <stop offset="0" stop-color="#bff8fc"/>
+      <stop offset=".45" stop-color="#5fe6f0"/>
+      <stop offset="1" stop-color="#0b3f4a"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="#02080b"/>
+  <circle cx="256" cy="256" r="210" fill="url(#brilho)"/>
+  <circle cx="256" cy="256" r="150" fill="none" stroke="#2878c8" stroke-width="38" stroke-dasharray="18.2 8"/>
+  <circle cx="256" cy="256" r="122" fill="none" stroke="#5fe6f0" stroke-opacity=".55" stroke-width="3"/>
+  <circle cx="256" cy="256" r="178" fill="none" stroke="#5fe6f0" stroke-opacity=".55" stroke-width="3"/>
+  <circle cx="256" cy="256" r="78" fill="url(#esfera)"/>
+  <g fill="none" stroke="#e8feff" stroke-opacity=".55" stroke-width="2.5">
+    <ellipse cx="256" cy="256" rx="30" ry="78"/>
+    <ellipse cx="256" cy="256" rx="62" ry="78"/>
+    <ellipse cx="256" cy="256" rx="78" ry="26"/>
+  </g>
+</svg>
