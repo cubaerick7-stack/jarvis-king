@@ -209,11 +209,27 @@ input::placeholder { color: var(--muted); }
 .j-confirmar .ponto { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
 
 /* ---- pesquisa: o resultado de uma pergunta (placar, resumo, pontos e fontes) ---- */
-.j-pesquisa { width: min(540px, calc(100vw - 32px)); }
-.j-pesquisa .barra { position: absolute; top: 10px; right: 10px; z-index: 3; padding: 0; border: 0; }
+.j-pesquisa { width: min(540px, calc(100vw - 32px)); transition: width .35s cubic-bezier(.2, .8, .2, 1); }
+.j-pesquisa.larga { width: min(820px, calc(100vw - 32px)); }
+.j-pesquisa.expandida { width: min(1120px, calc(100vw - 48px)); }
+.j-pesquisa.larga .pq-pontos, .j-pesquisa.expandida .pq-pontos { grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr)); }
+.j-pesquisa.expandida .pq-resumo p { font-size: 17px; }
+.j-pesquisa .barra { gap: 6px; }
+.j-pesquisa .expandir { display: grid; }
+.expandir { display: none; place-items: center; width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line-soft); background: transparent;
+  color: var(--cyan); font: 14px/1 var(--mono); cursor: pointer; flex: none; padding: 0; }
+.expandir:hover, .expandir:focus-visible { background: rgba(95, 230, 240, .14); outline: none; }
+.pq-topo { cursor: zoom-in; } .expandida .pq-topo { cursor: zoom-out; }
+/* card expandido: o resto do HUD sai da frente (a legenda fica embaixo dele) */
+body.foco .legenda, body.foco .estado, body.foco .hud-topo { opacity: 0; }
+.legenda, .estado, .hud-topo { transition: opacity .3s; }
+.j-pesquisa .barra { position: absolute; top: 10px; right: 10px; z-index: 3; padding: 0; border: 0; display: flex; }
 .j-pesquisa .barra small, .j-pesquisa .barra .ponto { display: none; }
-.j-pesquisa .corpo { padding: 0; gap: 0; max-height: min(58vh, 620px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
-.pq-topo { display: flex; gap: 12px; align-items: flex-start; padding: 16px 46px 10px 16px; }
+.j-pesquisa .corpo { padding: 0; gap: 0; max-height: min(70vh, 900px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+  grid-template-columns: minmax(0, 1fr); scrollbar-width: thin; scrollbar-color: rgba(53, 200, 255, .35) transparent; }
+.j-pesquisa .corpo > *, .pq-sec > *, .pq-item > *, .pq-resumo > * { min-width: 0; }
+.pq-sec, .pq-fontes, .pq-resumo { grid-template-columns: minmax(0, 1fr); }
+.pq-topo { display: flex; gap: 12px; align-items: flex-start; padding: 16px 80px 10px 16px; }
 .pq-topo h3 { font-size: 20px; letter-spacing: -.01em; }
 .pq-topo small { display: block; font: 10px var(--mono); letter-spacing: .2em; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
 .pq-sec { padding: 6px 16px; display: grid; gap: 8px; }
@@ -226,31 +242,35 @@ input::placeholder { color: var(--muted); }
 .pq-linha { display: flex; align-items: center; gap: 10px; }
 .pq-n { font: 10px var(--mono); padding: 3px 6px; border: 1px solid var(--line-strong); border-radius: 6px; color: var(--cyan); background: rgba(53, 200, 255, .1); }
 .pq-nome { font-weight: 600; font-size: 15px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.pq-pct, .pq-n { flex: none; }
 .pq-nome small { font: 9px var(--mono); color: var(--muted); letter-spacing: .1em; margin-left: 6px; }
 .pq-pct { font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; }
 .pq-barra { height: 4px; border-radius: 3px; background: rgba(53, 200, 255, .14); overflow: hidden; }
 .pq-barra i { display: block; height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg, #1f7bff, var(--cyan));
   box-shadow: 0 0 10px rgba(53, 200, 255, .8); transition: width 1.1s cubic-bezier(.2, .8, .2, 1); }
 .pq-item:nth-child(3) .pq-barra i { background: linear-gradient(90deg, #5b5bff, #8d7bff); box-shadow: 0 0 10px rgba(141, 123, 255, .7); }
-.pq-sub { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
-.pq-selo { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid rgba(74, 242, 161, .5); color: var(--ok); background: rgba(74, 242, 161, .08); white-space: nowrap; }
+.pq-sub { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); min-width: 0; }
+.pq-sub > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.pq-selo { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid rgba(74, 242, 161, .5); color: var(--ok); background: rgba(74, 242, 161, .08); white-space: nowrap;
+  flex: none; max-width: 58%; overflow: hidden; text-overflow: ellipsis; }
 .pq-nota { font-size: 13px; font-weight: 600; color: #d3e6ff; padding: 6px 16px; }
 .pq-resumo { margin: 6px 16px; padding: 12px 14px; border: 1px solid var(--line-soft); border-left: 3px solid var(--cyan); border-radius: 12px;
   background: rgba(4, 20, 54, .6); display: grid; gap: 6px; }
 .pq-resumo small { font: 9px var(--mono); letter-spacing: .24em; color: var(--cyan); }
 .pq-resumo p { font-size: 15px; line-height: 1.45; }
-.pq-pontos { margin: 6px 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pq-pontos { margin: 6px 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.pq-ponto, .pq-nota, .pq-resumo p, .pq-topo h3 { overflow-wrap: anywhere; }
 .pq-ponto { display: flex; gap: 8px; align-items: flex-start; padding: 9px 11px; font-size: 13px; line-height: 1.35;
   border: 1px solid var(--line-soft); border-radius: 12px; background: rgba(53, 200, 255, .05); transition: border-color .2s, transform .2s; }
 .pq-ponto:hover { border-color: var(--line-strong); transform: translateY(-1px); }
 .pq-ponto::before { content: ""; flex: none; width: 6px; height: 6px; margin-top: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
 .pq-fontes { display: grid; gap: 6px; margin: 6px 16px; }
-.pq-fonte { display: flex; gap: 8px; align-items: center; padding: 7px 11px; font-size: 12px; border: 1px solid var(--line-soft); border-radius: 10px;
+.pq-fonte { display: flex; min-width: 0; gap: 8px; align-items: center; padding: 7px 11px; font-size: 12px; border: 1px solid var(--line-soft); border-radius: 10px;
   color: var(--text); text-decoration: none; background: rgba(53, 200, 255, .04); }
-.pq-fonte b { font: 10px var(--mono); color: var(--cyan); letter-spacing: .06em; }
+.pq-fonte b { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 10px var(--mono); color: var(--cyan); letter-spacing: .06em; }
 .pq-fonte span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 .pq-pe { display: flex; justify-content: space-between; padding: 10px 16px 14px; font: 9px var(--mono); letter-spacing: .2em; color: var(--muted); text-transform: uppercase; }
-@media (max-width: 520px) { .pq-pontos { grid-template-columns: 1fr; } }
+@media (max-width: 520px) { .pq-pontos { grid-template-columns: minmax(0, 1fr); } }
 
 /* ---- métricas: ícone brilhando com órbita e os números ao lado (sem moldura) ---- */
 .janela.j-metrica { width: min(300px, calc(100vw - 32px)); background: none; border: none; box-shadow: none;
@@ -275,7 +295,7 @@ input::placeholder { color: var(--muted); }
 .cartao .grau { font-size: 52px; }
 .cartao .corpo .pq-topo, .cartao .corpo .pq-sec, .cartao .corpo .pq-pontos, .cartao .corpo .pq-fontes, .cartao .corpo .pq-resumo, .cartao .corpo .pq-nota, .cartao .corpo .pq-pe { margin-left: 0; margin-right: 0; padding-left: 0; padding-right: 0; }
 .cartao .corpo .pq-resumo { padding: 10px 12px; }
-.cartao .corpo .pq-pontos { grid-template-columns: 1fr; }
+.cartao .corpo .pq-pontos { grid-template-columns: minmax(0, 1fr); }
 .cartao .mt-icone { width: 90px; height: 90px; } .cartao .mt-icone svg { width: 44px; height: 44px; }
 .cartao .mt-icone::before { width: 88px; height: 88px; } .cartao .mt-icone::after { width: 62px; height: 62px; }
 
@@ -428,13 +448,16 @@ function rgba(a) { const [r, g, b] = atual.cor; return `rgba(${r|0},${g|0},${b|0
 // ponto só muda o globalAlpha (um número), em vez de montar e interpretar um texto rgba() por ponto.
 function ponto(x, y, s, alfa) { ctx.globalAlpha = alfa > 1 ? 1 : alfa < 0 ? 0 : alfa; ctx.fillRect(x, y, s, s); }
 
-// 30 quadros por segundo; em espera, 15 (a esfera gira igual, só gasta menos CPU)
-let pulo = 0;
-function quadro() {
-  const passo = estado === 'parado' ? 4 : 2;
-  if (++pulo < passo || document.hidden) { requestAnimationFrame(quadro); return; }
-  pulo = 0;
-  const f = passo / 2;  // quanto este quadro anda, para a velocidade não mudar com o fps
+// 60 quadros por segundo ouvindo, pensando ou falando; em espera, 30 (gira igual, gasta menos CPU).
+// O passo vem do tempo de verdade: a velocidade não muda com o fps nem quando um quadro atrasa.
+let ultimoQ = 0;
+function quadro(agora) {
+  requestAnimationFrame(quadro);
+  if (document.hidden) { ultimoQ = 0; return; }
+  const minimo = 1000 / (estado === 'parado' ? 30 : 60);
+  if (ultimoQ && agora - ultimoQ < minimo - 2) return;
+  const f = ultimoQ ? Math.min(3, (agora - ultimoQ) / (1000 / 30)) : 1;  // 1 = um quadro a 30 fps
+  ultimoQ = agora;
   t += (reduz ? 0.004 : 0.032) * f;
   mistura(ESTADOS[estado], 1 - Math.pow(1 - .06, f));
   // com janelas abertas na tela cheia o reator fica mais apagado, para o conteúdo ficar na frente
@@ -474,28 +497,35 @@ function quadro() {
 
   // Filamentos
   ctx.globalCompositeOperation = 'lighter';
-  const nos = [];
+  const nos = [], ampFio = atual.amp * 3.2 + voz * .09 * atual.esf;
+  const raioFio = (k, a) => {
+    const F = fases[k % CAMADAS];
+    const onda = Math.sin(a * F.f1 + t * F.v + F.ph + k) * .6 + Math.sin(a * (F.f2 - 2) - t * F.v * 1.3 + F.ph) * .3
+               + Math.sin(a * 7 + t * 3 + F.ph) * voz * .35;
+    return R * escala * (.93 + k * .016 + ampFio * onda);
+  };
   for (let k = 0; k < FIL; k++) {
-    const F = fases[k % CAMADAS], prof = 1 + k * .05, ox = mx * 9 * prof, oy = my * 6 * prof;
+    const prof = 1 + k * .05, ox = mx * 9 * prof, oy = my * 6 * prof;
     const giro = t * .05 * atual.giro * (k % 2 ? 1 : -1), pth = new Path2D();
     for (let i = 0; i <= PASSOS; i++) {
-      const a = i / PASSOS * Math.PI * 2;
-      const onda = Math.sin(a * F.f1 + t * F.v + F.ph + k) * .6 + Math.sin(a * (F.f2 - 2) - t * F.v * 1.3 + F.ph) * .3
-                 + Math.sin(a * 7 + t * 3 + F.ph) * voz * .35;
-      const r = R * escala * (.93 + k * .016 + (atual.amp * 3.2 + voz * .09 * atual.esf) * onda);
+      const a = i / PASSOS * Math.PI * 2, r = raioFio(k, a);
       const x = cx + ox + Math.cos(a + giro) * r, y = cy + oy + Math.sin(a + giro) * r;
       if (i) pth.lineTo(x, y); else pth.moveTo(x, y);
-      if (i === (k * 37 + (t * 14 | 0)) % PASSOS && k % 3 === 0) nos.push([x, y]);
+    }
+    if (k % 3 === 0) {  // uma esfera de luz desliza por este fio, sem pular de ponto em ponto
+      const a = k * 2.1 + t * .22 * (k % 2 ? -1 : 1), r = raioFio(k, a);
+      nos.push([cx + ox + Math.cos(a + giro) * r, cy + oy + Math.sin(a + giro) * r]);
     }
     pth.closePath();
     ctx.lineWidth = 3.4 * tamPonto; ctx.strokeStyle = rgba(.05 * brilho); ctx.stroke(pth);
     ctx.lineWidth = .9 * Math.max(1, tamPonto * .8); ctx.strokeStyle = rgba((.3 + (k % 3) * .12) * brilho); ctx.stroke(pth);
   }
-  // pontos de luz correndo pelos fios
+  // esferas de luz correndo pelos fios: halo largo + miolo branco-azulado
   for (const [x, y] of nos) {
-    const gl = ctx.createRadialGradient(x, y, 0, x, y, 14 * tamPonto);
-    gl.addColorStop(0, rgba(.9 * brilho)); gl.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = gl; ctx.fillRect(x - 14 * tamPonto, y - 14 * tamPonto, 28 * tamPonto, 28 * tamPonto);
+    const h = 18 * tamPonto, gl = ctx.createRadialGradient(x, y, 0, x, y, h);
+    gl.addColorStop(0, rgba(.85 * brilho)); gl.addColorStop(.25, rgba(.35 * brilho)); gl.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gl; ctx.fillRect(x - h, y - h, h * 2, h * 2);
+    ctx.fillStyle = `rgba(230,248,255,${.9 * brilho})`; ctx.beginPath(); ctx.arc(x, y, 1.8 * tamPonto, 0, Math.PI * 2); ctx.fill();
   }
 
   // Poeira de luz
@@ -518,7 +548,6 @@ function quadro() {
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
-  requestAnimationFrame(quadro);
 }
 
 // Disco central: aparece com a câmera ligada (ui.camera) e mostra "identidade confirmada"
@@ -783,7 +812,7 @@ function bate(a, b) { return !(a.right <= b.left || b.right <= a.left || a.botto
 function poe(el, tipo) {
   const lugar = LUGAR[tipo];
   if (lugar.aviso) { aplica(el, { left: `calc(50% - ${Math.min(340, innerWidth - 32) / 2}px)`, top: '11vh' }); return; }
-  if (lugar.pesquisa) { aplica(el, { left: `calc(50% - ${Math.min(540, innerWidth - 32) / 2}px)`, top: `${Math.max(150, innerHeight * .19)}px` }); return; }
+  if (lugar.pesquisa) { tamanhoPesquisa(el); return; }
   if (lugar.metrica) {
     const direita = [...abertas.values()].filter(j => j.el !== el && j.tipo === 'metrica').length % 2;  // a segunda vai para a esquerda
     aplica(el, direita ? { left: '7vw', top: `${Math.max(120, cy - 70)}px` } : { right: '7vw', top: `${Math.max(120, cy - 70)}px` });
@@ -799,10 +828,35 @@ function poe(el, tipo) {
   aplica(el, CANTOS[lugar.canto]);  // tudo ocupado: fica no preferido, por cima
 }
 
+// A pesquisa cresce quando precisa: mais larga se a resposta é grande e alta até a legenda.
+// Expandida (botão ⤢ ou duplo clique no título), ocupa quase a tela toda e o HUD sai da frente.
+function precisaLarga(d) {
+  if (!d) return false;
+  const lista = (x) => Array.isArray(x) ? x : [];
+  const texto = [d.resumo, d.nota, ...lista(d.pontos), ...lista(d.fontes).map(f => f && f.titulo)].join(' ').length;
+  return texto > 420 || lista(d.pontos).length >= 4 || lista(d.ranking).length >= 3;
+}
+function tamanhoPesquisa(el) {
+  const exp = el.classList.contains('expandida'), corpo = el.querySelector('.corpo');
+  const topo = exp ? 68 : Math.round(Math.max(140, innerHeight * .17));  // expandida: logo abaixo do cabeçalho
+  // normal: até a legenda (2 linhas); expandida: até o orbe de baixo
+  const limite = exp ? innerHeight * (1 - .032) - 64 : innerHeight * (1 - .125) - 92;
+  aplica(el, { left: `calc(50% - ${el.offsetWidth / 2}px)`, top: `${topo}px` });
+  if (corpo) corpo.style.maxHeight = `${Math.max(240, limite - topo)}px`;
+}
+function expande(el, sim) {
+  el.classList.toggle('expandida', sim);
+  document.body.classList.toggle('foco', !!document.querySelector('.j-pesquisa.expandida'));
+  const b = el.querySelector('.expandir');
+  if (b) { b.textContent = sim ? '⤡' : '⤢'; b.title = sim ? 'Diminuir' : 'Expandir'; }
+  tamanhoPesquisa(el);
+  setTimeout(() => el.isConnected && tamanhoPesquisa(el), 380);  // de novo depois da largura animar
+}
+
 // Arrastar a janela pela barra
 function arrasta(el, barra) {
   barra.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.fechar')) return;
+    if (e.target.closest('.fechar, .expandir')) return;
     const r = el.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
     el.classList.add('arrasta'); barra.setPointerCapture(e.pointerId);
     aplica(el, { left: `${r.left}px`, top: `${r.top}px` });
@@ -843,8 +897,16 @@ function abreJanela(rotulo, valor, ms) {
   el.setAttribute('aria-label', rotulo);
   const barra = cria('div', 'barra'), x = cria('button', 'fechar', '×');
   x.type = 'button'; x.title = 'Fechar'; x.onclick = () => fecha(tipo);
-  barra.append(cria('span', 'ponto'), cria('small', '', rotulo), x);
+  barra.append(cria('span', 'ponto'), cria('small', '', rotulo));
+  if (tipo === 'pesquisa') {
+    const ex = cria('button', 'expandir', '⤢');
+    ex.type = 'button'; ex.title = 'Expandir'; ex.onclick = () => expande(el, !el.classList.contains('expandida'));
+    barra.append(ex);
+    el.classList.toggle('larga', precisaLarga(jsonDe(valor)));
+  }
+  barra.append(x);
   el.append(cria('i', 'varre'), barra, conteudo(tipo, valor));
+  if (tipo === 'pesquisa') el.querySelector('.pq-topo').addEventListener('dblclick', () => expande(el, !el.classList.contains('expandida')));
   el.classList.add('nova'); setTimeout(() => el.classList.remove('nova'), 1200);
   const j = { el, tipo, timer: null };
   el.addEventListener('pointerdown', () => frente(el));
@@ -870,6 +932,7 @@ function fecha(tipo, ja = false) {
   abertas.delete(tipo);
   clearTimeout(j.timer);
   const el = j.el;
+  if (el.classList.contains('expandida')) document.body.classList.remove('foco');  // o HUD volta
   if (ja || reduz || !cheia) el.remove();
   else {  // volta para dentro do reator
     const r = el.getBoundingClientRect();

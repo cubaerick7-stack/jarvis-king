@@ -248,3 +248,23 @@ def test_news_falls_back_to_duckduckgo_and_empty_when_all_fail(monkeypatch):
     monkeypatch.setattr(F.urllib.request, "urlopen", fake_urlopen({}))
     assert F.web_snippets("segundo turno") == []
 
+
+
+def test_research_answer_is_what_he_says_not_the_ai_reply_written_before(monkeypatch, capsys):
+    j = load_jarvis()
+    calls = []
+    monkeypatch.setattr(j, "think", lambda *a, **k: calls.append(1) or {
+        "actions": [{"name": "research", "args": {"query": "segundo turno"}}],
+        "reply": "Buscando informações sobre o segundo turno, senhor.", "continue": True})
+    monkeypatch.setitem(j.TOOLS_BY_NAME["research"], "run",
+                        lambda a: print("Jarvis > Verifiquei, senhor. Flávio tem 52 por cento.") or True)
+    j.ask_ai_router("como está o segundo turno")
+    out = capsys.readouterr().out
+    assert "Buscando informações" not in out and out.strip().endswith("Flávio tem 52 por cento.")
+    assert calls == [1]  # não gasta outra volta da IA depois da pesquisa
+
+
+def test_research_window_never_grows_sideways():
+    for rule in (".j-pesquisa .corpo { padding: 0; gap: 0; max-height: min(70vh, 900px); overflow-x: hidden;",
+                 "grid-template-columns: repeat(2, minmax(0, 1fr))", ".pq-fonte { display: flex; min-width: 0;"):
+        assert rule in HTML, rule

@@ -579,6 +579,8 @@ RESEARCH_PROMPT = (
     '"fala":"a resposta falada em 2 ou 3 frases curtas, números por extenso, sem símbolos nem markdown, '
     'começando com algo como Verifiquei, senhor."}\n'
     "Use ranking só quando houver placar, votos, classificação, cotações ou comparação numérica (pct de 0 a 100). "
+    "Nos campos da janela (titulo, nota, resumo, pontos, detalhe) escreva números e datas com algarismos "
+    "(47%, 13/10/2026, 56 milhões); SÓ a fala usa números por extenso. "
     "Não invente nada: se não achou, diga no resumo e na fala que não encontrou."
 )
 
@@ -1838,6 +1840,10 @@ def run_actions(actions):
     return failed, seen
 
 
+# Ferramentas cuja própria fala é a resposta do pedido (o que acharam): a "reply" da IA não fica por cima
+ANSWER_TOOLS = {"research"}
+
+
 def _failure_reason(entry):
     """O que uma ação que FALHOU disse (a última linha "Jarvis > ..."), ou "" se não disse nada."""
     head, _, shown = entry.partition("\n")
@@ -1866,6 +1872,10 @@ def ask_ai_router(user_text):
         actions = data["actions"]
         failed, seen = run_actions(actions)
         history += seen
+        if any(str(a.get("name", "")) in ANSWER_TOOLS and str(a.get("name", "")) not in failed for a in actions):
+            # a pesquisa já disse o que achou: a frase da IA ("Buscando informações...") foi escrita antes
+            # de ver o resultado e não pode ficar por cima da resposta, nem gastar outra volta da IA
+            return True
         reply = str(data.get("reply") or "").strip()
         more = data.get("continue") is True or str(data.get("continue")).lower() == "true"
         if more and actions:
