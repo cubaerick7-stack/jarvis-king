@@ -166,6 +166,10 @@ INTERFACE (TELA CHEIA)
    acordei"): pausa, da bom dia com o clima, a roupa para o dia e as principais
    noticias, e toca Do I Wanna Know?. Para testar agora: "testa o despertador".
    Outras musicas:  setx BOLHA_MUSICA_DESPERTAR "..."  /  setx BOLHA_MUSICA_BOM_DIA "..."
+   "Acorda, bebe, o papai chegou": a tela liga com SISTEMAS ONLINE e ele da as
+   boas-vindas com hora, clima, lembretes de hoje, mensagens novas e 1 ou 2
+   sugestoes. Ele tambem avisa sozinho mensagem nova no WhatsApp (pelo WAHA) e
+   bateria fraca. Para desligar os avisos:  setx BOLHA_AVISOS 0
 7. Bateria e PC viram um widget com icone brilhando e os numeros de verdade.
 8. Disco com a camera no meio do reator ("identidade confirmada", opcional):
    setx JARVIS_CAMERA 1      (e abra o PowerShell de novo)

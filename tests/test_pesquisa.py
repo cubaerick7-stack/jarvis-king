@@ -419,3 +419,35 @@ def test_reminder_without_day_is_the_next_time(monkeypatch):
     assert Mem.add_reminder("toca lofi", "", later, pedido=True)
     item = Mem.load()["lembretes"][-1]
     assert item["data"] == (now + timedelta(minutes=5)).date().isoformat() and item["pedido"]
+
+
+def test_papai_chegou_boots_and_greets_with_summary(monkeypatch, capsys):
+    j = load_jarvis()
+    calls = []
+    monkeypatch.setattr(j.U, "front", lambda force=False: calls.append(("front", force)))
+    monkeypatch.setattr(j.U, "boot", lambda: calls.append("boot"))
+    monkeypatch.setattr(j.F, "weather", lambda c: print("Jarvis > Curitiba: Nublado, +17°C (sensação +17°C), umidade 80%, vento 5 km/h"))
+    seen = []
+    monkeypatch.setattr(j, "think", lambda s, u, **k: seen.append(u) or "Bem-vindo de volta, senhor. Todos os sistemas online. Quer que eu toque algo?")
+    j._novas[:] = ["Ana"]
+    assert j.fast_local_router("acorda bebê o papai chegou") is True
+    assert ("front", True) in calls and "boot" in calls
+    assert "Clima: Curitiba" in seen[0] and "Mensagens novas no WhatsApp de: Ana" in seen[0]
+    assert capsys.readouterr().out.strip().endswith("Quer que eu toque algo?") and j._novas == []
+
+
+def test_new_whatsapp_message_becomes_a_spoken_warning(monkeypatch):
+    j = load_jarvis()
+    monkeypatch.setenv("WAHA_URL", "http://x:3000")
+    rounds = [[("1@c.us", "Ana", "oi", 100)], [("1@c.us", "Ana", "oi", 100)], [("1@c.us", "Ana", "chego às 8", 200)]]
+    monkeypatch.setattr(j.W, "incoming", lambda: rounds.pop(0) if rounds else (_ for _ in ()).throw(SystemExit))
+    monkeypatch.setattr(j.time, "sleep", lambda s: None)
+    try:
+        j.watch_world()
+    except SystemExit:
+        pass
+    items = []
+    while not j.commands.empty():
+        items.append(j.commands.get_nowait())
+    assert ("aviso", "Senhor, mensagem nova de Ana: chego às 8") in items
+    assert not any("oi" == i[1][-2:] for i in items)  # o que já estava lá ao abrir não é avisado

@@ -892,6 +892,7 @@ POLITE_END = re.compile(r"(?:[\s,]+(?:por favor|pfv|pra mim|para mim)|\s*,\s*ai|
 POLITE_START = re.compile(r"^por favor[,\s]+", re.I)
 
 
+PAPAI = re.compile(r"\bacorda,? (?:bebe|nenem|neném)\b|\bpapai chegou\b|\bpapai ta on\b|\bpapai esta em casa\b")
 LATER = re.compile(r"\b(?:as|a|ate|para as|pras)\s+\d{1,2}(?:\s*(?:h|:|horas?)\s*\d{0,2})?\b(?!\s*(?:%|por cento|minutos?|segundos?))"
                    r"|\b\d{1,2}\s*(?:h|:)\s*\d{2}\b|\b\d{1,2}h\b|\bamanha\b|\bdaqui a\b|\bme acorda\b|\bdespertador\b(?!\s*$)")
 
@@ -909,6 +910,10 @@ def fast_local_router(user_text):
     # a IA agenda (antes o atalho do "toca ..." tocava na hora)
     if LATER.search(clean) and "volume" not in clean and "brilho" not in clean:
         return False
+
+    if PAPAI.search(clean):
+        act("greeting", greeting)
+        return True
 
     if re.fullmatch(r"(?:testa|teste|testar) (?:o )?despertador", clean):
         commands.put(("despertador", "padrão"))  # toca agora, igual às 7h (depois do pedido atual)
@@ -1409,7 +1414,7 @@ def confirm(question):
             except queue.Empty:
                 break
             answer = (answer or "").strip()
-            if source in ("lembrete", "agendado", "despertador"):  # avisa/faz depois; não é a resposta
+            if source in ("lembrete", "agendado", "despertador", "aviso"):  # avisa/faz depois; não é a resposta
                 later.append((source, answer))
                 continue
             if not answer:  # o microfone não ouviu nada: ainda dá para digitar ou dizer "Jarvis, sim"
@@ -1665,6 +1670,9 @@ TOOLS = [
     {"name": "remember", "args": '{"fact":"texto"}', "group": "memória",
      "desc": "guardar uma informação que o usuário pediu para lembrar", "examples": ["lembra que eu sou alérgico a camarão"],
      "run": lambda a: M.remember(a.get("fact", ""))},
+    {"name": "greeting", "args": "{}", "group": "memória",
+     "desc": "boas-vindas estilo Jarvis com resumo e sugestões (\"acorda, bebê, o papai chegou\", \"cheguei\")",
+     "examples": ["acorda bebê o papai chegou", "cheguei em casa"], "run": lambda a: greeting()},
     {"name": "set_alarm", "args": '{"hour":"HH:MM","day":"AAAA-MM-DD ou vazio (a próxima vez)","music":"música para acordar (opcional)"}',
      "group": "memória", "desc": "DESPERTADOR: acordar o senhor num horário com música; depois do ACORDEI dá bom dia "
                                   "com clima, roupa e notícias", "examples": ["me acorda às 7h", "me acorda amanhã 6h30 com Evidências"],
@@ -1749,6 +1757,9 @@ Regras:
 - música "no Spotify" (ou junto com abrir o Spotify) = spotify_play, NUNCA play_youtube
 - tocar/ouvir/abrir uma música ou vídeo = play_youtube (toca direto); search_web youtube só se pedir para ver a lista
 - pausar, pular, tela cheia, avançar no vídeo aberto = youtube_control
+- PROATIVO: depois de fazer o pedido, SÓ quando for realmente útil, ofereça em reply UM próximo passo curto em
+  forma de pergunta, ligado ao que ele pediu ou à hora ("Tocando lofi. Quer que eu deixe o WhatsApp em silêncio
+  enquanto estuda?"). Não ofereça em pedidos simples (volume, pausa) nem repita a mesma oferta.
 - MODO CICLO: se precisar VER o resultado antes de decidir (pesquisar na web, ler página, procurar arquivo,
   escolher entre opções), faça essa ação e coloque "continue":true. Você recebe o resultado e decide o
   próximo passo. Quando terminar, "continue":false e a resposta final em reply (até 5 frases)
@@ -2092,7 +2103,8 @@ MORNING_PROMPT = (
     "Você é {name}, o mordomo do João, que o chama de senhor. Ele acabou de acordar. Fale em voz alta, em português "
     "do Brasil, de 4 a 6 frases curtas: comece com \"Bom dia, senhor.\", diga o clima de hoje com números por extenso, "
     "recomende a roupa para o dia (casaco, blusa, roupa leve, guarda-chuva) de acordo com o clima, conte as 3 notícias "
-    "mais importantes em uma frase cada e termine com \"Tenha um bom dia, senhor.\". Use só os dados recebidos. "
+    "mais importantes em uma frase cada, se houver lembretes de hoje diga-os e, se fizer sentido, dê UMA sugestão útil "
+    "para o dia; termine com \"Tenha um bom dia, senhor.\". Use só os dados recebidos. "
     "Sem emojis, sem markdown, sem símbolos como °C ou %."
 )
 
@@ -2145,7 +2157,7 @@ def _wait_awake(seconds=WAIT_AWAKE):
                 source, text = commands.get(timeout=left)
             except queue.Empty:
                 break
-            if source not in ("lembrete", "agendado", "despertador") and AWAKE.search(normalize(text or "")):
+            if source not in ("lembrete", "agendado", "despertador", "aviso") and AWAKE.search(normalize(text or "")):
                 return True
             later.append((source, text))
         return False
@@ -2158,14 +2170,14 @@ def wake_up(music=""):
     """A hora do despertador: música até apertar ACORDEI, depois o bom dia."""
     music = "" if music == "padrão" else music
     _acorda_tela()
-    U.front()  # vem para a frente na tela principal, mesmo minimizado ou atrás de outra janela
+    U.front(True)  # vem para a frente na tela principal, mesmo minimizado ou atrás de outra janela
     print("Jarvis > (despertador) Hora de acordar, senhor.")
     play_youtube(music or MUSICA_DESPERTAR or MUSICA_BOM_DIA)
     # o YouTube abre por cima: o Bolha volta para a frente (de novo depois, o navegador demora a carregar),
     # para o ACORDEI estar na tela quando o senhor abrir o olho
-    U.front()
+    U.front(True)
     for wait in (3, 8):
-        threading.Timer(wait, U.front).start()
+        threading.Timer(wait, U.front, args=(True,)).start()
     U.card("Despertador", datetime.now().strftime("%H:%M"), WAIT_AWAKE * 1000)
     U.speech("Hora de acordar, senhor. Aperte ACORDEI quando estiver de pé.")
     if listener is not None:
@@ -2206,7 +2218,12 @@ def morning_brief():
             "tema": "notícias", "titulo": "Principais notícias de hoje", "pontos": [n["titulo"] for n in news[:5]],
             "fontes": [{"nome": n["site"], "titulo": n["titulo"]} for n in news[:4]], "hora": time.strftime("%H:%M")},
             ensure_ascii=False), 120000)
-    data = (f"Clima: {weather or 'não consegui ver'}\nNotícias:\n"
+    try:
+        today = [r["texto"] for r in M.load()["lembretes"] if r.get("data") == datetime.now().date().isoformat()
+                 and not r.get("despertador")]
+    except Exception:
+        today = []
+    data = (f"Clima: {weather or 'não consegui ver'}\nLembretes de hoje: {'; '.join(today) or 'nenhum'}\nNotícias:\n"
             + "\n".join(f"- {n['titulo']} ({n['site']})" for n in news[:5]))
     text = ""
     try:
@@ -2232,6 +2249,103 @@ def morning_brief():
     speak(text)
     play_youtube(MUSICA_BOM_DIA)
     set_state("parado")
+
+
+# ========================= "ACORDA, BEBÊ, O PAPAI CHEGOU" =========================
+GREETING_PROMPT = (
+    "Você é {name}, o mordomo-IA do João, no estilo do Jarvis do Homem de Ferro, e o chama de senhor. Ele acabou "
+    "de chegar e disse \"acorda, bebê, o papai chegou\". Responda em voz alta, em português do Brasil, de 3 a 5 frases "
+    "curtas: boas-vindas com um humor seco e elegante, \"todos os sistemas online\", um resumo do que importa agora "
+    "(hora, clima, lembretes de hoje, mensagens novas, bateria se estiver fraca) e no fim UMA ou DUAS sugestões que "
+    "façam sentido para a hora, o dia e os hábitos dele, em forma de pergunta. Use só os dados recebidos; números por "
+    "extenso; sem emojis, markdown ou símbolos como °C e %."
+)
+
+
+def greeting():
+    """O "papai chegou": a tela liga com animação e ele dá as boas-vindas com resumo e sugestões."""
+    U.front(True)
+    U.boot()
+    now = datetime.now()
+    dias = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
+    tee = _Tee(sys.stdout)
+    with contextlib.redirect_stdout(tee):
+        try:
+            F.weather(M.load()["perfil"].get("cidade", ""))
+        except Exception:
+            pass
+    weather = next((line[len("Jarvis > "):] for line in tee.getvalue().splitlines() if CLIMA.match(line[len("Jarvis > "):])), "")
+    facts = [f"Agora: {now:%H:%M}, {dias[now.weekday()]}"]
+    if weather:
+        facts.append(f"Clima: {weather}")
+    try:
+        today = [r["texto"] for r in M.load()["lembretes"]
+                 if not r.get("avisado") and r.get("data") == now.date().isoformat()]
+        if today:
+            facts.append("Lembretes de hoje: " + "; ".join(today[:4]))
+    except Exception:
+        pass
+    if _novas:
+        facts.append("Mensagens novas no WhatsApp de: " + ", ".join(dict.fromkeys(_novas))[:200])
+    hint = M.habit_hint()
+    if hint:
+        facts.append(f"Hábito dele perto desta hora: {hint}")
+    try:
+        facts.append("Conversa recente e perfil:\n" + M.context()[:800])
+    except Exception:
+        pass
+    text = ""
+    try:
+        text = re.sub(r"[*_#`]", "", str(think(GREETING_PROMPT.format(name=NAME), "\n".join(facts),
+                                               json_mode=False, temperature=0.8) or "")).strip()
+    except Exception:
+        pass
+    if not text or text.startswith(("{", "[")):
+        text = f"Bem-vindo de volta, senhor. Todos os sistemas online. São {now:%H:%M}."
+        m = CLIMA.match(weather)
+        if m:
+            text += f" Lá fora, {m.group(2).strip().lower()} e {int(m.group(3))} graus."
+        if _novas:
+            text += f" O senhor tem mensagens novas de {', '.join(list(dict.fromkeys(_novas))[:2])}."
+        text += f" {hint}" if hint else " Em que posso ajudar?"
+    _novas.clear()
+    print(f"Jarvis > {text}")
+    return True
+
+
+# ========================= AVISOS SOZINHO =========================
+# O Bolha olha o mundo de tempos em tempos (sem IA, sem gastar cota) e avisa o que importa.
+_novas = []  # quem mandou mensagem desde o último resumo
+
+
+def watch_world(every=60):
+    """Mensagem nova no WhatsApp (pelo WAHA) e bateria fraca viram aviso falado. BOLHA_AVISOS=0 desliga."""
+    seen, warned_battery = {}, False
+    first = True
+    while True:
+        try:
+            if W.configured():
+                for cid, name, text, ts in W.incoming():
+                    if first:
+                        seen[cid] = ts  # o que já estava lá quando ele abriu não é novo
+                    elif ts > seen.get(cid, 0):
+                        seen[cid] = ts
+                        _novas.append(name)
+                        commands.put(("aviso", f"Senhor, mensagem nova de {name}: {text[:90]}"))
+        except Exception:
+            pass
+        try:
+            import psutil
+            bat = psutil.sensors_battery()
+            if bat and not bat.power_plugged and bat.percent <= 20 and not warned_battery:
+                warned_battery = True
+                commands.put(("aviso", f"Senhor, a bateria está em {bat.percent:.0f} por cento. Melhor ligar na tomada."))
+            elif bat and bat.power_plugged:
+                warned_battery = False
+        except Exception:
+            pass
+        first = False
+        time.sleep(every)
 
 
 def announce(text, title):
@@ -2575,6 +2689,8 @@ def run():
     F.track_focus()
     F.on_alarm = lambda message: commands.put(("lembrete", message))  # timers também falam
     M.reminder_watcher(commands.put)
+    if os.environ.get("BOLHA_AVISOS", "").strip() != "0":
+        threading.Thread(target=watch_world, daemon=True).start()
     hint = M.habit_hint()
     if hint:
         announce(hint, "Sugestão")
@@ -2595,6 +2711,9 @@ def run():
             print(f"Você ({origin}) > {user_text}")
         if origin == "lembrete":
             announce(f"Senhor, lembrete: {user_text}", "Lembrete")
+            continue
+        if origin == "aviso":  # o Bolha percebeu algo sozinho (mensagem nova, bateria fraca)
+            announce(user_text, "Aviso")
             continue
         if origin == "despertador":
             try:

@@ -90,8 +90,32 @@ def _place(where):
         return False
 
 
-def front():
+def front(force=False):
+    """force=True (despertador, "papai chegou"): restaura, põe no topo e pega o foco de verdade,
+    mesmo com o navegador ou um jogo na frente. O normal só sobe sem roubar o teclado."""
+    if force and _window is not None and mode() == "cheia":
+        try:
+            import ctypes
+            u32 = ctypes.WinDLL("user32")
+            hwnd = _hwnd(_window)
+            if hwnd:
+                u32.ShowWindow(hwnd, 9)  # SW_RESTORE (estava minimizado)
+                u32.keybd_event(0x12, 0, 0, 0)  # um toque no ALT: o Windows deixa trocar a janela da frente
+                u32.keybd_event(0x12, 0, 2, 0)
+                u32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0043)  # HWND_TOPMOST | NOSIZE | NOMOVE | SHOWWINDOW
+                u32.SetForegroundWindow(hwnd)
+                u32.BringWindowToTop(hwnd)
+                # 2 s depois deixa de ficar preso por cima (senão travaria o resto do PC atrás dele)
+                threading.Timer(2, lambda: u32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, 0x0013)).start()
+                return True
+        except Exception:
+            pass
     return _place("frente")
+
+
+def boot():
+    """A animação de "ligar" do reator (SISTEMAS ONLINE)."""
+    _js("boot()")
 
 
 def behind():

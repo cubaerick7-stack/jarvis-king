@@ -301,6 +301,12 @@ body.foco .legenda, body.foco .estado, body.foco .hud-topo { opacity: 0; }
 .cartao .mt-icone::before { width: 88px; height: 88px; } .cartao .mt-icone::after { width: 62px; height: 62px; }
 
 
+/* ---- "papai chegou": o reator liga com um clarão e SISTEMAS ONLINE ---- */
+.boot-txt { position: fixed; left: 50%; top: 44%; transform: translate(-50%, -50%); z-index: 4; pointer-events: none; text-align: center;
+  font: 600 clamp(22px, 3.4vw, 44px) var(--display); letter-spacing: .5em; padding-left: .5em; color: #fff;
+  text-shadow: 0 0 18px var(--cyan), 0 0 42px rgba(53, 200, 255, .8); white-space: nowrap; }
+.boot-txt small { display: block; margin-top: 10px; font: 12px var(--mono); letter-spacing: .4em; color: var(--cyan); text-shadow: none; }
+
 /* ---- despertador: relógio grande e o botão ACORDEI pulsando ---- */
 .j-despertador { width: min(420px, calc(100vw - 32px)); text-align: center; }
 .j-despertador .corpo { justify-items: center; padding: 22px 22px 18px; }
@@ -626,6 +632,22 @@ addEventListener('keydown', (e) => {
 });
 elPedido.addEventListener('blur', () => setTimeout(() => { if (!elPedido.value.trim() && document.activeElement !== elPedido) elForm.classList.remove('aberto'); }, 4000));
 document.getElementById('form').addEventListener('submit', () => setTimeout(() => caixa(false), 150));
+
+// "Acorda, bebê, o papai chegou": o reator nasce do centro com um clarão e escreve SISTEMAS ONLINE
+window.boot = () => {
+  if (reduz) return;
+  cv.animate([{ transform: 'scale(.15)', opacity: 0, filter: 'brightness(3)' },
+              { transform: 'scale(1.12)', opacity: 1, filter: 'brightness(2)', offset: .55 },
+              { transform: 'none', opacity: 1, filter: 'none' }], { duration: 1700, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  for (let i = 0; i < 3; i++) setTimeout(() => ondas.push({ t0: t, x: cx, y: cy }), 300 + i * 260);
+  voz = 1;
+  if (!cheia) return;
+  const txt = cria('div', 'boot-txt', 'SISTEMAS ONLINE');
+  txt.append(cria('small', '', 'BEM-VINDO DE VOLTA, SENHOR'));
+  document.body.append(txt);
+  txt.animate([{ opacity: 0, letterSpacing: '1.2em' }, { opacity: 1, letterSpacing: '.5em', offset: .3 },
+               { opacity: 1, offset: .75 }, { opacity: 0 }], { duration: 3200, easing: 'ease-out' }).onfinish = () => txt.remove();
+};
 
 // Relógio (tela cheia)
 const DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];

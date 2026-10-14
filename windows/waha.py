@@ -165,6 +165,18 @@ def recent_chats(limit=8):
     return out
 
 
+def incoming(limit=15):
+    """Última mensagem RECEBIDA de cada conversa de pessoa (sem grupos/canais): [(chat_id, nome, texto, timestamp)]."""
+    chats = _call(f"/api/{session()}/chats/overview", {"limit": limit}, timeout=10)
+    out = []
+    for c in chats if isinstance(chats, list) else []:
+        cid, last = _chat_id(c), c.get("lastMessage") or {}
+        if not last or last.get("fromMe") or not cid.endswith("@c.us"):
+            continue
+        out.append((cid, _name(c) or _digits(cid), _text(last), int(last.get("timestamp") or 0)))
+    return out
+
+
 def messages(chat_id, limit=6):
     """As últimas mensagens de uma conversa, da mais antiga para a mais nova: [(de_mim, texto, hora)]."""
     msgs = _call(f"/api/{session()}/chats/{urllib.parse.quote(chat_id)}/messages",
