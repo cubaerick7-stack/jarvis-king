@@ -594,6 +594,17 @@ def _clean_research(raw):
     return data if isinstance(data, dict) and (data.get("resumo") or data.get("titulo") or data.get("fala")) else None
 
 
+_pedido = ""  # o pedido atual, como chegou (a pesquisa usa se a IA esquecer de mandar a pergunta)
+
+
+def _research_query(args):
+    """A pergunta da pesquisa: "query" ou qualquer texto que a IA mandou com outro nome; senão, o próprio pedido."""
+    query = str(args.get("query") or "").strip()
+    if not query:
+        query = next((str(v).strip() for v in args.values() if isinstance(v, str) and v.strip()), "")
+    return query or _pedido
+
+
 def research(query):
     """Pesquisa na internet (Gemini com a busca do Google) e mostra o resultado numa janela da tela cheia:
     manchete, placar com barras, resumo, pontos e fontes. A fala é a resposta resumida."""
@@ -1517,7 +1528,7 @@ TOOLS = [
      "desc": "responder perguntas de fatos atuais (notícias, eleição, placar, cotação, quem ganhou) pesquisando na "
              "internet e mostrando o resultado numa janela",
      "examples": ["como está a eleição", "quem ganhou o jogo ontem", "quanto está o dólar", "o que aconteceu com a Petrobras"],
-     "run": lambda a: research(a.get("query", ""))},
+     "run": lambda a: research(_research_query(a))},
     {"name": "web_search", "args": '{"query":"texto"}', "group": "navegador",
      "desc": "pesquisar no Google e LER os resultados (para escolher, comparar, responder)",
      "examples": ["pesquisa a melhor receita de bolo de cenoura"],
@@ -2191,7 +2202,9 @@ def ig_post(image_url, caption=""):
 
 def respond(text):
     """Executa o pedido; mostra a fala do Jarvis no reator (listas viram cartão) e fala em voz alta."""
+    global _pedido
     _ran.clear()
+    _pedido = text
     U.heard(text)  # ele vem para a frente com o seu pedido na legenda
     set_state("pensando")
     tee = _Tee(sys.stdout)

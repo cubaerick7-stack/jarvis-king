@@ -268,3 +268,12 @@ def test_research_window_never_grows_sideways():
     for rule in (".j-pesquisa .corpo { padding: 0; gap: 0; max-height: min(70vh, 900px); overflow-x: hidden;",
                  "grid-template-columns: repeat(2, minmax(0, 1fr))", ".pq-fonte { display: flex; min-width: 0;"):
         assert rule in HTML, rule
+
+
+def test_research_uses_the_request_when_the_ai_forgets_the_query(monkeypatch):
+    j = load_jarvis()
+    j._pedido = "como está o segundo turno"
+    assert j._research_query({"query": "eleição 2026"}) == "eleição 2026"
+    assert j._research_query({"pergunta": "segundo turno"}) == "segundo turno"
+    assert j._research_query({}) == "como está o segundo turno"
+    assert j._research_query({"query": "  "}) == "como está o segundo turno"
