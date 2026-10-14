@@ -78,22 +78,6 @@ def test_research_without_key_or_question_does_not_call_the_cloud(monkeypatch, c
     assert "GEMINI_API_KEY" in capsys.readouterr().out
 
 
-def test_search_falls_back_to_groq_compound_when_gemini_fails(monkeypatch):
-    import urllib.error
-    monkeypatch.setenv("GEMINI_API_KEY", "k")
-    monkeypatch.setenv("GROQ_API_KEY", "g")
-    monkeypatch.setattr(N, "_search_post", lambda *a: (_ for _ in ()).throw(urllib.error.URLError(TimeoutError("timed out"))))
-    asked = []
-
-    def fake_groq(body, key):
-        asked.append(body["model"])
-        return {"choices": [{"message": {"content": "resposta do groq"}}]}
-
-    monkeypatch.setattr(N, "_groq_post", fake_groq)
-    assert N.search_generate("s", "u") == ("resposta do groq", [])
-    assert asked == ["groq/compound-mini"]
-
-
 def test_failed_tool_reason_stays_in_the_caption(monkeypatch, capsys):
     j = load_jarvis()
     monkeypatch.setattr(j, "think", lambda *a, **k: {"actions": [{"name": "research", "args": {"query": "eleição"}}],
@@ -151,23 +135,6 @@ def test_page_has_research_and_metric_windows_without_innerhtml():
     assert "innerHTML" not in HTML
 
 
-def test_search_tries_models_with_free_google_search_first_and_keeps_chat_quota(monkeypatch):
-    import urllib.error
-    monkeypatch.setenv("GEMINI_API_KEY", "k")
-    tried = []
-
-    def fake_post(model, body, key):
-        tried.append(model)
-        if model == "gemini-2.5-flash":
-            raise urllib.error.HTTPError("u", 429, "x", {}, __import__("io").BytesIO(b"{}"))
-        return grounded("ok")
-
-    monkeypatch.setattr(N, "_search_post", fake_post)
-    assert N.search_generate("s", "u")[0] == "ok"
-    assert tried == ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
-    assert "gemini-2.5-flash" not in N._limited  # o 429 da busca não estraga a fila do chat
-
-
 DDG = """<div class="result results_links results_links_deep web-result "><div class="links_main links_deep result__body">
 <h2 class="result__title"><a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fg1.globo.com%2Felei%C3%A7%C3%B5es&amp;rut=x">Segundo turno &amp; <b>2026</b></a></h2>
 <a class="result__snippet" href="x">Flávio e Lula disputam o <b>segundo turno</b> em 25 de outubro.</a></div></div>
@@ -209,3 +176,75 @@ def test_research_uses_duckduckgo_and_any_ai_when_search_quota_is_over(monkeypat
     assert "g1.globo.com): dia 25" in seen[0]
     assert json.loads(cards[0][1])["fontes"] == [{"nome": "g1.globo.com", "titulo": "Segundo turno"}]
     assert capsys.readouterr().out.strip().endswith("Verifiquei, senhor. É dia 25.")
+
+
+def test_search_tries_the_models_google_suggested_first_and_keeps_chat_quota(monkeypatch):
+    import io
+    import urllib.error
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    calls = []
+
+    def quota(model, body, key):
+        calls.append(model)
+        raise urllib.error.HTTPError("u", 429, "x", {}, io.BytesIO(b"{}"))
+
+    monkeypatch.setattr(N, "_search_post", quota)
+    for _ in range(2):
+        try:
+            N.search_generate("s", "u")
+        except N.CloudError:
+            pass
+    assert calls == N.search_models() * 2  # sem pausa: toda pergunta tenta o Gemini de novo
+    assert calls[:2] == ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
+    assert not any(m in N._limited for m in calls)  # e a cota do chat não é afetada
+
+
+NEWS_RSS = """<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>x</title>
+<item><title>Segundo turno será em 25 de outubro - g1</title><link>https://news.google.com/a</link>
+<pubDate>Tue, 13 Oct 2026 10:00:00 GMT</pubDate><description>&lt;a href="x"&gt;Segundo turno será em 25 de outubro&lt;/a&gt;</description>
+<source url="https://g1.globo.com">g1</source></item></channel></rss>"""
+BING_RSS = """<?xml version="1.0" encoding="utf-8" ?><rss version="2.0"><channel><title>Bing</title>
+<item><title>Pesquisa mostra empate técnico</title><link>https://www.cnnbrasil.com.br/b</link>
+<description>Flávio tem 47% e Lula 45% no segundo turno.</description></item></channel></rss>"""
+
+
+def fake_urlopen(pages):
+    class Resp:
+        def __init__(self, body):
+            self.body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return self.body.encode("utf-8")
+
+    def urlopen(req, timeout=10):
+        for host, body in pages.items():
+            if host in req.full_url:
+                if body is None:
+                    raise OSError("sem conexão")
+                return Resp(body)
+        raise OSError("host desconhecido")
+    return urlopen
+
+
+def test_news_comes_from_google_news_and_bing_rss_without_key(monkeypatch):
+    monkeypatch.setattr(F.urllib.request, "urlopen", fake_urlopen({"news.google.com": NEWS_RSS, "bing.com": BING_RSS}))
+    found = F.web_snippets("segundo turno")
+    assert found[0] == {"titulo": "Segundo turno será em 25 de outubro", "site": "g1",
+                        "trecho": "(publicado Tue, 13 Oct 2026)", "url": "https://news.google.com/a"}
+    assert found[1] == {"titulo": "Pesquisa mostra empate técnico", "site": "cnnbrasil.com.br",
+                        "trecho": "Flávio tem 47% e Lula 45% no segundo turno.", "url": "https://www.cnnbrasil.com.br/b"}
+
+
+def test_news_falls_back_to_duckduckgo_and_empty_when_all_fail(monkeypatch):
+    monkeypatch.setattr(F.urllib.request, "urlopen", fake_urlopen({"news.google.com": None, "bing.com": "<html>bloqueado",
+                                                                   "duckduckgo.com": DDG}))
+    assert [r["site"] for r in F.web_snippets("segundo turno")] == ["g1.globo.com"]
+    monkeypatch.setattr(F.urllib.request, "urlopen", fake_urlopen({}))
+    assert F.web_snippets("segundo turno") == []
+

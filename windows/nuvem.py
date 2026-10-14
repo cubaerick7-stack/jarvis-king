@@ -22,10 +22,10 @@ DEFAULT_MODELS = ["gemini-flash-latest", "gemini-flash-lite-latest"]
 TIMEOUT = 20
 GEN_TIMEOUT = 15  # o Gemini que passa disso costuma estar "pensando" demais: o lite responde em segundos
 SEARCH_TIMEOUT = 40  # pesquisar no Google antes de responder demora mais que uma resposta comum
-# A busca do Google tem cota própria, separada do chat: no plano grátis os modelos mais novos (flash-latest)
-# podem ter cota zero de busca mesmo com o chat funcionando. Os 2.5 têm busca grátis por dia: vão primeiro.
-SEARCH_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
-GROQ_SEARCH_MODELS = ["groq/compound-mini", "groq/compound"]  # modelos do Groq que pesquisam na internet sozinhos
+# A busca do Google no Gemini tem cota própria, separada do chat (no plano grátis pode ser zero).
+# Sem cota, a pesquisa do Jarvis lê as notícias pelo RSS (ferramentas.web_snippets) e a IA resume.
+# Primeiro os modelos que o próprio Google indicou (os 2.5 saíram para contas novas); depois os do chat.
+SEARCH_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
 
 
 GROQ_API = "https://api.groq.com/openai/v1/chat/completions"
@@ -211,51 +211,12 @@ def generate(system, user, json_mode=False, max_tokens=2048, temperature=0.0):
 
 
 def search_generate(system, user, max_tokens=1800):
-    """Responde com informação atual da internet e devolve (texto, fontes): primeiro o Gemini com a busca do
-    Google; se ele falhar (cota, demora), o Groq Compound, que também pesquisa. Levanta CloudError se nenhum der.
-    As fontes vêm como [{"nome": "g1.globo.com", "titulo": "...", "url": "..."}]."""
-    errors = []
-    if available():
-        try:
-            return _gemini_search(system, user, max_tokens)
-        except CloudError as e:
-            if "recusada" in str(e) and not groq_available():
-                raise
-            errors.append(str(e))
-    if groq_available():
-        try:
-            return _groq_search(system, user, max_tokens)
-        except CloudError as e:
-            errors.append(str(e))
-    if not errors:
-        raise CloudError("sem GEMINI_API_KEY nem GROQ_API_KEY")
-    raise CloudError("; ".join(errors))
-
-
-def _groq_search(system, user, max_tokens):
-    key, errors = groq_key(), []
-    for model in GROQ_SEARCH_MODELS:
-        body = {"model": model, "temperature": 0.2, "max_tokens": max_tokens,
-                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
-        try:
-            data = _call(_groq_post, body, key)
-            text = data["choices"][0]["message"]["content"] or ""
-        except _Http as h:
-            errors.append(f"{model}: HTTP {h.code} {_message(h.body)}".strip())
-            fail = _http_fail("Groq", h, h.body)
-            if fail:
-                raise fail from h
-            continue
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
-            errors.append(f"{model}: {getattr(e, 'reason', e)}")
-            continue
-        except (KeyError, IndexError, TypeError):
-            errors.append(f"{model}: resposta vazia")
-            continue
-        if text.strip():
-            return text, []
-        errors.append(f"{model}: resposta vazia")
-    raise CloudError("o Groq não pesquisou (" + "; ".join(errors) + ")")
+    """Gemini com a busca do Google: responde com informação atual e devolve (texto, fontes).
+    As fontes vêm como [{"nome": "g1.globo.com", "titulo": "...", "url": "..."}]. Levanta CloudError se falhar
+    (aí o Jarvis usa a reserva pelo RSS)."""
+    if not available():
+        raise CloudError("sem GEMINI_API_KEY")
+    return _gemini_search(system, user, max_tokens)
 
 
 def search_models():

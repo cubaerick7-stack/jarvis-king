@@ -318,22 +318,52 @@ def _open_meteo(city):
             f"vento {round(now['wind_speed_10m'])}km/h")
 
 
-def web_snippets(query, limit=6):
-    """Resultados do DuckDuckGo (título, site e o trechinho de texto), sem abrir navegador e sem IA.
-    Serve de reserva quando a cota de pesquisa da IA acabou. [] se não conseguiu ler."""
+_BROWSER_UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Language": "pt-BR,pt;q=0.9"}
+
+
+def _fetch(url, timeout=10):
+    req = urllib.request.Request(url, headers=_BROWSER_UA)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read().decode("utf-8", "replace")
+
+
+def _plain_text(fragment):
     import html as _html
-    url = "https://html.duckduckgo.com/html/?kl=br-pt&q=" + urllib.parse.quote_plus(str(query))
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-                                               "Accept-Language": "pt-BR,pt;q=0.9"})
-    try:
-        with urllib.request.urlopen(req, timeout=10) as r:
-            page = r.read().decode("utf-8", "replace")
-    except Exception:
-        return []
+    return re.sub(r"\s+", " ", _html.unescape(re.sub(r"<[^>]+>", " ", str(fragment or "")))).strip()
 
-    def text(fragment):
-        return re.sub(r"\s+", " ", _html.unescape(re.sub(r"<[^>]+>", "", fragment))).strip()
 
+def _site(link):
+    return urllib.parse.urlparse(link).netloc.removeprefix("www.")
+
+
+def _rss(url, limit):
+    """Itens de um RSS: título, site, trecho e link."""
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(_fetch(url))
+    found = []
+    for item in root.iter("item"):
+        title = _plain_text(item.findtext("title"))
+        link = (item.findtext("link") or "").strip()
+        source = item.find("source")
+        site = (source.text or "").strip() if source is not None and source.text else _site(link)
+        if site and title.endswith(f" - {site}"):  # o Google Notícias põe " - g1" no fim do título
+            title = title[: -len(site) - 3]
+        date = (item.findtext("pubDate") or "").strip()
+        snippet = _plain_text(item.findtext("description"))
+        if snippet.startswith(title):  # no Google Notícias a descrição repete o título
+            snippet = ""
+        if date:
+            snippet = (snippet + f" (publicado {date[:16]})").strip()
+        if title and link:
+            found.append({"titulo": title, "site": site, "trecho": snippet, "url": link})
+        if len(found) >= limit:
+            break
+    return found
+
+
+def _duckduckgo(query, limit):
+    import html as _html
+    page = _fetch("https://html.duckduckgo.com/html/?kl=br-pt&q=" + urllib.parse.quote_plus(str(query)))
     found = []
     for block in page.split('result__body')[1:]:
         title = re.search(r'class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>', block, re.S)
@@ -345,12 +375,36 @@ def web_snippets(query, limit=6):
         link = urllib.parse.unquote(m.group(1)) if m else link
         if "duckduckgo.com/y.js" in link or not link.startswith("http"):
             continue  # anúncio
-        site = urllib.parse.urlparse(link).netloc.removeprefix("www.")
-        found.append({"titulo": text(title.group(2)), "site": site, "trecho": text(snippet.group(1)) if snippet else "",
-                      "url": link})
+        found.append({"titulo": _plain_text(title.group(2)), "site": _site(link),
+                      "trecho": _plain_text(snippet.group(1)) if snippet else "", "url": link})
         if len(found) >= limit:
             break
     return found
+
+
+def web_snippets(query, limit=8):
+    """O que a internet diz agora sobre a pergunta, sem chave, sem navegador e sem IA: notícias do Google
+    Notícias, resultados do Bing (com trecho de texto) e, se nada vier, do DuckDuckGo. [] se nenhum respondeu.
+    É a reserva da pesquisa quando a cota de busca da IA acabou."""
+    q = urllib.parse.quote_plus(str(query))
+    sources = [
+        lambda n: _rss(f"https://news.google.com/rss/search?q={q}&hl=pt-BR&gl=BR&ceid=BR:pt-419", n),
+        lambda n: _rss(f"https://www.bing.com/search?format=rss&setlang=pt-BR&cc=BR&q={q}", n),
+        lambda n: _duckduckgo(query, n),
+    ]
+    found, seen = [], set()
+    for get in sources:
+        try:
+            items = get(limit)
+        except Exception:
+            continue
+        for item in items:
+            if item["titulo"].lower() not in seen:
+                seen.add(item["titulo"].lower())
+                found.append(item)
+        if len(found) >= limit:
+            break
+    return found[:limit]
 
 
 def weather(city=""):
