@@ -143,6 +143,16 @@ INTERFACE (TELA CHEIA)
    SEGUNDA TELA, se voce tiver; sem segunda tela, abre por cima dele.
    Quando voce fala com ele, ele volta para a frente.
    O "–" minimiza e o "×" fecha.
+5. Visual (igual ao video): fundo azul com grade, reator de filamentos que
+   reage a voz (clique nele e abre uma onda; o mouse inclina), "FALANDO" no
+   topo, legenda embaixo e o orbe azul embaixo: clique nele (ou comece a
+   digitar) para escrever um pedido. As janelas arrastam pela barra.
+6. Pesquisa na internet (precisa de GEMINI_API_KEY): "como esta a eleicao",
+   "quanto esta o dolar", "quem ganhou o jogo". Abre uma janela com a manchete,
+   o placar com barras, o resumo, os pontos e as fontes, e ele resume em voz.
+7. Bateria e PC viram um widget com icone brilhando e os numeros de verdade.
+8. Disco com a camera no meio do reator ("identidade confirmada", opcional):
+   setx JARVIS_CAMERA 1      (e abra o PowerShell de novo)
 Quer o painel antigo (titulo, respostas escritas, cartoes e caixa de pedido)?
    setx JARVIS_TELA painel      (e abra o PowerShell de novo)
 Para abrir sem a janela:  python windows\jarvis_ai.py --sem-tela

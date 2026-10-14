@@ -118,6 +118,31 @@ def battery_status():
     return True
 
 
+def battery_metric():
+    """Dados da bateria para o widget da tela, ou None se o PC não tem bateria."""
+    import psutil
+    bat = psutil.sensors_battery()
+    if bat is None:
+        return None
+    left = ""
+    if not bat.power_plugged and bat.secsleft not in (psutil.POWER_TIME_UNKNOWN, psutil.POWER_TIME_UNLIMITED):
+        left = f"{bat.secsleft // 3600}h{(bat.secsleft % 3600) // 60:02d} restantes"
+    return {"icone": "bateria", "cor": "vermelho" if bat.percent < 20 and not bat.power_plugged else "verde",
+            "itens": [{"r": "carga", "v": f"{bat.percent:.0f}%", "s": "carregando" if bat.power_plugged else "na bateria"},
+                      *([{"r": "autonomia", "v": left.split(" ")[0], "s": "restantes"}] if left else [])]}
+
+
+def system_metric():
+    """CPU, RAM e disco para o widget da tela."""
+    import psutil
+    mem = psutil.virtual_memory()
+    disk = shutil.disk_usage(Path.home().anchor or "/")
+    return {"icone": "cpu", "cor": "azul",
+            "itens": [{"r": "processador", "v": f"{psutil.cpu_percent(interval=.3):.0f}%", "s": "em uso"},
+                      {"r": "memória", "v": f"{mem.percent:.0f}%", "s": f"{mem.used / 1024**3:.1f} de {mem.total / 1024**3:.1f} GB"},
+                      {"r": "disco", "v": f"{disk.used * 100 // disk.total}%", "s": f"{disk.free / 1024**3:.0f} GB livres"}]}
+
+
 def list_processes(limit=10):
     import psutil
     procs = []

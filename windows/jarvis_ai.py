@@ -564,6 +564,63 @@ def list_folder(path):
     return [str(x) for x in items[:100]]
 
 
+# ========================= PESQUISA NA INTERNET =========================
+
+RESEARCH_PROMPT = (
+    "Você é o Bolha, o Jarvis do João, um mordomo educado que chama o usuário de senhor. Pesquise na internet e responda "
+    "a pergunta com informação ATUAL e verificada, em português do Brasil. Responda SOMENTE com um objeto JSON, sem "
+    "texto fora dele, neste formato (omita o que não se aplicar):\n"
+    '{"tema":"uma palavra (ex.: eleição, futebol, economia)","titulo":"manchete curta com a resposta",'
+    '"contexto":"rótulo curto em maiúsculas do que o placar mostra (ex.: SEGUNDO TURNO · BRASIL)",'
+    '"progresso":{"rotulo":"99,8% apurado","valor":99.8},'
+    '"ranking":[{"nome":"...","sigla":"...","pct":47,"detalhe":"...","selo":"..."}],'
+    '"nota":"uma linha de contexto","resumo":"2 a 3 frases com a resposta e a data dos dados",'
+    '"pontos":["fato curto","fato curto"],'
+    '"fala":"a resposta falada em 2 ou 3 frases curtas, números por extenso, sem símbolos nem markdown, '
+    'começando com algo como Verifiquei, senhor."}\n'
+    "Use ranking só quando houver placar, votos, classificação, cotações ou comparação numérica (pct de 0 a 100). "
+    "Não invente nada: se não achou, diga no resumo e na fala que não encontrou."
+)
+
+
+def _clean_research(raw):
+    """O JSON da pesquisa (a IA às vezes põe texto ou ``` em volta). None se não der para entender."""
+    try:
+        data = parse_json(raw)
+    except Exception:
+        return None
+    return data if isinstance(data, dict) and (data.get("resumo") or data.get("titulo") or data.get("fala")) else None
+
+
+def research(query):
+    """Pesquisa na internet (Gemini com a busca do Google) e mostra o resultado numa janela da tela cheia:
+    manchete, placar com barras, resumo, pontos e fontes. A fala é a resposta resumida."""
+    query = str(query or "").strip()
+    if not query:
+        print("Jarvis > O que o senhor quer que eu pesquise?")
+        return False
+    if not N.available():
+        print("Jarvis > Para pesquisar na internet preciso da chave do Gemini (setx GEMINI_API_KEY).")
+        return False
+    set_state("pensando")
+    try:
+        raw, sources = N.search_generate(RESEARCH_PROMPT, f"Hoje é {time.strftime('%d/%m/%Y')}. Pergunta: {query}")
+    except Exception as e:
+        print(f"Jarvis > Não consegui pesquisar agora: {e}")
+        return False
+    data = _clean_research(raw)
+    if data is None:  # a IA respondeu em texto solto: vira só o resumo
+        text = re.sub(r"[*_#`]", "", str(raw)).strip()
+        data = {"titulo": query.capitalize(), "resumo": text[:600], "fala": text[:300]}
+    spoken = re.sub(r"[*_#`]", "", str(data.pop("fala", "") or "")).strip() or str(data.get("resumo", ""))[:300]
+    data["fontes"] = [{"nome": src["nome"], "titulo": src.get("titulo", "")} for src in sources[:4]]
+    data["hora"] = time.strftime("%H:%M")
+    tema = str(data.get("tema") or "").strip()
+    U.card(f"Pesquisa · {tema}" if tema else "Pesquisa", json.dumps(data, ensure_ascii=False), 60000)
+    print(f"Jarvis > {spoken}")
+    return True
+
+
 # ========================= SISTEMA =========================
 
 def system_info():
@@ -1435,6 +1492,11 @@ TOOLS = [
      "desc": "listar janelas abertas", "examples": ["quais janelas estão abertas"],
      "run": lambda a: F.list_windows()},
     # ---- navegador do Jarvis (a IA vê o resultado e decide o próximo passo)
+    {"name": "research", "args": '{"query":"a pergunta"}', "group": "informação",
+     "desc": "responder perguntas de fatos atuais (notícias, eleição, placar, cotação, quem ganhou) pesquisando na "
+             "internet e mostrando o resultado numa janela",
+     "examples": ["como está a eleição", "quem ganhou o jogo ontem", "quanto está o dólar", "o que aconteceu com a Petrobras"],
+     "run": lambda a: research(a.get("query", ""))},
     {"name": "web_search", "args": '{"query":"texto"}', "group": "navegador",
      "desc": "pesquisar no Google e LER os resultados (para escolher, comparar, responder)",
      "examples": ["pesquisa a melhor receita de bolo de cenoura"],
@@ -1560,6 +1622,7 @@ Regras:
 - MODO CICLO: se precisar VER o resultado antes de decidir (pesquisar na web, ler página, procurar arquivo,
   escolher entre opções), faça essa ação e coloque "continue":true. Você recebe o resultado e decide o
   próximo passo. Quando terminar, "continue":false e a resposta final em reply (até 5 frases)
+- pergunta de fato ATUAL (notícia, eleição, placar, cotação, "quem ganhou", "o que aconteceu") = research (a janela com o resultado aparece na tela)
 - pesquisar para escolher/comparar/responder = web_search, depois web_click no melhor e web_read
 - mandar mensagem no WhatsApp = whatsapp_send (ele mesmo pede confirmação)
 - ler/ver mensagens do WhatsApp ("tem mensagem nova?", "o que a Ana mandou?") = whatsapp_read
@@ -1973,8 +2036,24 @@ def talk_about(request, out):
     return told(lines)
 
 
+def metric_card():
+    """Bateria e PC viram um widget com ícone e números reais (psutil). False se não deu."""
+    for name, make in (("battery_status", F.battery_metric), ("system_info", F.system_metric)):
+        if name in _ran:
+            try:
+                data = make()
+            except Exception:
+                return False
+            if data:
+                U.card("Métrica", json.dumps(data, ensure_ascii=False), 20000)
+                return True
+    return False
+
+
 def info_card(out, head):
     """Clima, PC, bateria...: o que a ferramenta mostrou vira uma janelinha (a fala final fica na legenda)."""
+    if metric_card():
+        return
     titles = [INFO_CARDS[n] for n in _ran if n in INFO_CARDS]
     if not titles:
         return

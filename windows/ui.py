@@ -132,6 +132,8 @@ def start(worker, on_text=lambda t: None, title="Jarvis"):
         fullscreen=full, on_top=not full)  # em tela cheia, por cima de tudo travaria o PC
     window = _window
     window.events.loaded += lambda: _js(f"mostraNome({json.dumps(title)})")  # nome em cima e na legenda
+    if os.environ.get("JARVIS_CAMERA", "").strip() == "1":  # opcional: o disco do meio mostra a câmera
+        window.events.loaded += lambda: camera(True)
     webview.start(worker)
     _window = None
 
@@ -181,6 +183,11 @@ def heard(text):
 def speech(text):
     _tell("fala", valor=text)
     _js(f"mostraFala({json.dumps(text)})")
+
+
+def camera(on=True, text="IDENTIDADE CONFIRMADA"):
+    """Liga ou desliga o disco do meio do reator (com a câmera do PC, se o senhor liberar). Só no PC."""
+    _js(f"camera({json.dumps(bool(on))}, {json.dumps(text)})")
 
 
 def card(title, text, ms=7000):

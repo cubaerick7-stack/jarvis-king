@@ -3,25 +3,25 @@
 <head>
 <meta charset="utf-8">
 <title>Jarvis</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600&family=Share+Tech+Mono&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Share+Tech+Mono&display=swap">
 <style>
 /* Dois jeitos, escolhidos pelo tamanho da janela: tela cheia (o padrão: o reator no meio e as janelas
    de vidro abrindo por cima dele) e painel (janela alta e estreita, com JARVIS_TELA=painel). */
 :root {
-  --bg: #02080b;
-  --bg-glow: #06222a;
-  --panel: rgba(8, 40, 48, .55);
-  --glass: rgba(5, 24, 30, .74);
-  --line: #1b6b78;
-  --line-soft: rgba(95, 230, 240, .26);
-  --line-strong: rgba(95, 230, 240, .6);
-  --cyan: #5fe6f0;
-  --text: #cfeff3;
-  --muted: #6fa6ad;
-  --ok: #6ff0a8;
-  --warn: #f0c46f;
+  --bg: #020a1f;
+  --bg-glow: #07306e;
+  --panel: rgba(6, 30, 74, .55);
+  --glass: rgba(4, 20, 54, .74);
+  --line: #1456b8;
+  --line-soft: rgba(70, 160, 255, .3);
+  --line-strong: rgba(90, 195, 255, .7);
+  --cyan: #35c8ff;
+  --text: #e6f2ff;
+  --muted: #7fa6d6;
+  --ok: #4af2a1;
+  --warn: #ffb347;
   --raio: 18px;
-  --display: "Rajdhani", "Segoe UI", system-ui, sans-serif;
+  --display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
   --mono: "Share Tech Mono", Consolas, monospace;
   color-scheme: dark;
 }
@@ -54,6 +54,10 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .cartao small { display: block; font-family: var(--mono); color: var(--muted); font-size: 11px; letter-spacing: .15em; text-transform: uppercase; }
 .cartao strong { font-size: 16px; font-weight: 600; display: block; overflow-wrap: anywhere; white-space: pre-line;
   max-height: 11em; overflow: hidden; }
+@keyframes led { 50% { opacity: .35; } }
+@keyframes onda { from { transform: scaleY(.3); } to { transform: scaleY(1); } }
+@keyframes orbe { to { box-shadow: 0 0 40px rgba(53, 200, 255, .95), inset 0 0 14px rgba(53, 200, 255, .6); } }
+@keyframes gira { to { transform: rotate(360deg); } }
 @keyframes entra { from { opacity: 0; transform: translateY(12px); } }
 @keyframes sai { to { opacity: 0; transform: translateY(12px); } }
 #form { display: flex; gap: 6px; padding: 10px 14px 14px; border-top: 1px solid var(--line); margin-top: 8px; }
@@ -63,13 +67,21 @@ input {
 }
 input:focus { border-color: var(--cyan); }
 input::placeholder { color: var(--muted); }
-.relogio, #janelas, .legenda { display: none; }
+.relogio, #janelas, .legenda, .orbe, .hud-topo, .disco { display: none; }
 
 /* Tela cheia: o reator no meio, o nome e o relógio em cima, a conversa embaixo
    e as janelas de vidro (cantos arredondados) abrindo do reator para os cantos livres. */
 @media (min-width: 600px) {
   body { display: block; border: none;
-    background: radial-gradient(ellipse at 50% 46%, var(--bg-glow) 0%, var(--bg) 60%) var(--bg); }
+    background:
+      linear-gradient(rgba(60, 140, 255, .11) 1px, transparent 1px) 0 0 / 58px 58px,
+      linear-gradient(90deg, rgba(60, 140, 255, .11) 1px, transparent 1px) 0 0 / 58px 58px,
+      radial-gradient(ellipse at 50% 46%, var(--bg-glow) 0%, var(--bg) 66%) var(--bg); }
+  body::before, body::after { content: ""; position: fixed; left: 0; right: 0; height: 1px; z-index: 0; pointer-events: none;
+    background: linear-gradient(90deg, transparent, var(--line-strong) 20%, var(--cyan) 50%, var(--line-strong) 80%, transparent);
+    box-shadow: 0 0 14px var(--cyan); opacity: .55; }
+  body::before { top: 7vh; opacity: .3; }
+  body::after { bottom: 11vh; }
   header { position: fixed; top: 0; left: 0; right: 0; z-index: 5; border: none; cursor: default;
     align-items: flex-start; gap: 18px; padding: 16px clamp(16px, 3vw, 36px) 0; pointer-events: none; }
   h1 { flex: 1; font-weight: 500; font-size: 20px; letter-spacing: .55em; padding-top: 4px; }
@@ -80,19 +92,45 @@ input::placeholder { color: var(--muted); }
   .botoes button { width: 30px; height: 30px; border-radius: 50%; border-color: var(--line-soft); background: rgba(5, 24, 30, .6); }
   .botoes button:hover, .botoes button:focus-visible { border-color: var(--cyan); outline: none; }
   .reator { position: fixed; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; }
-  .estado { position: fixed; left: 50%; transform: translateX(-50%); z-index: 1; letter-spacing: .28em;
-    white-space: nowrap; pointer-events: none; }
+  .estado { position: fixed; top: 11vh; left: 50%; transform: translateX(-50%); z-index: 4; letter-spacing: .55em;
+    font-size: 14px; white-space: nowrap; pointer-events: none; text-shadow: 0 0 12px var(--cyan); padding-left: .55em; }
+  .estado::after { content: ""; display: block; width: 190px; height: 6px; margin: 9px auto 0; opacity: .7;
+    background: repeating-linear-gradient(90deg, var(--line-strong) 0 1px, transparent 1px 4px);
+    -webkit-mask: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent); mask: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent); }
+  .orbe { display: grid; }
+  .hud-topo { display: flex; position: fixed; top: 74px; left: 50%; transform: translateX(-50%); z-index: 4; gap: 12px; align-items: center;
+    font: 10px var(--mono); letter-spacing: .26em; color: var(--muted); white-space: nowrap; pointer-events: none;
+    padding: 5px 16px; border: 1px solid var(--line-soft); border-radius: 999px; background: rgba(4, 20, 54, .55); }
+  .hud-topo .led { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); animation: led 2.4s ease-in-out infinite; }
+  .hud-topo i { width: 1px; height: 10px; background: var(--line-soft); }
+  .orbe { display: grid; place-items: center; position: fixed; left: 50%; bottom: 3.2vh; transform: translateX(-50%); z-index: 6;
+    width: 46px; height: 46px; padding: 0; border-radius: 50%; cursor: pointer; color: var(--cyan);
+    border: 1px solid var(--line-strong); background: radial-gradient(circle, rgba(53, 200, 255, .28), rgba(4, 20, 54, .85) 70%);
+    box-shadow: 0 0 22px rgba(53, 200, 255, .45), inset 0 0 10px rgba(53, 200, 255, .3); transition: transform .2s, box-shadow .2s; }
+  .orbe:hover, .orbe:focus-visible { transform: translateX(-50%) scale(1.12); box-shadow: 0 0 34px rgba(53, 200, 255, .8), inset 0 0 12px rgba(53, 200, 255, .5); outline: none; }
+  .orbe svg { width: 22px; height: 22px; }
+  .orbe .barra-onda { transform-origin: 50% 50%; animation: onda 1.1s ease-in-out infinite alternate; }
+  .orbe .barra-onda:nth-child(2) { animation-delay: -.3s; } .orbe .barra-onda:nth-child(3) { animation-delay: -.6s; }
+  .orbe .barra-onda:nth-child(4) { animation-delay: -.15s; } .orbe .barra-onda:nth-child(5) { animation-delay: -.45s; }
+  body[data-estado="parado"] .orbe .barra-onda { animation-play-state: paused; transform: scaleY(.35); }
+  body[data-estado="ouvindo"] .orbe, body[data-estado="falando"] .orbe { animation: orbe 1.2s ease-in-out infinite alternate; }
+  .orbe::before { content: ""; position: absolute; inset: -7px; border-radius: 50%; border: 1px dashed var(--line-soft); animation: gira 14s linear infinite; }
   .fala, .cartoes { display: none; }
   #janelas { display: block; position: fixed; inset: 0; z-index: 3; pointer-events: none; }
   .legenda { display: grid; gap: 4px; position: fixed; left: 50%; transform: translateX(-50%); z-index: 4;
-    bottom: 76px; width: min(720px, calc(100vw - 32px)); text-align: center; pointer-events: none; }
-  .legenda p { margin: 0; font-size: 19px; min-height: 1.4em; text-shadow: 0 1px 8px rgba(0, 0, 0, .8);
+    bottom: 12.5vh; width: min(760px, calc(100vw - 32px)); text-align: center; pointer-events: none; }
+  .legenda p { margin: 0; font-size: 24px; font-weight: 600; min-height: 1.4em; text-shadow: 0 2px 10px rgba(0, 0, 0, .9), 0 0 24px rgba(20, 90, 220, .6);
     overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .legenda p:has(span:empty) { visibility: hidden; }
   .legenda b { font: 11px var(--mono); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); margin-right: 10px; }
-  .legenda .eu span { color: var(--cyan); }
-  #form { position: fixed; left: 50%; transform: translateX(-50%); bottom: 20px; z-index: 4; margin: 0; padding: 0;
-    border: none; width: min(560px, calc(100vw - 32px)); }
+  .legenda .voce { font-size: 14px; opacity: .75; }
+  .legenda .voce, .legenda .eu { font-weight: 500; }
+  .legenda .voce span { font-size: 16px; font-weight: 400; color: var(--muted); }
+  .legenda .eu b { display: none; }
+  .legenda .eu span { color: #fff; }
+  #form { position: fixed; left: 50%; transform: translate(-50%, 14px); bottom: calc(3.2vh + 64px); z-index: 5; margin: 0; padding: 0;
+    border: none; width: min(560px, calc(100vw - 32px)); opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; }
+  #form.aberto { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
   input { border-radius: 999px; padding: 9px 18px; background: rgba(5, 24, 30, .7); border-color: var(--line-soft); }
 }
 
@@ -107,7 +145,19 @@ input::placeholder { color: var(--muted); }
 }
 .janela::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; border-top-left-radius: var(--raio); }
 .janela::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; border-bottom-right-radius: var(--raio); }
-.janela.frente { border-color: var(--line-strong); }
+.janela.frente { border-color: var(--line-strong); box-shadow: 0 18px 50px rgba(0, 0, 0, .5), 0 0 26px rgba(53, 200, 255, .18); }
+.janela { transition: box-shadow .25s, border-color .25s; }
+.janela:hover { border-color: var(--line-strong); }
+.janela .barra { cursor: grab; }
+.janela.arrasta { transition: none; user-select: none; } .janela.arrasta .barra { cursor: grabbing; }
+.janela::before { z-index: 1; } .janela::after { z-index: 1; }
+.varre { position: absolute; left: 0; right: 0; top: 0; height: 2px; pointer-events: none; opacity: 0; border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--cyan), transparent); box-shadow: 0 0 14px var(--cyan); }
+.janela.nova .varre { animation: varre 1.1s ease-out; }
+@keyframes varre { 0% { top: 0; opacity: .9; } 100% { top: 100%; opacity: 0; } }
+.icone-tipo { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border: 1px solid var(--line-soft);
+  border-radius: 8px; background: rgba(53, 200, 255, .08); color: var(--cyan); }
+.icone-tipo svg { width: 16px; height: 16px; }
 .barra { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--line-soft); }
 .barra small { flex: 1; min-width: 0; font-family: var(--mono); color: var(--muted); font-size: 11px;
   letter-spacing: .18em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -157,10 +207,93 @@ input::placeholder { color: var(--muted); }
 .j-aviso { width: min(340px, calc(100vw - 32px)); }
 .j-aviso .ponto { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
 .j-confirmar .ponto { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+
+/* ---- pesquisa: o resultado de uma pergunta (placar, resumo, pontos e fontes) ---- */
+.j-pesquisa { width: min(540px, calc(100vw - 32px)); }
+.j-pesquisa .barra { position: absolute; top: 10px; right: 10px; z-index: 3; padding: 0; border: 0; }
+.j-pesquisa .barra small, .j-pesquisa .barra .ponto { display: none; }
+.j-pesquisa .corpo { padding: 0; gap: 0; max-height: min(58vh, 620px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.pq-topo { display: flex; gap: 12px; align-items: flex-start; padding: 16px 46px 10px 16px; }
+.pq-topo h3 { font-size: 20px; letter-spacing: -.01em; }
+.pq-topo small { display: block; font: 10px var(--mono); letter-spacing: .2em; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
+.pq-sec { padding: 6px 16px; display: grid; gap: 8px; }
+.pq-rotulo { display: flex; justify-content: space-between; align-items: center; gap: 12px; font: 10px var(--mono); letter-spacing: .2em;
+  color: var(--muted); text-transform: uppercase; }
+.pq-prog { flex: 0 0 90px; height: 3px; border-radius: 2px; background: rgba(53, 200, 255, .15); overflow: hidden; }
+.pq-prog i { display: block; height: 100%; width: 0; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); transition: width 1.2s cubic-bezier(.2, .8, .2, 1); }
+.pq-item { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: 12px;
+  background: linear-gradient(135deg, rgba(53, 200, 255, .08), rgba(20, 60, 140, .1)); }
+.pq-linha { display: flex; align-items: center; gap: 10px; }
+.pq-n { font: 10px var(--mono); padding: 3px 6px; border: 1px solid var(--line-strong); border-radius: 6px; color: var(--cyan); background: rgba(53, 200, 255, .1); }
+.pq-nome { font-weight: 600; font-size: 15px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.pq-nome small { font: 9px var(--mono); color: var(--muted); letter-spacing: .1em; margin-left: 6px; }
+.pq-pct { font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; }
+.pq-barra { height: 4px; border-radius: 3px; background: rgba(53, 200, 255, .14); overflow: hidden; }
+.pq-barra i { display: block; height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg, #1f7bff, var(--cyan));
+  box-shadow: 0 0 10px rgba(53, 200, 255, .8); transition: width 1.1s cubic-bezier(.2, .8, .2, 1); }
+.pq-item:nth-child(3) .pq-barra i { background: linear-gradient(90deg, #5b5bff, #8d7bff); box-shadow: 0 0 10px rgba(141, 123, 255, .7); }
+.pq-sub { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.pq-selo { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid rgba(74, 242, 161, .5); color: var(--ok); background: rgba(74, 242, 161, .08); white-space: nowrap; }
+.pq-nota { font-size: 13px; font-weight: 600; color: #d3e6ff; padding: 6px 16px; }
+.pq-resumo { margin: 6px 16px; padding: 12px 14px; border: 1px solid var(--line-soft); border-left: 3px solid var(--cyan); border-radius: 12px;
+  background: rgba(4, 20, 54, .6); display: grid; gap: 6px; }
+.pq-resumo small { font: 9px var(--mono); letter-spacing: .24em; color: var(--cyan); }
+.pq-resumo p { font-size: 15px; line-height: 1.45; }
+.pq-pontos { margin: 6px 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pq-ponto { display: flex; gap: 8px; align-items: flex-start; padding: 9px 11px; font-size: 13px; line-height: 1.35;
+  border: 1px solid var(--line-soft); border-radius: 12px; background: rgba(53, 200, 255, .05); transition: border-color .2s, transform .2s; }
+.pq-ponto:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+.pq-ponto::before { content: ""; flex: none; width: 6px; height: 6px; margin-top: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+.pq-fontes { display: grid; gap: 6px; margin: 6px 16px; }
+.pq-fonte { display: flex; gap: 8px; align-items: center; padding: 7px 11px; font-size: 12px; border: 1px solid var(--line-soft); border-radius: 10px;
+  color: var(--text); text-decoration: none; background: rgba(53, 200, 255, .04); }
+.pq-fonte b { font: 10px var(--mono); color: var(--cyan); letter-spacing: .06em; }
+.pq-fonte span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.pq-pe { display: flex; justify-content: space-between; padding: 10px 16px 14px; font: 9px var(--mono); letter-spacing: .2em; color: var(--muted); text-transform: uppercase; }
+@media (max-width: 520px) { .pq-pontos { grid-template-columns: 1fr; } }
+
+/* ---- métricas: ícone brilhando com órbita e os números ao lado (sem moldura) ---- */
+.janela.j-metrica { width: min(300px, calc(100vw - 32px)); background: none; border: none; box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none; }
+.j-metrica::before, .j-metrica::after, .j-metrica .barra { display: none; }
+.j-metrica .corpo { padding: 0; grid-auto-flow: column; align-items: center; gap: 18px; }
+.mt-icone { position: relative; width: 120px; height: 120px; flex: none; display: grid; place-items: center; color: var(--cor, #ff9d2e); }
+.mt-icone svg { width: 62px; height: 62px; filter: drop-shadow(0 0 10px var(--cor, #ff9d2e)) drop-shadow(0 0 22px var(--cor, #ff9d2e)); animation: flutua 3.2s ease-in-out infinite alternate; }
+.mt-icone::before, .mt-icone::after { content: ""; position: absolute; left: 50%; top: 56%; border-radius: 50%; border: 1px solid var(--cor, #ff9d2e);
+  transform: translate(-50%, -50%) rotateX(72deg); opacity: .55; box-shadow: 0 0 12px var(--cor, #ff9d2e); }
+.mt-icone::before { width: 118px; height: 118px; } .mt-icone::after { width: 84px; height: 84px; opacity: .3; animation: orbita 6s linear infinite; }
+@keyframes flutua { to { transform: translateY(-7px); } }
+@keyframes orbita { to { transform: translate(-50%, -50%) rotateX(72deg) rotateZ(360deg); } }
+.mt-dados { display: grid; gap: 12px; min-width: 0; }
+.mt-dado { display: grid; gap: 1px; padding-left: 10px; border-left: 1px solid var(--cor, #ff9d2e); }
+.mt-dado small { font: 9px var(--mono); letter-spacing: .22em; color: var(--cor, #ff9d2e); text-transform: uppercase; }
+.mt-dado b { font: 700 19px var(--mono); color: #fff; }
+.mt-dado span { font: 9px var(--mono); letter-spacing: .12em; color: var(--muted); text-transform: uppercase; }
 .cartao .escolha { margin-top: 8px; }
 .cartao .corpo { padding: 8px 0 2px; gap: 10px; }
 .cartao .corpo .escolha { margin-top: 0; }
 .cartao .grau { font-size: 52px; }
+.cartao .corpo .pq-topo, .cartao .corpo .pq-sec, .cartao .corpo .pq-pontos, .cartao .corpo .pq-fontes, .cartao .corpo .pq-resumo, .cartao .corpo .pq-nota, .cartao .corpo .pq-pe { margin-left: 0; margin-right: 0; padding-left: 0; padding-right: 0; }
+.cartao .corpo .pq-resumo { padding: 10px 12px; }
+.cartao .corpo .pq-pontos { grid-template-columns: 1fr; }
+.cartao .mt-icone { width: 90px; height: 90px; } .cartao .mt-icone svg { width: 44px; height: 44px; }
+.cartao .mt-icone::before { width: 88px; height: 88px; } .cartao .mt-icone::after { width: 62px; height: 62px; }
+
+
+/* ---- disco central (câmera) ---- */
+.disco { position: fixed; z-index: 2; border-radius: 50%; pointer-events: none; opacity: 0; transform: scale(.6);
+  transition: opacity .6s, transform .6s cubic-bezier(.2, .8, .2, 1); }
+.disco.on { display: block; opacity: 1; transform: none; }
+.disco::before { content: ""; position: absolute; inset: -9%; border-radius: 50%; border: 2px solid rgba(74, 242, 161, .75);
+  box-shadow: 0 0 18px rgba(74, 242, 161, .5), inset 0 0 14px rgba(74, 242, 161, .3); }
+.disco::after { content: ""; position: absolute; inset: -17%; border-radius: 50%; border: 1px dashed var(--line-strong); animation: gira 24s linear infinite reverse; }
+.disco video { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; background: #01060f; transform: scaleX(-1); }
+.disco .canto { position: absolute; width: 16%; height: 16%; border: 2px solid rgba(74, 242, 161, .8); }
+.disco .c1 { top: 18%; left: 18%; border-right: 0; border-bottom: 0; } .disco .c2 { top: 18%; right: 18%; border-left: 0; border-bottom: 0; }
+.disco .c3 { bottom: 18%; left: 18%; border-right: 0; border-top: 0; } .disco .c4 { bottom: 18%; right: 18%; border-left: 0; border-top: 0; }
+.disco em { position: absolute; left: 50%; bottom: -30%; transform: translateX(-50%); font: normal 9px var(--mono); letter-spacing: .3em;
+  color: var(--ok); white-space: nowrap; text-shadow: 0 0 8px var(--ok); }
+.disco.on:not(.cam) video { visibility: hidden; }
 
 /* Celular (a página vem do celular.py, pelo ngrok): a mesma tela, com senha, microfone e a voz tocando nele */
 .disse, .mic { display: none; }
@@ -210,7 +343,10 @@ input::placeholder { color: var(--muted); }
   </div>
 </header>
 <div class="reator pywebview-drag-region"><canvas id="c"></canvas></div>
-<div class="estado" id="estado">● em espera</div>
+<div class="hud-topo"><span class="led"></span>SISTEMA ONLINE<i></i>VOICE LINK ARMADO<i></i><span id="hudHora">--:--</span></div>
+<div class="estado" id="estado">EM ESPERA</div>
+<div class="disco" id="disco"><video id="cam" autoplay muted playsinline></video><span class="canto c1"></span><span class="canto c2"></span><span class="canto c3"></span><span class="canto c4"></span><em id="discoTxt">IDENTIDADE CONFIRMADA</em></div>
+<button class="orbe" id="orbe" type="button" title="Escrever um pedido"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path class="barra-onda" d="M4 10v4"/><path class="barra-onda" d="M8 6v12"/><path class="barra-onda" d="M12 3v18"/><path class="barra-onda" d="M16 7v10"/><path class="barra-onda" d="M20 10v4"/></svg></button>
 <p class="disse" id="disse"></p>
 <div class="fala" id="fala"></div>
 <div class="cartoes" id="cartoes"></div>
@@ -245,7 +381,8 @@ function tam() {
   R = Math.min(W, H) * (cheia ? (W < 900 ? .26 : .22) : .3);
   cx = W / 2; cy = cheia ? H * .44 : H / 2;
   tamPonto = cheia ? Math.max(1, R / 115) : 1;  // pontos um pouco maiores numa tela grande
-  elEstado.style.top = cheia ? (cy + R * 1.42) + 'px' : '';
+  elEstado.style.top = '';
+  posDisco();
   // em tela cheia não se arrasta a janela (ela ocupa a tela toda)
   for (const el of document.querySelectorAll('header, .reator')) el.classList.toggle('pywebview-drag-region', !cheia);
   if (cheia) for (const j of abertas.values()) poe(j.el, j.tipo);
@@ -254,34 +391,27 @@ function tam() {
 
 // Partículas do anel de onda
 // 6 membranas onduladas sobrepostas + poeira solta em volta
-const CAMADAS = 6, N = remoto ? 2600 : 5200, parts = [];
+const CAMADAS = 6, N = remoto ? 500 : 1500, parts = [];
 const fases = Array.from({ length: CAMADAS }, (_, k) => ({ f1: 2 + k % 3, f2: 5 + k, ph: k * 1.7, v: .6 + k * .15, r: .96 + k * .025 }));
 for (let i = 0; i < N; i++) {
-  const poeira = Math.random() < .18;
+  const poeira = Math.random() < .6;
   parts.push({ a: Math.random() * Math.PI * 2, k: i % CAMADAS, j: (Math.random() - .5) * (poeira ? .22 : .025),
     poeira, s: poeira ? Math.random() * .9 + .4 : Math.random() * 1.1 + .5, o: Math.random() });
 }
-// Pontos espalhados na superfície da esfera
-// Esfera de Fibonacci: pontos distribuídos por igual na superfície
-const NE = remoto ? 1400 : 2600, ouro = Math.PI * (3 - Math.sqrt(5));
-const pontosEsfera = Array.from({ length: NE }, (_, i) => {
-  const y = 1 - 2 * (i + .5) / NE, q = Math.sqrt(1 - y * y), th = i * ouro;
-  const lon = Math.atan2(Math.sin(th), Math.cos(th));
-  const guia = Math.abs(Math.sin(lon * 3)) < .12 || Math.random() < .06;
-  return [q * Math.cos(th), y, q * Math.sin(th), Math.random(), guia];
-});
-function ondaAnel(ang, k) {
-  const F = fases[k];
-  return Math.sin(ang * F.f1 + t * F.v + F.ph) * .55 + Math.sin(ang * F.f2 - t * F.v * 1.6 + F.ph) * .3
-       + Math.sin(ang * 13 + t * 5 + F.ph) * voz * .8;
-}
+// Anel de filamentos: 9 fios finos que ondulam e se cruzam, mais poeira de luz em volta
+const FIL = remoto ? 6 : 9, PASSOS = remoto ? 110 : 170;
+let mx = 0, my = 0, alvoX = 0, alvoY = 0;  // o mouse inclina o reator (paralaxe)
+const ondas = [];  // anéis que se abrem quando se clica no reator
+addEventListener('pointermove', (e) => { alvoX = (e.clientX / innerWidth - .5) * 2; alvoY = (e.clientY / innerHeight - .5) * 2; });
+const elReator = document.querySelector('.reator');
+elReator.addEventListener('pointerdown', (e) => { if (cheia) ondas.push({ t0: t, x: e.clientX, y: e.clientY }); voz = Math.max(voz, .9); });
 
 const ESTADOS = {
   // amp: onda do anel · esf: quanto a esfera ondula · pulso: respiração ritmada · fala: pulso que segue a voz
-  parado:   { txt: '● em espera', amp: .02, esf: 0,   pulso: 0,   fala: 0,   giro: .6,  cor: [95, 230, 240], brilho: .55 },
-  ouvindo:  { txt: '● ouvindo',   amp: .04, esf: 1,   pulso: 0,   fala: 0,   giro: .3,  cor: [80, 170, 255], brilho: .8 },
-  pensando: { txt: '● pensando',  amp: .03, esf: 0,   pulso: .08, fala: 0,   giro: 1.2, cor: [95, 230, 240], brilho: .9 },
-  falando:  { txt: '● falando',   amp: .06, esf: 1,   pulso: 0,   fala: .12, giro: .4,  cor: [120, 245, 230], brilho: 1 },
+  parado:   { txt: 'EM ESPERA', amp: .02, esf: 0,   pulso: 0,   fala: 0,   giro: .6,  cor: [60, 190, 255], brilho: .6 },
+  ouvindo:  { txt: 'OUVINDO',   amp: .04, esf: 1,   pulso: 0,   fala: 0,   giro: .3,  cor: [70, 150, 255], brilho: .85 },
+  pensando: { txt: 'PENSANDO',  amp: .03, esf: 0,   pulso: .08, fala: 0,   giro: 1.2, cor: [90, 210, 255], brilho: .9 },
+  falando:  { txt: 'FALANDO',   amp: .06, esf: 1,   pulso: 0,   fala: .12, giro: .4,  cor: [100, 225, 255], brilho: 1 },
 };
 let estado = 'parado', atual = { ...ESTADOS.parado }, voz = 0, t = 0, angulo = 0, abafado = 0;
 
@@ -315,7 +445,7 @@ function quadro() {
                 : estado === 'ouvindo' ? Math.abs(Math.sin(t * 7) * Math.sin(t * 2.3 + .5)) : 0;
   voz += (alvoVoz - voz) * (1 - Math.pow(1 - .25, f));
   // Escala geral: respira ao pensar, pulsa com a voz ao falar
-  const escala = 1 + atual.pulso * (.5 + .5 * Math.sin(t * 5)) + atual.fala * voz;
+  const escala = 1 + atual.pulso * (.5 + .5 * Math.sin(t * 5)) + atual.fala * voz * .6;
 
   ctx.clearRect(0, 0, W, H);
 
@@ -324,56 +454,117 @@ function quadro() {
   g.addColorStop(0, rgba(.10 * brilho)); g.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
 
-  // Anel de blocos segmentados
-  const seg = cheia ? 48 : 36, rot = t * .2 * atual.giro;
-  for (let i = 0; i < seg; i++) {
-    const a0 = rot + i * 2 * Math.PI / seg, a1 = a0 + 2 * Math.PI / seg * .7;
-    const acesso = .25 + .35 * (0.5 + 0.5 * Math.sin(i * 1.3 + t * (estado === 'pensando' ? 6 : 1.5)));
-    ctx.beginPath(); ctx.arc(cx, cy, R * .78, a0, a1); ctx.arc(cx, cy, R * .62, a1, a0, true); ctx.closePath();
-    ctx.fillStyle = `rgba(40,120,200,${acesso * brilho})`; ctx.fill();
+  // Mouse: o reator acompanha de leve (cada fio com uma profundidade)
+  mx += (alvoX - mx) * .05 * f; my += (alvoY - my) * .05 * f;
+
+  // Réguas de HUD em volta (só na tela cheia): marcas finas girando em sentidos opostos
+  if (cheia) {
+    const rot = t * .12 * atual.giro;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = rgba(.3 * (1 - abafado * .5));
+    for (let i = 0; i < 90; i++) {
+      const a = rot + i * Math.PI * 2 / 90, longa = i % 5 === 0, r0 = R * 1.42, r1 = r0 + (longa ? 9 : 4);
+      ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); ctx.stroke();
+    }
+    ctx.strokeStyle = rgba(.5 * (1 - abafado * .5)); ctx.lineWidth = 2;
+    for (let k = 0; k < 3; k++) {
+      const a0 = -rot * 1.6 + k * Math.PI * 2 / 3; ctx.beginPath(); ctx.arc(cx, cy, R * 1.58, a0, a0 + .5); ctx.stroke();
+    }
   }
-  ctx.strokeStyle = rgba(.35 * (1 - abafado * .4)); ctx.lineWidth = 1;
-  (cheia ? [.6, .8, 1.32] : [.6, .8]).forEach(k => { ctx.beginPath(); ctx.arc(cx, cy, R * k, 0, Math.PI * 2); ctx.stroke(); });
 
-  // Esfera de pontos: gira e ondula com a mesma onda do anel de fora
-  angulo += (reduz ? .004 : .032) * atual.giro * f;
-  const rs = R * .46, ay = angulo, ax = .35;
-
-  // Anel de partículas em onda (reage à voz)
+  // Filamentos
   ctx.globalCompositeOperation = 'lighter';
+  const nos = [];
+  for (let k = 0; k < FIL; k++) {
+    const F = fases[k % CAMADAS], prof = 1 + k * .05, ox = mx * 9 * prof, oy = my * 6 * prof;
+    const giro = t * .05 * atual.giro * (k % 2 ? 1 : -1), pth = new Path2D();
+    for (let i = 0; i <= PASSOS; i++) {
+      const a = i / PASSOS * Math.PI * 2;
+      const onda = Math.sin(a * F.f1 + t * F.v + F.ph + k) * .6 + Math.sin(a * (F.f2 - 2) - t * F.v * 1.3 + F.ph) * .3
+                 + Math.sin(a * 7 + t * 3 + F.ph) * voz * .35;
+      const r = R * escala * (.93 + k * .016 + (atual.amp * 3.2 + voz * .09 * atual.esf) * onda);
+      const x = cx + ox + Math.cos(a + giro) * r, y = cy + oy + Math.sin(a + giro) * r;
+      if (i) pth.lineTo(x, y); else pth.moveTo(x, y);
+      if (i === (k * 37 + (t * 14 | 0)) % PASSOS && k % 3 === 0) nos.push([x, y]);
+    }
+    pth.closePath();
+    ctx.lineWidth = 3.4 * tamPonto; ctx.strokeStyle = rgba(.05 * brilho); ctx.stroke(pth);
+    ctx.lineWidth = .9 * Math.max(1, tamPonto * .8); ctx.strokeStyle = rgba((.3 + (k % 3) * .12) * brilho); ctx.stroke(pth);
+  }
+  // pontos de luz correndo pelos fios
+  for (const [x, y] of nos) {
+    const gl = ctx.createRadialGradient(x, y, 0, x, y, 14 * tamPonto);
+    gl.addColorStop(0, rgba(.9 * brilho)); gl.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gl; ctx.fillRect(x - 14 * tamPonto, y - 14 * tamPonto, 28 * tamPonto, 28 * tamPonto);
+  }
+
+  // Poeira de luz
   ctx.fillStyle = rgba(1);
   for (const p of parts) {
     const F = fases[p.k];
     const onda = Math.sin(p.a * F.f1 + t * F.v + F.ph) * .55 + Math.sin(p.a * F.f2 - t * F.v * 1.6 + F.ph) * .3
                + Math.sin(p.a * 13 + t * 5 + F.ph) * voz * .8;
-    const r = R * escala * (F.r + (atual.amp + voz * .12 * atual.esf) * onda + p.j);
+    const r = R * escala * (F.r + (atual.amp * 2 + voz * .12 * atual.esf) * onda + p.j);
     const a = p.a + t * .04 * atual.giro * (p.k % 2 ? 1 : -1);
-    ponto(cx + Math.cos(a) * r, cy + Math.sin(a) * r, p.s * tamPonto, (p.poeira ? .18 + p.o * .3 : .22 + p.o * .45) * brilho);
+    ponto(cx + mx * 9 + Math.cos(a) * r, cy + my * 6 + Math.sin(a) * r, p.s * tamPonto, (p.poeira ? .18 + p.o * .3 : .22 + p.o * .45) * brilho);
   }
-  // Pontinhos na esfera
-  const forca = atual.esf * (.03 + voz * .22);
-  for (const [x, y, z, o, guia] of pontosEsfera) {
-    const X = x * Math.cos(ay) + z * Math.sin(ay), Z0 = -x * Math.sin(ay) + z * Math.cos(ay);
-    const Y = y * Math.cos(ax) - Z0 * Math.sin(ax), Z = y * Math.sin(ax) + Z0 * Math.cos(ax);
-    // mesma onda do anel (pela direção na tela) + caroços 3D que andam
-    const ang = Math.atan2(Y, X);
-    const def = (ondaAnel(ang, 0) + ondaAnel(ang, 3)) * .5 * forca * 1.3
-              + Math.sin(x * 3 + t * .9) * Math.sin(y * 3 - t * .7) * forca * .6;
-    const k = rs * escala * (1 + def);
-    const base = guia ? .55 + .45 * Z : .2 + .35 * Z;
-    const sz = (guia && Z > 0 ? 2 : Z > .3 ? 1.5 : 1.1) * tamPonto;
-    ponto(cx + X * k, cy + Y * k, sz, (Z > 0 ? base : (guia ? .14 : .06) + .08 * o) * brilho);
+
+  // Ondas de clique
+  ctx.globalAlpha = 1; ctx.lineWidth = 2;
+  for (let i = ondas.length - 1; i >= 0; i--) {
+    const w = ondas[i], q = (t - w.t0) / 1.1;
+    if (q >= 1) { ondas.splice(i, 1); continue; }
+    ctx.strokeStyle = rgba((1 - q) * .55); ctx.beginPath(); ctx.arc(w.x, w.y, 10 + q * R * 1.3, 0, Math.PI * 2); ctx.stroke();
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
   requestAnimationFrame(quadro);
 }
 
+// Disco central: aparece com a câmera ligada (ui.camera) e mostra "identidade confirmada"
+const elDisco = document.getElementById('disco'), elCam = document.getElementById('cam');
+let fluxoCam = null;
+function posDisco() {
+  const d = R * 1.05;
+  Object.assign(elDisco.style, { width: `${d}px`, height: `${d}px`, left: `${cx - d / 2}px`, top: `${cy - d / 2}px` });
+}
+window.camera = async (ligar, texto) => {
+  document.getElementById('discoTxt').textContent = texto || 'IDENTIDADE CONFIRMADA';
+  if (!ligar) {
+    elDisco.classList.remove('on', 'cam');
+    if (fluxoCam) { fluxoCam.getTracks().forEach(t => t.stop()); fluxoCam = null; }
+    return;
+  }
+  if (!cheia) return;
+  posDisco(); elDisco.classList.add('on');
+  try {
+    fluxoCam = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 320, facingMode: 'user' } });
+    elCam.srcObject = fluxoCam; elDisco.classList.add('cam');
+  } catch { /* sem câmera: fica só a moldura */ }
+};
+
+// Orbe de baixo: abre e fecha a caixa de pedido. Digitar em qualquer lugar também abre.
+const elForm = document.getElementById('form'), elPedido = document.getElementById('pedido');
+function caixa(abre) {
+  if (remoto) return;
+  elForm.classList.toggle('aberto', abre);
+  if (abre) elPedido.focus(); else elPedido.blur();
+}
+document.getElementById('orbe').addEventListener('click', () => caixa(!elForm.classList.contains('aberto')));
+addEventListener('keydown', (e) => {
+  if (!cheia || remoto || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key.length === 1 && document.activeElement !== elPedido) caixa(true);
+  else if (e.key === 'Escape' && elForm.classList.contains('aberto') && !abertas.size) caixa(false);
+});
+elPedido.addEventListener('blur', () => setTimeout(() => { if (!elPedido.value.trim() && document.activeElement !== elPedido) elForm.classList.remove('aberto'); }, 4000));
+document.getElementById('form').addEventListener('submit', () => setTimeout(() => elForm.classList.remove('aberto'), 150));
+
 // Relógio (tela cheia)
 const DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
 function relogio() {
   const d = new Date(), el = document.getElementById('relogio');
   el.querySelector('b').textContent = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  document.getElementById('hudHora').textContent = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   el.querySelector('span').textContent = `${DIAS[d.getDay()]}, ${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`;
 }
 relogio(); setInterval(relogio, 15000);
@@ -389,7 +580,7 @@ const CANTOS = [
   { left: '5vw', bottom: '22vh' }, { right: '5vw', bottom: '22vh' },
 ];
 const LUGAR = { musica: { canto: 0 }, lista: { canto: 1 }, texto: { canto: 3 }, clima: { canto: 2 }, zap: { canto: 1 },
-  confirmar: { centro: true }, aviso: { aviso: true } };
+  confirmar: { centro: true }, aviso: { aviso: true }, pesquisa: { pesquisa: true }, metrica: { metrica: true } };
 const TITULO = { 'tocando agora': 'musica', confirmar: 'confirmar', lembrete: 'aviso', 'sugestão': 'aviso', sugestao: 'aviso',
   clima: 'clima', whatsapp: 'zap' };
 const CLIMA = /^(.*?):\s*(.*?),\s*([+-]?\d+)\s*°C\s*\(sensação\s*([+-]?\d+)\s*°C\),\s*umidade\s*(\d+%),\s*vento\s*(.*)$/i;
@@ -406,8 +597,13 @@ function conversa(nome, mensagem, enviada) {
   return [box, balao];
 }
 
+// Cartões "ricos" chegam como JSON: {"titulo":..., "ranking":[...], "resumo":...} (pesquisa) ou {"icone":..., "itens":[...]} (métrica)
+function jsonDe(valor) { try { const d = JSON.parse(valor); return d && typeof d === 'object' ? d : null; } catch { return null; } }
 function tipoDe(rotulo, valor) {
-  const t = TITULO[String(rotulo).trim().toLowerCase()];
+  const nome = String(rotulo).trim().toLowerCase();
+  if (/^pesquisa\b/.test(nome) && jsonDe(valor)) return 'pesquisa';
+  if (/^m[ée]trica\b/.test(nome) && jsonDe(valor)) return 'metrica';
+  const t = TITULO[nome];
   if (t === 'clima' && !CLIMA.test(valor.trim())) return 'texto';  // formato diferente: mostra o texto
   if (t) return t;
   return /^\s*\d+[.)]\s/m.test(valor) ? 'lista' : 'texto';
@@ -454,6 +650,10 @@ function conteudo(tipo, valor) {
     const m = valor.match(ENVIADO);
     if (m) corpo.append(...conversa(m[1], m[2], true), cria('p', 'feito', '✓ Enviada'));
     else corpo.append(cria('p', 'texto', valor));
+  } else if (tipo === 'pesquisa') {
+    corpo.append(...pesquisa(jsonDe(valor)));
+  } else if (tipo === 'metrica') {
+    corpo.append(...metrica(jsonDe(valor)));
   } else if (tipo === 'confirmar') {
     const zap = valor.match(MANDO);
     if (zap) corpo.append(...conversa(zap[2], zap[1], false));
@@ -463,6 +663,101 @@ function conteudo(tipo, valor) {
     corpo.append(cria('p', 'texto', valor));
   }
   return corpo;
+}
+
+// ---------- ícones (SVG montado por DOM, nunca por texto HTML) ----------
+const SVGNS = 'http://www.w3.org/2000/svg';
+const ICONES = {
+  pesquisa: ['M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z', 'M21 21l-4.5-4.5'],
+  bateria: ['M3 8h14a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z', 'M20 11v2', 'M10 9.5l-2 3h3l-2 3'],
+  cpu: ['M7 7h10v10H7z', 'M10 10h4v4h-4z', 'M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3'],
+  rede: ['M5 12a10 10 0 0 1 14 0', 'M8 15a6 6 0 0 1 8 0', 'M12 19h.01'],
+  chama: ['M12 3c1 3 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-9z'],
+  passos: ['M8 3c2 0 3 2 3 5s-1 4-3 4-3-1-3-4 1-5 3-5z', 'M8 15h3v2a1.5 1.5 0 0 1-3 0z', 'M16 8c2 0 3 2 3 5s-1 4-3 4-3-1-3-4 1-5 3-5z', 'M16 20h3v1a1.5 1.5 0 0 1-3 0z'],
+  relogio: ['M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z', 'M12 8v4l3 2'],
+  info: ['M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z', 'M12 11v5', 'M12 8h.01'],
+  musica: ['M9 18V6l10-2v12', 'M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z', 'M19 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z'],
+  arquivos: ['M4 6a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z'],
+};
+function icone(nome, grande) {
+  const svg = document.createElementNS(SVGNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', grande ? '1.6' : '2'); svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round');
+  for (const d of ICONES[nome] || ICONES.info) { const p = document.createElementNS(SVGNS, 'path'); p.setAttribute('d', d); svg.append(p); }
+  return svg;
+}
+const ICONE_TIPO = { musica: 'musica', lista: 'arquivos', clima: 'info', pesquisa: 'pesquisa', texto: 'info', aviso: 'relogio' };
+
+// ---------- pesquisa ----------
+function pesquisa(d) {
+  const lista = (x) => Array.isArray(x) ? x : [], txt = (x) => String(x ?? '');
+  const saida = [], topo = cria('div', 'pq-topo'), tt = cria('div');
+  const ic = cria('span', 'icone-tipo'); ic.append(icone('pesquisa'));
+  if (d.tema) tt.append(cria('small', '', `Pesquisa · ${txt(d.tema)}`));
+  tt.append(cria('h3', '', txt(d.titulo || d.tema || 'Resultado')));
+  topo.append(ic, tt); saida.push(topo);
+  const barras = [];
+  const ranking = lista(d.ranking).slice(0, 6);
+  if (ranking.length) {
+    const sec = cria('div', 'pq-sec'), rot = cria('div', 'pq-rotulo');
+    rot.append(cria('span', '', txt(d.contexto || 'Resultado')));
+    if (d.progresso && d.progresso.valor !== undefined) {
+      const pr = cria('span', '', txt(d.progresso.rotulo || `${d.progresso.valor}%`)), tr = cria('span', 'pq-prog'), bi = cria('i');
+      tr.append(bi); barras.push([bi, d.progresso.valor]); rot.append(pr, tr);
+    }
+    sec.append(rot);
+    ranking.forEach((r, i) => {
+      const it = cria('div', 'pq-item'), l = cria('div', 'pq-linha'), nome = cria('span', 'pq-nome', txt(r.nome));
+      if (r.sigla) nome.append(cria('small', '', txt(r.sigla)));
+      l.append(cria('span', 'pq-n', String(i + 1).padStart(2, '0')), nome);
+      const pct = parseFloat(String(r.pct ?? r.valor ?? '').replace(',', '.'));
+      if (r.pct !== undefined || r.valor !== undefined) l.append(cria('span', 'pq-pct', /[%a-z]/i.test(txt(r.pct ?? r.valor)) ? txt(r.pct ?? r.valor) : `${txt(r.pct ?? r.valor)}%`));
+      it.append(l);
+      if (!isNaN(pct)) { const br = cria('div', 'pq-barra'), bi = cria('i'); br.append(bi); it.append(br); barras.push([bi, Math.min(100, pct)]); }
+      if (r.detalhe || r.selo) {
+        const sb = cria('div', 'pq-sub'); sb.append(cria('span', '', txt(r.detalhe)));
+        if (r.selo) sb.append(cria('span', 'pq-selo', txt(r.selo)));
+        it.append(sb);
+      }
+      sec.append(it);
+    });
+    saida.push(sec);
+  }
+  if (d.nota) saida.push(cria('p', 'pq-nota', txt(d.nota)));
+  if (d.resumo) { const r = cria('div', 'pq-resumo'); r.append(cria('small', '', 'EM RESUMO'), cria('p', '', txt(d.resumo))); saida.push(r); }
+  const pontos = lista(d.pontos).slice(0, 6);
+  if (pontos.length) { const g = cria('div', 'pq-pontos'); for (const t of pontos) g.append(cria('div', 'pq-ponto', txt(t))); saida.push(g); }
+  const fontes = lista(d.fontes).slice(0, 4);
+  if (fontes.length) {
+    const g = cria('div', 'pq-fontes');
+    for (const f of fontes) {
+      const a = cria('div', 'pq-fonte'); a.append(cria('b', '', txt(f.nome || f.site || 'fonte')), cria('span', '', txt(f.titulo || f.url || '')));
+      g.append(a);
+    }
+    saida.push(g);
+  }
+  const pe = cria('div', 'pq-pe');
+  pe.append(cria('span', '', `${fontes.length || lista(d.fontes).length || 0} fontes`), cria('span', '', `Consultado às ${txt(d.hora || hora())}`));
+  saida.push(pe);
+  // as barras crescem depois que a janela entra
+  setTimeout(() => barras.forEach(([el, v]) => { el.style.width = `${v}%`; }), 350);
+  return saida;
+}
+
+// ---------- métrica: ícone com órbita + números ----------
+const CORES = { laranja: '#ff9d2e', verde: '#3dff9a', azul: '#35c8ff', roxo: '#a58bff', vermelho: '#ff5470' };
+function metrica(d) {
+  const ic = cria('div', 'mt-icone'), dados = cria('div', 'mt-dados');
+  ic.style.setProperty('--cor', CORES[d.cor] || CORES.azul);
+  dados.style.setProperty('--cor', CORES[d.cor] || CORES.azul);
+  ic.append(icone(d.icone, true));
+  for (const i of (Array.isArray(d.itens) ? d.itens : []).slice(0, 4)) {
+    const x = cria('div', 'mt-dado');
+    x.append(cria('small', '', String(i.r ?? '')), cria('b', '', String(i.v ?? '')));
+    if (i.s) x.append(cria('span', '', String(i.s)));
+    dados.append(x);
+  }
+  return [ic, dados];
 }
 
 function simNao() {
@@ -488,6 +783,12 @@ function bate(a, b) { return !(a.right <= b.left || b.right <= a.left || a.botto
 function poe(el, tipo) {
   const lugar = LUGAR[tipo];
   if (lugar.aviso) { aplica(el, { left: `calc(50% - ${Math.min(340, innerWidth - 32) / 2}px)`, top: '11vh' }); return; }
+  if (lugar.pesquisa) { aplica(el, { left: `calc(50% - ${Math.min(540, innerWidth - 32) / 2}px)`, top: `${Math.max(120, innerHeight * .17)}px` }); return; }
+  if (lugar.metrica) {
+    const direita = [...abertas.values()].filter(j => j.el !== el && j.tipo === 'metrica').length % 2;  // a segunda vai para a esquerda
+    aplica(el, direita ? { left: '7vw', top: `${Math.max(120, cy - 70)}px` } : { right: '7vw', top: `${Math.max(120, cy - 70)}px` });
+    return;
+  }
   if (lugar.centro) { aplica(el, { left: `calc(50% - ${Math.min(400, innerWidth - 32) / 2}px)`, top: `${Math.max(80, cy - 140)}px` }); return; }
   // o canto preferido; se já tiver outra janela lá, o próximo livre
   const outras = [...abertas.values()].filter(j => j.el !== el && LUGAR[j.tipo].canto !== undefined).map(j => j.el.getBoundingClientRect());
@@ -496,6 +797,33 @@ function poe(el, tipo) {
     if (!outras.some(o => bate(el.getBoundingClientRect(), o))) return;
   }
   aplica(el, CANTOS[lugar.canto]);  // tudo ocupado: fica no preferido, por cima
+}
+
+// Arrastar a janela pela barra
+function arrasta(el, barra) {
+  barra.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.fechar')) return;
+    const r = el.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+    el.classList.add('arrasta'); barra.setPointerCapture(e.pointerId);
+    aplica(el, { left: `${r.left}px`, top: `${r.top}px` });
+    const mexe = (ev) => aplica(el, { left: `${Math.max(0, Math.min(innerWidth - 60, ev.clientX - dx))}px`, top: `${Math.max(0, Math.min(innerHeight - 40, ev.clientY - dy))}px` });
+    const solta = () => { el.classList.remove('arrasta'); barra.removeEventListener('pointermove', mexe); barra.removeEventListener('pointerup', solta); barra.removeEventListener('pointercancel', solta); };
+    barra.addEventListener('pointermove', mexe); barra.addEventListener('pointerup', solta); barra.addEventListener('pointercancel', solta);
+  });
+}
+
+// A pesquisa é longa: rola sozinha, devagar, enquanto ele fala (o mouse em cima para)
+function rolaDevagar(corpo, j, ms) {
+  if (reduz) return;
+  const dur = Math.max(6000, Math.min(ms * .7, 40000)), ini = performance.now() + 2500;
+  let pos = 0;
+  (function passo(agora) {
+    if (!corpo.isConnected) return;
+    const max = corpo.scrollHeight - corpo.clientHeight;
+    if (max > 0 && agora > ini && !j.parado) { pos = Math.max(pos, Math.min(max, (agora - ini) / dur * max)); corpo.scrollTop = pos; }
+    else if (j.parado) pos = corpo.scrollTop;
+    requestAnimationFrame(passo);
+  })(performance.now());
 }
 
 function frente(el) {
@@ -516,11 +844,14 @@ function abreJanela(rotulo, valor, ms) {
   const barra = cria('div', 'barra'), x = cria('button', 'fechar', '×');
   x.type = 'button'; x.title = 'Fechar'; x.onclick = () => fecha(tipo);
   barra.append(cria('span', 'ponto'), cria('small', '', rotulo), x);
-  el.append(barra, conteudo(tipo, valor));
+  el.append(cria('i', 'varre'), barra, conteudo(tipo, valor));
+  el.classList.add('nova'); setTimeout(() => el.classList.remove('nova'), 1200);
   const j = { el, tipo, timer: null };
   el.addEventListener('pointerdown', () => frente(el));
-  el.addEventListener('mouseenter', () => clearTimeout(j.timer));  // lendo: não some
-  el.addEventListener('mouseleave', () => agenda(j, 3000));
+  arrasta(el, barra);
+  if (tipo === 'pesquisa') rolaDevagar(el.querySelector('.corpo'), j, ms);
+  el.addEventListener('mouseenter', () => { clearTimeout(j.timer); j.parado = true; });  // lendo: não some
+  el.addEventListener('mouseleave', () => { j.parado = false; agenda(j, 3000); });
   camada.append(el);  // precisa estar na tela para medir onde cabe
   poe(el, tipo);
   abertas.set(tipo, j);
@@ -557,7 +888,7 @@ const elFala = document.getElementById('fala'), elCartoes = document.getElementB
 const lv = document.getElementById('lv'), lb = document.getElementById('lb');
 function muda(s) {
   if (!ESTADOS[s]) return;
-  estado = s; elEstado.textContent = ESTADOS[s].txt;
+  estado = s; elEstado.textContent = ESTADOS[s].txt; document.body.dataset.estado = s;
   if (s === 'pensando') { fecha('confirmar'); tiraConfirmar(); }  // a resposta chegou (por voz ou digitada)
 }
 function cartao(rotulo, valor, ms = 7000) {
@@ -565,11 +896,14 @@ function cartao(rotulo, valor, ms = 7000) {
   const tipo = tipoDe(rotulo, valor);
   if (tipo === 'confirmar') ms = 60000;  // fica até a resposta (o Jarvis espera 1 minuto)
   else if (tipo === 'aviso') ms = Math.max(ms, 12000);
+  else if (tipo === 'pesquisa') ms = Math.max(ms, 45000);
+  else if (tipo === 'metrica') ms = Math.max(ms, 20000);
   else if (remoto) ms = Math.max(ms * 4, 30000);  // no celular dá mais tempo para ler
   if (cheia) return abreJanela(rotulo, valor, ms);
   const d = document.createElement('div'); d.className = 'cartao';
   // no celular o cartão mostra igual às janelas (clima grande, lista, balão do zap, sim/não)
-  d.append(cria('small', '', rotulo), remoto ? conteudo(tipo, valor) : cria('strong', '', valor));
+  const rico = tipo === 'pesquisa' || tipo === 'metrica';  // JSON nunca aparece como texto
+  d.append(cria('small', '', rotulo), remoto || rico ? conteudo(tipo, valor) : cria('strong', '', valor));
   if (tipo === 'confirmar') { d.classList.add('confirmar'); if (!remoto) d.append(simNao()); }
   elCartoes.prepend(d);
   while (elCartoes.children.length > 3) elCartoes.lastChild.remove();
@@ -646,7 +980,7 @@ function chegou(e) {
 
 function semConexao(sim) {
   document.body.classList.toggle('offline', sim);
-  elEstado.textContent = sim ? '● sem conexão com o PC' : ESTADOS[estado].txt;
+  elEstado.textContent = sim ? 'SEM CONEXÃO COM O PC' : ESTADOS[estado].txt;
 }
 
 // Pergunta "tem novidade?" e o PC segura a resposta até ter (ou 25 s): chega na hora, sem gastar bateria à toa

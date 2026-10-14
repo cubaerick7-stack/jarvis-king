@@ -201,6 +201,66 @@ def generate(system, user, json_mode=False, max_tokens=2048, temperature=0.0):
     raise _all_failed("Gemini", errors, limited)
 
 
+def search_generate(system, user, max_tokens=1800):
+    """Gemini com a busca do Google ligada: responde com informação atual e devolve (texto, fontes).
+    As fontes vêm como [{"nome": "g1.globo.com", "titulo": "...", "url": "..."}]. Levanta CloudError se falhar."""
+    key = api_key()
+    if not key:
+        raise CloudError("sem GEMINI_API_KEY")
+    body = {
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"text": user}]}],
+        "tools": [{"google_search": {}}],
+        "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_tokens},
+    }
+    errors, limited = [], False
+    for model in _in_order([m for m in models() if m not in _dead]):
+        try:
+            data = _call(_post, model, _with_thinking(body, model not in _no_thinking_cfg), key)
+        except _Http as h:
+            errors.append(f"{model}: HTTP {h.code} {_message(h.body)}".strip())
+            fail = _http_fail("Gemini", h, h.body)
+            if fail:
+                raise fail from h
+            if h.code == 400 and model not in _no_thinking_cfg:
+                _no_thinking_cfg.add(model)  # talvez só recuse o thinkingConfig: repete sem
+                try:
+                    data = _call(_post, model, body, key)
+                except _Http as h2:
+                    errors.append(f"{model}: HTTP {h2.code} {_message(h2.body)}".strip())
+                    continue
+            else:
+                if h.code == 429:
+                    limited = True
+                    _limited[model] = time.time()
+                elif h.code == 404:
+                    _dead.add(model)
+                continue
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            if _timed_out(e):
+                errors.append(f"{model}: demorou mais de {GEN_TIMEOUT} s")
+                continue
+            raise CloudError(f"sem conexão com o Gemini ({getattr(e, 'reason', e)})") from e
+        try:
+            cand = data["candidates"][0]
+            text = "".join(p.get("text", "") for p in cand["content"]["parts"] if not p.get("thought"))
+        except (KeyError, IndexError, TypeError):
+            errors.append(f"{model}: resposta vazia")
+            continue
+        if not text.strip():
+            errors.append(f"{model}: resposta vazia")
+            continue
+        sources, seen = [], set()
+        for chunk in (cand.get("groundingMetadata") or {}).get("groundingChunks", []):
+            web = chunk.get("web") or {}
+            name = str(web.get("title") or "").strip()
+            if name and name not in seen:
+                seen.add(name)
+                sources.append({"nome": name[:40], "titulo": "", "url": str(web.get("uri") or "")})
+        return text, sources
+    raise _all_failed("Gemini", errors, limited)
+
+
 def _groq_list(key):
     """Os modelos que a conta do Groq tem hoje (uma pergunta por vez que o Jarvis abre)."""
     global _groq_listed
