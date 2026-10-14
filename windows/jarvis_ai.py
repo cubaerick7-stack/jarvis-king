@@ -901,6 +901,14 @@ def fast_local_router(user_text):
     if small_talk(normalize(user_text)) or small_talk(clean):
         return True
 
+    # "sim"/"não" sozinho sem nada esperando resposta (a pergunta já foi respondida): não vira pedido novo,
+    # senão a IA repetia a última ação (mandava a mesma mensagem duas vezes)
+    lonely = set(re.findall(r"\w+", clean))
+    if lonely and lonely <= (YES_WORDS | NO_WORDS | {"senhor", "pode", "mandar", "manda", "obrigado"}) \
+            and not lonely & {"cancela", "cancelar", "para", "pare"}:
+        print("Jarvis > Não há nada esperando confirmação, senhor.")
+        return True
+
     # memória
     if re.fullmatch(rf"(?:{CALL},? )?o que (?:voce|vc) sabe (?:sobre|de) mim\??", clean):
         act("what_i_know", M.what_i_know)
@@ -1400,7 +1408,9 @@ def confirm(question):
                 continue
             if kind is None:  # outro pedido no meio: cancela este e faz o novo em seguida
                 later.append((source, answer))
+                set_state("pensando")  # fecha o card "Posso enviar?"
                 return False
+            set_state("pensando")  # respondeu: o card "Sim/Não" sai da tela na hora
             return kind
         return False
     finally:
@@ -1922,7 +1932,7 @@ def run_actions(actions):
 
 
 # Ferramentas cuja própria fala é a resposta do pedido (o que acharam): a "reply" da IA não fica por cima
-ANSWER_TOOLS = {"research"}
+ANSWER_TOOLS = {"research", "whatsapp_send", "whatsapp_send_file"}
 
 
 def _failure_reason(entry):

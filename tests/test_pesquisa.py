@@ -330,3 +330,21 @@ def test_voice_noise_does_not_cancel_the_confirmation(monkeypatch):
     j.commands.put(("voz", "Obrigado."))  # ruído que o reconhecimento virou frase
     j.commands.put(("janela", "sim"))
     assert j.confirm("Mando oi para Ana?") is True
+
+
+def test_lonely_yes_does_not_repeat_the_last_action(monkeypatch, capsys):
+    j = load_jarvis()
+    monkeypatch.setattr(j, "think", lambda *a, **k: (_ for _ in ()).throw(AssertionError("foi para a IA")))
+    for text in ("sim", "Sim, senhor.", "pode mandar", "não"):
+        assert j.fast_local_router(text) is True, text
+    assert "Não há nada esperando confirmação" in capsys.readouterr().out
+
+
+def test_whatsapp_sent_line_is_the_caption_not_the_ai_reply(monkeypatch, capsys):
+    j = load_jarvis()
+    monkeypatch.setattr(j, "think", lambda *a, **k: {"actions": [{"name": "whatsapp_send_file", "args": {"contact": "Erick"}}],
+                                                     "reply": "Enviando o print para o senhor Erick Cuba."})
+    monkeypatch.setitem(j.TOOLS_BY_NAME["whatsapp_send_file"], "run",
+                        lambda a: print("Jarvis > Enviei print_1.png para Erick Cuba.") or True)
+    j.ask_ai_router("manda um print pro erick")
+    assert capsys.readouterr().out.strip().endswith("Enviei print_1.png para Erick Cuba.")

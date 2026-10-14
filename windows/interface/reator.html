@@ -822,8 +822,10 @@ function metrica(d) {
 function simNao() {
   const escolha = cria('div', 'escolha'), sim = cria('button', 'sim', 'Sim'), nao = cria('button', '', 'Não');
   sim.type = nao.type = 'button';
-  sim.onclick = () => responde('sim');
-  nao.onclick = () => responde('não');
+  // um clique só: o segundo (ou um duplo clique) virava um "sim" solto e a IA repetia o envio
+  const uma = (texto) => () => { if (sim.disabled) return; sim.disabled = nao.disabled = true; responde(texto); };
+  sim.onclick = uma('sim');
+  nao.onclick = uma('não');
   escolha.append(sim, nao);
   return escolha;
 }
