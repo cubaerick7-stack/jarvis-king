@@ -362,3 +362,60 @@ def test_scheduled_request_arriving_during_a_question_waits_its_turn(monkeypatch
     assert j.confirm("Mando oi para Ana?") is True  # não cancelou
     assert j.commands.get_nowait() == ("agendado", "toca evidências")  # e ele faz logo depois
     assert any(t["name"] == "schedule_request" for t in j.TOOLS)
+
+
+def _quiet(j, monkeypatch):
+    j.queue_mode = True
+    for fn in ("speak", "set_state"):
+        monkeypatch.setattr(j, fn, lambda *a: None)
+    for fn in ("speech", "front"):
+        monkeypatch.setattr(j.U, fn, lambda *a: None)
+
+
+def test_alarm_plays_waits_for_acordei_then_good_morning(monkeypatch):
+    j = load_jarvis()
+    _quiet(j, monkeypatch)
+    played, done, cards = [], [], []
+    monkeypatch.setattr(j, "play_youtube", played.append)
+    monkeypatch.setattr(j, "youtube_control", done.append)
+    monkeypatch.setattr(j.U, "card", lambda t, x, ms=7000: cards.append(t))
+    monkeypatch.setattr(j.F, "weather", lambda city: print("Jarvis > Curitiba: Chuva fraca, +14°C (sensação +12°C), umidade 91%, vento 10 km/h"))
+    monkeypatch.setattr(j.F, "web_snippets", lambda q, n=8: [{"titulo": "Notícia A", "site": "g1", "trecho": "", "url": "u"}])
+    monkeypatch.setattr(j, "think", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("sem IA")))
+    said = []
+    monkeypatch.setattr(j, "speak", said.append)
+    j.commands.put(("voz", "toca lofi"))  # outro pedido no meio: fica para depois
+    j.commands.put(("janela", "acordei"))
+    assert j.wake_up("Evidências") is True
+    assert played == ["Evidências", "Arctic Monkeys - Do I Wanna Know?"] and done == ["pausar"]
+    assert cards == ["Despertador", "Clima", "Pesquisa · notícias"]
+    assert said[0].startswith("Bom dia, senhor.") and "guarda-chuva" in said[0] and said[0].endswith("Tenha um bom dia, senhor.")
+    assert "Notícia A" in said[0]
+    assert j.commands.get_nowait() == ("voz", "toca lofi")
+
+
+def test_set_alarm_next_time(monkeypatch):
+    j = load_jarvis()
+    got = []
+    monkeypatch.setattr(j.M, "add_reminder", lambda text, day, hour, **k: got.append((text, day, hour, k)) or True)
+    assert j.set_alarm("7h", "", "Evidências") is True
+    text, day, hour, k = got[0]
+    assert hour == "07:00" and k == {"despertador": True} and len(day) == 10
+    assert j.set_alarm("25h") is False
+
+
+def test_requests_with_a_time_go_to_the_ai_to_be_scheduled(monkeypatch):
+    j = load_jarvis()
+    monkeypatch.setattr(j, "play_youtube", lambda q: (_ for _ in ()).throw(AssertionError(f"tocou agora: {q}")))
+    for text in ("toca lofi às 04:58", "coloca evidências às 7h", "amanhã às 8h abre o spotify", "me acorda 6h30"):
+        assert j.fast_local_router(text) is False, text
+
+
+def test_reminder_without_day_is_the_next_time(monkeypatch):
+    from datetime import datetime, timedelta
+    import memoria as Mem
+    now = datetime.now()
+    later = (now + timedelta(minutes=5)).strftime("%H:%M")
+    assert Mem.add_reminder("toca lofi", "", later, pedido=True)
+    item = Mem.load()["lembretes"][-1]
+    assert item["data"] == (now + timedelta(minutes=5)).date().isoformat() and item["pedido"]

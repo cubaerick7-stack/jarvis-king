@@ -164,3 +164,11 @@ def test_scheduled_request_is_done_on_time_and_late_ones_only_warn(tmp_path, mon
     M.add_reminder("abre o spotify", "2026-10-15", "08:00", pedido=True)
     late = M.due_items(datetime(2026, 10, 15, 9, 0))  # o Bolha estava fechado às 8h: não abre fora de hora
     assert late == [("lembrete", 'não fiz "abre o spotify" às 08:00 de 15/10 porque eu estava desligado')]
+
+
+def test_alarm_rings_on_time_and_warns_when_missed():
+    from datetime import datetime
+    M.add_reminder("Evidências", "2026-10-15", "07:00", despertador=True)
+    assert M.due_items(datetime(2026, 10, 15, 7, 0, 10)) == [("despertador", "Evidências")]
+    M.add_reminder("", "2026-10-16", "07:00", despertador=True)
+    assert M.due_items(datetime(2026, 10, 16, 9, 0)) == [("lembrete", "não toquei o despertador das 07:00 porque eu estava desligado")]

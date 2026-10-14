@@ -301,6 +301,19 @@ body.foco .legenda, body.foco .estado, body.foco .hud-topo { opacity: 0; }
 .cartao .mt-icone::before { width: 88px; height: 88px; } .cartao .mt-icone::after { width: 62px; height: 62px; }
 
 
+/* ---- despertador: relógio grande e o botão ACORDEI pulsando ---- */
+.j-despertador { width: min(420px, calc(100vw - 32px)); text-align: center; }
+.j-despertador .corpo { justify-items: center; padding: 22px 22px 18px; }
+.dsp-rot { font: 11px var(--mono); letter-spacing: .4em; color: var(--muted); }
+.dsp-hora { font: 600 76px/1 var(--display); letter-spacing: .02em; font-variant-numeric: tabular-nums; text-shadow: 0 0 28px rgba(53, 200, 255, .55); }
+.dsp-txt { font-size: 17px; color: var(--text); }
+.acordei { margin-top: 6px; padding: 16px 46px; border-radius: 999px; border: 1px solid var(--cyan); cursor: pointer;
+  font: 700 20px var(--display); letter-spacing: .3em; color: #02101f; background: linear-gradient(135deg, #7fe3ff, var(--cyan));
+  box-shadow: 0 0 30px rgba(53, 200, 255, .7); animation: acordei 1.4s ease-in-out infinite; }
+.acordei:hover, .acordei:focus-visible { filter: brightness(1.1); outline: 2px solid #fff; outline-offset: 3px; }
+@keyframes acordei { 50% { transform: scale(1.06); box-shadow: 0 0 52px rgba(53, 200, 255, 1); } }
+.cartao .dsp-hora { font-size: 54px; }
+
 /* ---- doca: os cards minimizados ficam na lateral esquerda; clique traz de volta ao centro ---- */
 #doca { position: absolute; left: 18px; top: 19vh; display: flex; flex-direction: column; gap: 8px; width: min(250px, 26vw);
   pointer-events: none; transition: opacity .3s; }
@@ -637,8 +650,8 @@ const CANTOS = [
 // Os cards grandes vão para o PALCO (centro); o anterior minimiza para a doca da esquerda
 const PALCO = new Set(['pesquisa', 'lista', 'texto', 'clima', 'zap']);
 const LUGAR = { musica: { canto: 1 }, lista: { palco: true }, texto: { palco: true }, clima: { palco: true }, zap: { palco: true },
-  confirmar: { centro: true }, aviso: { aviso: true }, pesquisa: { pesquisa: true }, metrica: { metrica: true } };
-const TITULO = { 'tocando agora': 'musica', confirmar: 'confirmar', lembrete: 'aviso', 'sugestão': 'aviso', sugestao: 'aviso',
+  confirmar: { centro: true }, despertador: { centro: true }, aviso: { aviso: true }, pesquisa: { pesquisa: true }, metrica: { metrica: true } };
+const TITULO = { 'tocando agora': 'musica', confirmar: 'confirmar', despertador: 'despertador', lembrete: 'aviso', 'sugestão': 'aviso', sugestao: 'aviso',
   clima: 'clima', whatsapp: 'zap' };
 const CLIMA = /^(.*?):\s*(.*?),\s*([+-]?\d+)\s*°C\s*\(sensação\s*([+-]?\d+)\s*°C\),\s*umidade\s*(\d+%),\s*vento\s*(.*)$/i;
 const MANDO = /^Mando "([\s\S]*)" para (.+?)\?$/;
@@ -711,6 +724,12 @@ function conteudo(tipo, valor) {
     corpo.append(...pesquisa(jsonDe(valor)));
   } else if (tipo === 'metrica') {
     corpo.append(...metrica(jsonDe(valor)));
+  } else if (tipo === 'despertador') {
+    const bt = cria('button', 'acordei', 'ACORDEI');
+    bt.type = 'button';
+    bt.onclick = () => { if (bt.disabled) return; bt.disabled = true; fecha('despertador'); if (api()) api().pedido('acordei'); };
+    corpo.append(cria('p', 'dsp-rot', 'DESPERTADOR'), cria('p', 'dsp-hora', valor), cria('p', 'dsp-txt', 'Hora de acordar, senhor.'), bt,
+      cria('p', 'dica', remoto ? 'Ou toque no microfone e diga "acordei"' : 'Ou diga "Bolha, acordei"'));
   } else if (tipo === 'confirmar') {
     const zap = valor.match(MANDO);
     if (zap) corpo.append(...conversa(zap[2], zap[1], false));
@@ -1057,12 +1076,13 @@ const lv = document.getElementById('lv'), lb = document.getElementById('lb');
 function muda(s) {
   if (!ESTADOS[s]) return;
   estado = s; elEstado.textContent = ESTADOS[s].txt; document.body.dataset.estado = s;
-  if (s === 'pensando') { fecha('confirmar'); tiraConfirmar(); }  // a resposta chegou (por voz ou digitada)
+  if (s === 'pensando') { fecha('confirmar'); fecha('despertador'); tiraConfirmar(); }  // a resposta chegou (por voz ou digitada)
 }
 function cartao(rotulo, valor, ms = 7000) {
   rotulo = String(rotulo ?? ''); valor = String(valor ?? '');
   const tipo = tipoDe(rotulo, valor);
   if (tipo === 'confirmar') ms = 60000;  // fica até a resposta (o Jarvis espera 1 minuto)
+  else if (tipo === 'despertador') ms = Math.max(ms, 30 * 60000);  // até apertar ACORDEI
   else if (tipo === 'aviso') ms = Math.max(ms, 12000);
   else if (tipo === 'pesquisa') ms = Math.max(ms, 45000);
   else if (tipo === 'metrica') ms = Math.max(ms, 20000);
@@ -1070,7 +1090,7 @@ function cartao(rotulo, valor, ms = 7000) {
   if (cheia) return abreJanela(rotulo, valor, ms);
   const d = document.createElement('div'); d.className = 'cartao';
   // no celular o cartão mostra igual às janelas (clima grande, lista, balão do zap, sim/não)
-  const rico = tipo === 'pesquisa' || tipo === 'metrica';  // JSON nunca aparece como texto
+  const rico = tipo === 'pesquisa' || tipo === 'metrica' || tipo === 'despertador';  // JSON nunca aparece como texto
   d.append(cria('small', '', rotulo), remoto || rico ? conteudo(tipo, valor) : cria('strong', '', valor));
   if (tipo === 'confirmar') { d.classList.add('confirmar'); if (!remoto) d.append(simNao()); }
   elCartoes.prepend(d);

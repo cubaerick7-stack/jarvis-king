@@ -158,9 +158,17 @@ def what_i_know():
 
 # ------------------------- lembretes -------------------------
 
-def add_reminder(text, day, hour="", pedido=False):
+def add_reminder(text, day, hour="", pedido=False, despertador=False):
     """day = AAAA-MM-DD; hour = HH:MM (sem hora, avisa às 9h ou ao abrir o Jarvis).
     pedido=True: na hora ele FAZ o pedido ("toca evidências"), em vez de só avisar."""
+    hour_in = str(hour or "").strip().lower()
+    if not str(day or "").strip() and hour_in:  # sem dia: a próxima vez que der essa hora (hoje ou amanhã)
+        m = re.match(r"(\d{1,2})(?:\s*(?:h|:|horas?)\s*(\d{2})?)?", hour_in)
+        now = datetime.now()
+        if m and (int(m.group(1)), int(m.group(2) or 0)) <= (now.hour, now.minute):
+            day = (now.date() + timedelta(days=1)).isoformat()
+        else:
+            day = now.date().isoformat()
     try:
         d = date.fromisoformat(str(day).strip())
     except ValueError:
@@ -181,9 +189,13 @@ def add_reminder(text, day, hour="", pedido=False):
         item = {"texto": str(text).strip(), "data": d.isoformat(), "hora": hour, "avisado": False}
         if pedido:
             item["pedido"] = True
+        if despertador:
+            item["despertador"] = True
         data["lembretes"].append(item)
         save(data)
-    if pedido:
+    if despertador:
+        _say(f"Despertador marcado para {d:%d/%m} às {hour}" + (f", com {text}." if text else "."))
+    elif pedido:
         _say(f"Combinado, senhor: {d:%d/%m}{' às ' + hour if hour else ''} eu faço \"{text}\".")
     else:
         _say(f"Lembrete marcado para {d:%d/%m}{' às ' + hour if hour else ''}: {text}.")
@@ -204,7 +216,12 @@ def due_items(now=None):
     out = []
     for r, when in _due(now):
         text = r.get("texto", "lembrete")
-        if not r.get("pedido"):
+        if r.get("despertador"):
+            if (now - when).total_seconds() > LATE:
+                out.append(("lembrete", f"não toquei o despertador das {when:%H:%M} porque eu estava desligado"))
+            else:
+                out.append(("despertador", text or "padrão"))
+        elif not r.get("pedido"):
             out.append(("lembrete", text))
         elif (now - when).total_seconds() > LATE:
             out.append(("lembrete", f'não fiz "{text}" às {when:%H:%M} de {when:%d/%m} porque eu estava desligado'))
