@@ -2125,6 +2125,17 @@ def _roupa(temp, sky):
     return dica
 
 
+def _acorda_tela():
+    """Liga o monitor que apagou por economia de energia (um mexidinho no mouse) e não deixa apagar de novo agora."""
+    try:
+        u32 = ctypes.windll.user32
+        ctypes.windll.kernel32.SetThreadExecutionState(0x80000002)  # ES_CONTINUOUS | ES_DISPLAY_REQUIRED
+        u32.mouse_event(0x0001, 1, 0, 0, 0)  # MOUSEEVENTF_MOVE: 1 pixel para lá e para cá
+        u32.mouse_event(0x0001, -1 & 0xFFFFFFFF, 0, 0, 0)
+    except Exception:
+        pass  # fora do Windows (testes) não faz nada
+
+
 def _wait_awake(seconds=WAIT_AWAKE):
     """Espera o ACORDEI (botão, voz ou digitado). Outros pedidos ficam para depois."""
     deadline, later = time.time() + seconds, []
@@ -2146,7 +2157,8 @@ def _wait_awake(seconds=WAIT_AWAKE):
 def wake_up(music=""):
     """A hora do despertador: música até apertar ACORDEI, depois o bom dia."""
     music = "" if music == "padrão" else music
-    U.front()
+    _acorda_tela()
+    U.front()  # vem para a frente na tela principal, mesmo minimizado ou atrás de outra janela
     print("Jarvis > (despertador) Hora de acordar, senhor.")
     play_youtube(music or MUSICA_DESPERTAR or MUSICA_BOM_DIA)
     U.card("Despertador", datetime.now().strftime("%H:%M"), WAIT_AWAKE * 1000)
@@ -2154,6 +2166,10 @@ def wake_up(music=""):
     if listener is not None:
         listener.ask_answer()  # dá para dizer "acordei" sem chamar o nome
     awake = _wait_awake()
+    try:
+        ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)  # o monitor volta a poder apagar
+    except Exception:
+        pass
     youtube_control("pausar")
     if not awake:
         print("Jarvis > (despertador: ninguém apertou ACORDEI em 30 minutos; parei a música)")
