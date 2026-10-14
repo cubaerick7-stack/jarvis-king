@@ -16,6 +16,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 TIMEOUT = 15
 
@@ -94,7 +95,17 @@ def find_contact(asked, same_person):
         if not found.get("numberExists"):
             return None, None
         return found.get("chatId") or digits + "@c.us", asked
-    contacts = _call("/api/contacts/all", {"session": session()})
+    # primeiro nas conversas recentes (rápido); a lista inteira de contatos demora e estourava o tempo
+    try:
+        recent = _call(f"/api/{session()}/chats/overview", {"limit": 100})
+    except WahaError:
+        recent = []
+    people = [(_chat_id(c), _name(c)) for c in recent if isinstance(c, dict) and _name(c)]
+    people = [(cid, n) for cid, n in people if cid.endswith("@c.us") and same_person(asked, n)]
+    if people:
+        exact = [p for p in people if p[1].lower() == asked.lower()]
+        return (exact or people)[0]
+    contacts = _call("/api/contacts/all", {"session": session()}, timeout=60)
     people = [(_chat_id(c), _name(c)) for c in contacts if isinstance(c, dict) and _name(c)]
     people = [(cid, n) for cid, n in people if cid.endswith("@c.us") and same_person(asked, n)]
     if not people:
@@ -105,6 +116,26 @@ def find_contact(asked, same_person):
 
 def send_text(chat_id, text):
     return _call("/api/sendText", body={"session": session(), "chatId": chat_id, "text": text})
+
+
+IMAGES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+
+
+def send_file(chat_id, path, caption=""):
+    """Manda uma imagem (print, foto) ou outro arquivo. O WAHA grátis (Core) pode não mandar arquivos: aí avisa."""
+    import base64
+    import mimetypes
+    path = Path(path)
+    ext = path.suffix.lower()
+    mime = IMAGES.get(ext) or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    body = {"session": session(), "chatId": chat_id, "caption": caption,
+            "file": {"mimetype": mime, "filename": path.name, "data": base64.b64encode(path.read_bytes()).decode("ascii")}}
+    try:
+        return _call("/api/sendImage" if ext in IMAGES else "/api/sendFile", body=body, timeout=90)
+    except WahaError as e:
+        if re.search(r"HTTP (?:403|422|501)", str(e)):
+            raise WahaError("este WAHA não manda arquivos (na versão grátis só texto; imagem precisa do WAHA Plus)") from e
+        raise
 
 
 def _when(ts):

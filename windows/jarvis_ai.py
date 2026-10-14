@@ -745,23 +745,65 @@ def window_control(action):
 
 
 def take_screenshot():
+    return _new_screenshot() is not None
+
+
+def _new_screenshot():
+    """Tira um print da tela inteira e devolve o arquivo (None se falhou)."""
     try:
         import mss
         import mss.tools
     except ImportError:
         print("Jarvis > Instale MSS: python -m pip install mss")
-        return False
+        return None
     SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
     file = SCREENSHOT_DIR / f"print_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.png"
     try:
-        with mss.mss() as sct:
+        with (getattr(mss, "MSS", None) or mss.mss)() as sct:  # mss.mss está saindo nas versões novas
             shot = sct.grab(sct.monitors[0])
             mss.tools.to_png(shot.rgb, shot.size, output=str(file))
         print(f"Jarvis > Print salvo em: {file}")
-        return True
+        return file
     except Exception as e:
         print(f"Jarvis > Erro no print: {e}")
+        return None
+
+
+def whatsapp_send_file(contact, file="print", caption=""):
+    """Manda um print (novo ou o último) ou um arquivo pelo WhatsApp (WAHA). Sempre pergunta antes."""
+    contact, ref = str(contact or "").strip(), str(file or "print").strip()
+    if not contact:
+        print("Jarvis > Para quem eu mando, senhor?")
         return False
+    if not W.configured():
+        print("Jarvis > Para mandar arquivo no WhatsApp eu preciso do WAHA (veja WHATSAPP no LEIA-ME).")
+        return False
+    low = normalize(ref)
+    if low in ("", "print", "tela", "screenshot", "print da tela", "um print"):
+        path = _new_screenshot()
+    elif "ultimo" in low and "print" in low:
+        shots = sorted(SCREENSHOT_DIR.glob("print_*.png")) if SCREENSHOT_DIR.exists() else []
+        path = shots[-1] if shots else None
+    else:
+        path = resolve_path(ref)
+        path = path if path and Path(path).is_file() else None
+    if not path:
+        print(f"Jarvis > Não achei o arquivo {ref}.")
+        return False
+    try:
+        chat_id, name = W.find_contact(contact, B.same_person)
+        if not chat_id:
+            print(f"Jarvis > Não achei {contact} nos contatos do WhatsApp.")
+            return False
+        if not confirm(f"Mando {Path(path).name} para {name}?"):
+            print("Jarvis > Cancelado, não enviei.")
+            return False
+        W.send_file(chat_id, path, caption)
+    except W.WahaError as e:
+        print(f"Jarvis > Não consegui mandar: {e}.")
+        return False
+    print(f"Jarvis > Enviei {Path(path).name} para {name}.")
+    return True
 
 
 # ========================= ROTEADOR LOCAL =========================
@@ -1337,7 +1379,7 @@ def confirm(question):
     set_state("parado")
     if listener is not None and origin != "celular":  # do celular, o "sim" vem de lá (o microfone do PC não)
         listener.ask_answer()
-    deadline, later = time.time() + 60, []
+    deadline, later, relistens = time.time() + 60, [], 0
     try:
         while (left := deadline - time.time()) > 0:
             try:
@@ -1351,6 +1393,11 @@ def confirm(question):
             if not answer:  # o microfone não ouviu nada: ainda dá para digitar ou dizer "Jarvis, sim"
                 continue
             kind = answer_kind(answer)
+            if kind is None and source == "voz":
+                # pela voz, ruído vira frase solta ("Obrigado."): não cancela, escuta de novo
+                if listener is not None and origin != "celular" and (relistens := relistens + 1) <= 2:
+                    listener.ask_answer()
+                continue
             if kind is None:  # outro pedido no meio: cancela este e faz o novo em seguida
                 later.append((source, answer))
                 return False
@@ -1579,6 +1626,10 @@ TOOLS = [
     {"name": "whatsapp_send", "args": '{"contact":"nome ou número","message":"texto"}', "group": "whatsapp",
      "desc": "mandar mensagem no WhatsApp (pede confirmação)", "examples": ["manda oi pra mãe no zap"],
      "run": lambda a: _sent(B.whatsapp_send(a.get("contact", ""), a.get("message", ""), confirm))},
+    {"name": "whatsapp_send_file", "args": '{"contact":"nome ou número","file":"print (tira agora) | ultimo print | caminho ou número do resultado","caption":"legenda (opcional)"}',
+     "group": "whatsapp", "desc": "mandar um print da tela ou um arquivo no WhatsApp (pede confirmação)",
+     "examples": ["manda um print pro Erick no zap", "manda esse pdf pra Ana no whats"],
+     "run": lambda a: whatsapp_send_file(a.get("contact", ""), a.get("file", "print"), a.get("caption", ""))},
     {"name": "whatsapp_read", "args": '{"contact":"nome (vazio = últimas conversas)"}', "group": "whatsapp",
      "desc": "ler as mensagens do WhatsApp (últimas conversas ou as de um contato)",
      "examples": ["tem mensagem nova no zap?", "lê as mensagens da Ana"],

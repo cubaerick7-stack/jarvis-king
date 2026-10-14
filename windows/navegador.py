@@ -465,8 +465,9 @@ def whatsapp_send(contact, message, confirm):
     if waha.configured():
         try:
             return _waha_send(contact, message, confirm)
-        except waha.WahaError as e:
-            _say(f"O WAHA falhou ({e}); vou pelo WhatsApp Web.")
+        except waha.WahaError as e:  # com o WAHA configurado, o WhatsApp Web não é usado
+            _say(f"Não consegui pelo WhatsApp: {e}. Não enviei.")
+            return False
     p = page("zap")
     if "web.whatsapp.com" not in p.url:
         p.goto(WHATSAPP, wait_until="domcontentloaded", timeout=30000)

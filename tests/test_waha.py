@@ -82,19 +82,33 @@ def test_phone_number_gets_brazil_code(monkeypatch):
     assert fake.calls[-1][2]["chatId"] == "554191112222@c.us"  # o chatId que o WAHA devolveu
 
 
-def test_waha_down_falls_back_to_whatsapp_web(monkeypatch, capsys):
+def test_waha_down_does_not_fall_back_to_whatsapp_web(monkeypatch, capsys):
     monkeypatch.setenv("WAHA_URL", "http://192.168.0.15:3000")
 
     def down(req, timeout=0):
         raise OSError("connection refused")
 
     monkeypatch.setattr(W.urllib.request, "urlopen", down)
-    monkeypatch.setattr(B, "page", lambda kind="web": (_ for _ in ()).throw(RuntimeError("web")))
-    try:
-        B.whatsapp_send("Ana", "oi", lambda q: True)
-    except RuntimeError as e:
-        assert str(e) == "web"  # foi para o WhatsApp Web
-    assert "vou pelo WhatsApp Web" in capsys.readouterr().out
+    monkeypatch.setattr(B, "page", lambda kind="web": (_ for _ in ()).throw(AssertionError("abriu o WhatsApp Web")))
+    assert B.whatsapp_send("Ana", "oi", lambda q: True) is False
+    assert "Não enviei" in capsys.readouterr().out
+
+
+def test_contact_by_name_comes_from_recent_chats_first(monkeypatch):
+    fake = FakeWaha(monkeypatch)
+    assert W.find_contact("ana", B.same_person) == ("5541911112222@c.us", "Ana Paula")
+    assert not any("/api/contacts/all" in c[1] for c in fake.calls)  # a lista inteira (lenta) nem foi pedida
+    assert W.find_contact("mariana", B.same_person) == ("5541933334444@c.us", "Mariana")  # fora das recentes
+
+
+def test_send_print_by_waha(monkeypatch, tmp_path):
+    fake = FakeWaha(monkeypatch)
+    shot = tmp_path / "print_x.png"
+    shot.write_bytes(b"\x89PNG")
+    W.send_file("5541911112222@c.us", shot, "olha")
+    method, url, body, _ = fake.calls[-1]
+    assert url.endswith("/api/sendImage") and body["file"]["mimetype"] == "image/png" and body["caption"] == "olha"
+    assert body["file"]["filename"] == "print_x.png" and body["file"]["data"]
 
 
 def test_read_recent_and_from_contact(monkeypatch, capsys):

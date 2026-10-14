@@ -301,3 +301,32 @@ def test_big_cards_take_turns_in_the_center_and_minimize_to_the_side():
     for marker in ("const PALCO = new Set(['pesquisa', 'lista', 'texto', 'clima', 'zap'])", "function minimiza(j)",
                    "function restaura(chave)", "doca.id = 'doca'", "'Minimizar para a lateral'"):
         assert marker in HTML, marker
+
+
+def test_whatsapp_print_takes_screenshot_asks_and_sends(monkeypatch, tmp_path):
+    j = load_jarvis()
+    shot = tmp_path / "print_1.png"
+    shot.write_bytes(b"x")
+    sent, asked = [], []
+    monkeypatch.setenv("WAHA_URL", "http://x:3000")
+    monkeypatch.setattr(j, "_new_screenshot", lambda: shot)
+    monkeypatch.setattr(j.W, "find_contact", lambda c, same: ("55@c.us", "Erick Cuba"))
+    monkeypatch.setattr(j.W, "send_file", lambda cid, path, cap: sent.append((cid, path)))
+    monkeypatch.setattr(j, "confirm", lambda q: asked.append(q) or True)
+    assert j.whatsapp_send_file("erick cuba", "print") is True
+    assert asked == ["Mando print_1.png para Erick Cuba?"] and sent == [("55@c.us", shot)]
+    monkeypatch.setattr(j, "confirm", lambda q: False)
+    sent.clear()
+    assert j.whatsapp_send_file("erick cuba", "print") is False and sent == []  # sem "sim", não manda
+
+
+def test_voice_noise_does_not_cancel_the_confirmation(monkeypatch):
+    j = load_jarvis()
+    j.queue_mode = True
+    for fn in ("speak", "set_state"):
+        monkeypatch.setattr(j, fn, lambda *a: None)
+    monkeypatch.setattr(j.U, "card", lambda *a, **k: None)
+    monkeypatch.setattr(j.U, "speech", lambda *a: None)
+    j.commands.put(("voz", "Obrigado."))  # ruído que o reconhecimento virou frase
+    j.commands.put(("janela", "sim"))
+    assert j.confirm("Mando oi para Ana?") is True
