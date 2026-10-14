@@ -850,12 +850,6 @@ POLITE_END = re.compile(r"(?:[\s,]+(?:por favor|pfv|pra mim|para mim)|\s*,\s*ai|
 POLITE_START = re.compile(r"^por favor[,\s]+", re.I)
 
 
-NEWS = re.compile(r"\b(?:eleic\w*|segundo turno|primeiro turno|apuracao|noticias?|placar|cotacao|dolar|bitcoin|"
-                  r"resultado d[oa] jogo|o que aconteceu)\b")
-COMMAND_START = re.compile(r"^(?:abre|abra|abrir|toca|toque|tocar|coloca|bota|pesquisa|pesquise|procura|procure|busca|"
-                           r"busque|fecha|feche|manda|mande|lembra|lembre|anota|digita)\b")
-
-
 def fast_local_router(user_text):
     full = clean_prefix(user_text)  # do jeito que veio (para "digita ...")
     # por voz chega "abre o Chrome, por favor." / "abre o Spotify aí": o fim atrapalha achar o programa
@@ -863,11 +857,6 @@ def fast_local_router(user_text):
     clean = normalize(text)
 
     if small_talk(normalize(user_text)) or small_talk(clean):
-        return True
-
-    # pergunta de notícia/fato atual: direto para a pesquisa (a IA às vezes respondia de memória que "não dá")
-    if NEWS.search(clean) and not COMMAND_START.match(clean):
-        act("research", research, text)
         return True
 
     # memória
@@ -1550,7 +1539,7 @@ TOOLS = [
      "desc": "listar janelas abertas", "examples": ["quais janelas estão abertas"],
      "run": lambda a: F.list_windows()},
     # ---- navegador do Jarvis (a IA vê o resultado e decide o próximo passo)
-    {"name": "research", "args": '{"query":"a pergunta"}', "group": "informação",
+    {"name": "research", "args": '{"query":"busca curta só com as palavras-chave (ex.: eleições 2026 segundo turno)"}', "group": "informação",
      "desc": "responder perguntas de fatos atuais (notícias, eleição, placar, cotação, quem ganhou) pesquisando na "
              "internet e mostrando o resultado numa janela",
      "examples": ["como está a eleição", "quem ganhou o jogo ontem", "quanto está o dólar", "o que aconteceu com a Petrobras"],
@@ -1681,7 +1670,10 @@ Regras:
   escolher entre opções), faça essa ação e coloque "continue":true. Você recebe o resultado e decide o
   próximo passo. Quando terminar, "continue":false e a resposta final em reply (até 5 frases)
 - pergunta de fato ATUAL (notícia, eleição, placar, cotação, "quem ganhou", "o que aconteceu") = research (a janela com o resultado aparece na tela).
-  SEMPRE chame research de novo, mesmo que a conversa recente diga que a pesquisa falhou ou a cota acabou: nunca responda de memória que não dá
+  SEMPRE chame research de novo, mesmo que a conversa recente diga que a pesquisa falhou ou a cota acabou: nunca responda de memória que não dá.
+  Em query mande uma busca curta, como num buscador: só as palavras-chave, sem "oi", "tudo bem", "como está"; inclua o ano
+  quando ajudar e resolva "isso/ele" pela conversa ("e o Lula?" depois de falar da eleição = "Lula eleições 2026 pesquisa").
+  Em reply diga só algo curto como "Verificando, senhor." (o resultado da pesquisa é falado sozinho)
 - pesquisar para escolher/comparar/responder = web_search, depois web_click no melhor e web_read
 - mandar mensagem no WhatsApp = whatsapp_send (ele mesmo pede confirmação)
 - ler/ver mensagens do WhatsApp ("tem mensagem nova?", "o que a Ana mandou?") = whatsapp_read

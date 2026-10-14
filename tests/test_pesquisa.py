@@ -279,18 +279,15 @@ def test_research_uses_the_request_when_the_ai_forgets_the_query(monkeypatch):
     assert j._research_query({"query": "  "}) == "como está o segundo turno"
 
 
-def test_news_questions_go_straight_to_research(monkeypatch):
+def test_news_questions_are_left_for_the_ai_to_decide(monkeypatch):
     j = load_jarvis()
     asked = []
     monkeypatch.setattr(j, "research", lambda q: asked.append(q) or True)
-    for text in ("OLÁ AS ELEIÇOES ESTAO COMO AGR????", "como está o segundo turno", "quanto está o dólar hoje", "qual o resultado do jogo do Flamengo"):
-        assert j.fast_local_router(text) is True, text
-    assert len(asked) == 4
-    asked.clear()
-    monkeypatch.setattr(j, "search_web", lambda *a: True)
-    j.fast_local_router("pesquisa eleições 2026")  # "pesquisa X" continua abrindo o navegador
+    for text in ("OLÁ AS ELEIÇOES ESTAO COMO AGR????", "como está o segundo turno", "quanto está o dólar hoje"):
+        assert j.fast_local_router(text) is False, text  # sem atalho: a IA escolhe research e escreve a busca
     assert asked == []
-
+    prompt = j.TOOLS_BY_NAME["research"]["args"]
+    assert "palavras-chave" in prompt
 
 def test_news_query_keeps_only_what_matters():
     j = load_jarvis()
