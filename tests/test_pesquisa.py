@@ -290,3 +290,11 @@ def test_news_questions_go_straight_to_research(monkeypatch):
     monkeypatch.setattr(j, "search_web", lambda *a: True)
     j.fast_local_router("pesquisa eleições 2026")  # "pesquisa X" continua abrindo o navegador
     assert asked == []
+
+
+def test_news_query_keeps_only_what_matters():
+    j = load_jarvis()
+    year = __import__("time").strftime("%Y")
+    assert j._news_query("OPA TUDO BEM E AS ELEIÇÕES ESTAO COMO") == f"eleições {year}"
+    assert j._news_query("como está o segundo turno das eleições 2026?") == "segundo turno eleições 2026"
+    assert j._news_query("quanto está o dólar hoje") == "dólar"

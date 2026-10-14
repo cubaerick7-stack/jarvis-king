@@ -605,6 +605,21 @@ def _research_query(args):
     return query or _pedido
 
 
+# Palavras que só atrapalham a busca de notícias ("opa, tudo bem, e as eleições estão como agora?")
+_FILLER = set("""opa oi ola ola bom dia boa tarde noite tudo bem beleza e ai bolha jarvis senhor por favor me diz diga fala conta
+sabe voce vc qual quais quanto quanta como esta estao ta tao vai vao ser sera foi agora agr hoje ai la entao o a os as um uma de do da
+dos das no na nos nas em pra para sobre que isso esse essa me mim eu""".split())
+
+
+def _news_query(query):
+    """Só as palavras que importam para a busca: "OPA TUDO BEM E AS ELEIÇÕES ESTAO COMO" -> "eleições 2026"."""
+    words = [w for w in re.findall(r"[\wÀ-ÿ$%]+", str(query).lower()) if normalize(w) not in _FILLER]
+    text = " ".join(words) or str(query)
+    if re.search(r"elei[cç]", text) and not re.search(r"\b20\d\d\b", text):
+        text += f" {time.strftime('%Y')}"  # notícias deste ano, não de 2022
+    return text
+
+
 def research(query):
     """Pesquisa na internet (Gemini com a busca do Google) e mostra o resultado numa janela da tela cheia:
     manchete, placar com barras, resumo, pontos e fontes. A fala é a resposta resumida."""
@@ -623,7 +638,7 @@ def research(query):
     except Exception as e:
         # cota de pesquisa da IA acabou (ou demorou): lê o DuckDuckGo e a IA que ainda tiver cota monta a resposta
         print(f"Jarvis > (pesquisa da IA falhou: {e}; usando os resultados do DuckDuckGo)")
-        found = F.web_snippets(query)
+        found = F.web_snippets(_news_query(query))
         if not found:
             print("Jarvis > Não consegui pesquisar agora, senhor. A cota grátis da IA acabou e a busca não respondeu.")
             return False
