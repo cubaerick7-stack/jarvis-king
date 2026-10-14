@@ -228,7 +228,13 @@ O Bolha manda e le mensagens pelo WAHA (WhatsApp HTTP API) rodando no Docker, de
 preferencia no outro PC sempre ligado. Mandar SEMPRE pergunta antes.
 No outro PC (PowerShell):
 1. Instale o Docker Desktop e deixe abrir com o Windows.
-2. docker run -d --name waha --restart always -p 3000:3000 -e WAHA_API_KEY=SUA-SENHA -v waha_data:/app/.sessions devlikeapro/waha
+2. Senhas fixas (senao o WAHA inventa outras toda vez que liga):
+      setx WAHA_API_KEY "SUA-SENHA"
+      setx WAHA_PAINEL_SENHA "SENHA-DO-PAINEL"
+   abra outro PowerShell, va na pasta do jarvis-king e rode:
+      powershell -ExecutionPolicy Bypass -File iniciar-waha.ps1
+   (ele baixa o WAHA novo e sobe com essas senhas; a conexao fica guardada).
+   Depois disso NAO use o botao "Run" do Docker Desktop: o container "waha" volta sozinho.
 3. Abra http://localhost:3000/dashboard, inicie a sessao "default" e leia o QR
    (celular > WhatsApp > Aparelhos conectados).
 4. Libere a porta no firewall (PowerShell como administrador):
