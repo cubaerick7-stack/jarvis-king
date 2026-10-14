@@ -499,7 +499,9 @@ def test_elevenlabs_request_uses_portuguese_and_key_header(monkeypatch, tmp_path
     monkeypatch.setattr(V.urllib.request, "urlopen", fake_open)
     V._eleven_mp3("Olá", tmp_path / "a.mp3")
     assert sent["key"] == "k123" and sent["url"].endswith("/zNEsdgTUa3ndwKry8Xcq?output_format=mp3_44100_64")
-    assert sent["body"] == {"text": "Olá", "model_id": "eleven_flash_v2_5", "language_code": "pt"}
+    assert sent["body"] == {"text": "Olá", "model_id": "eleven_flash_v2_5", "language_code": "pt",
+                             "voice_settings": {"stability": 0.58, "similarity_boost": 0.75,
+                                                "style": 0.0, "speed": 0.98, "use_speaker_boost": True}}
     assert (tmp_path / "a.mp3").read_bytes() == b"mp3"
 
 
@@ -629,3 +631,25 @@ def test_player_check_sees_youtube_error():
 
     assert B._player_ok(Page(error=True, playing=False), seconds=1) is False
     assert B._player_ok(Page(error=False, playing=True), seconds=1) is True
+
+
+@pytest.mark.parametrize("text", ["Atenção, senhor. A bateria está fraca.",
+                                  "Confirma que posso apagar o arquivo?", "Não consegui abrir o programa."])
+def test_elevenlabs_alerts_use_serious_delivery(text):
+    settings = V.eleven_delivery(text, "eleven_flash_v2_5")
+    assert settings["stability"] == 0.72 and settings["speed"] == 0.94
+    assert settings["style"] == 0.0
+
+
+def test_elevenlabs_tone_can_be_fixed(monkeypatch):
+    monkeypatch.setenv("BOLHA_TOM", "neutro")
+    assert V.eleven_delivery("Confirma que posso apagar?", "eleven_flash_v2_5")["stability"] == 0.58
+    monkeypatch.setenv("BOLHA_TOM", "serio")
+    assert V.eleven_delivery("Tudo pronto, senhor.", "eleven_flash_v2_5")["stability"] == 0.72
+
+
+def test_elevenlabs_model_specific_settings():
+    v3 = V.eleven_delivery("Confirma que posso apagar?", "eleven_v3")
+    assert v3["stability"] == 1.0 and "use_speaker_boost" not in v3
+    v4 = V.eleven_delivery("Tudo pronto.", "eleven_v4")
+    assert set(v4) == {"stability", "similarity_boost"}
