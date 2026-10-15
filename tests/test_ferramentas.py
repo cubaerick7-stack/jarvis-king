@@ -56,7 +56,7 @@ def route(jarvis, text):
     ("modo estudo", [("run_routine", {"name": "estudo"})]),
     ("quais rotinas tem", [("list_routines", {})]),
     ("tô com internet?", [("network_info", {})]),
-    ("o pc tá lento", [("list_processes", {})]),
+    ("o pc tá lento", [("why_slow", {})]),
     ("quais janelas estão abertas", [("list_windows", {})]),
     ("o que eu copiei", [("read_clipboard", {})]),
     ("vai para o chrome", [("focus_window", {"title": "chrome"})]),

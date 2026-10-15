@@ -35,6 +35,8 @@ import waha as W  # noqa: E402
 import celular as C  # noqa: E402
 import diario as D  # noqa: E402
 import aprende as A  # noqa: E402
+import habilidades as H  # noqa: E402
+import maos as MA  # noqa: E402
 
 try:
     import pyautogui
@@ -305,6 +307,12 @@ def open_target(target):
             return True
         except OSError:
             pass
+
+    try:  # jogo da Steam/Epic sem atalho na área de trabalho
+        if MA.open_game(original, quiet=True):
+            return True
+    except Exception:
+        pass
 
     if len(low.split()) > 4:
         print(f"Jarvis > Não achei um programa chamado \"{original}\".")
@@ -947,7 +955,7 @@ def fast_local_router(user_text):
         print("Jarvis > Não há nada esperando confirmação, senhor.")
         return True
 
-    if learning_router(text, clean):
+    if learning_router(text, clean) or skills_router(text, clean) or hands_router(text, clean):
         return True
 
     # memória
@@ -987,7 +995,7 @@ def fast_local_router(user_text):
     not_volume = re.match(r"^(?:procura|procure|busca|busque|pesquisa|pesquise|toca|toque|tocar|calcula|calcule|"
                           r"quanto|acha|ache|encontra|encontre|abre|abra)\b", clean)
     up = re.search(rf"\b(aumenta|sobe|aumente|suba)\b.*{VOL}", clean)
-    down = re.search(rf"\b(abaixa|diminui|reduz|abaixe|diminua|reduza)\b.*{VOL}", clean)
+    down = re.search(rf"\b(abaixa|diminui|reduz|abaixe|diminua|reduza|baixa|baixe)\b.*{VOL}", clean)
     if (up or down) and not not_volume:
         to = re.search(r"\b(?:pra|para|ate)\s+(\d{1,3})\b", clean)
         if to:  # "aumenta o volume pra 80" = deixa em 80
@@ -1222,7 +1230,7 @@ def fast_local_router(user_text):
     if re.search(r"\b(meu ip|tem internet|to com internet|tou com internet|estou com internet|wifi conectado|como ta a internet)\b", clean):
         tool("network_info")
         return True
-    if re.search(r"\b(o que (?:ta|esta) pesando|(?:pc|computador) (?:ta|esta) lento|processos)\b", clean):
+    if re.search(r"\b(processos|programas usando mais memoria)\b", clean):
         tool("list_processes")
         return True
     if re.search(r"\b(quais|lista as|mostra as) janelas\b", clean):
@@ -1322,6 +1330,187 @@ def learning_router(text, clean):
         return True
     if re.search(r"\b(?:mostra|abre|abra)\s+(?:o )?painel da memoria\b|\bmostra (?:a )?(?:sua )?memoria\b", clean):
         tool("memory_panel")
+        return True
+    return False
+
+
+def folder_of(name):
+    """ "downloads" -> a pasta Downloads de verdade; senão o caminho como veio."""
+    key = normalize(re.sub(r"^(?:a pasta |pasta |minha pasta |meus |minhas |a |o |os |as )", "", str(name or "").strip()))
+    return FOLDERS.get(key) or Path(os.path.expandvars(str(name))).expanduser()
+
+
+SHORTCUT_WORDS = sorted(MA.SHORTCUTS, key=len, reverse=True)
+
+
+def hands_router(text, clean):
+    """As mãos: botões, janelas, Windows, programas, limpeza, macros, jogos e saúde do PC."""
+    if clean in ("para de gravar", "parar de gravar", "para a gravacao", "chega de gravar"):
+        tool("stop_macro")
+        return True
+    m = re.match(r"^(?:observa|observe|olha|olhe) o que eu (?:faco|vou fazer)(?: e (?:aprende|grava)(?: como (.+))?)?$", clean) \
+        or re.match(r"^grava (?:uma )?macro(?: chamada| com o nome)? ?(.*)$", clean)
+    if m:
+        tool("record_macro", name=(m.group(1) or "").strip())
+        return True
+    m = re.match(r"^(?:repete|repita|roda|rode|faz|faca) a macro (.+)$", clean)
+    if m:
+        tool("play_macro", name=m.group(1))
+        return True
+    if re.search(r"\bquais macros\b", clean):
+        tool("list_macros")
+        return True
+    m = re.match(r"^(?:clica|clique|aperta|aperte|toca|pressiona) (?:em |no |na |o botao |no botao |o |a )?(?:botao )?(.+)$", clean)
+    if m and re.match(r"^(?:clica|clique)\b|^(?:aperta|aperte|pressiona) (?:o |no )?botao\b", clean):
+        tool("click_ui", name=_original(text, m.group(1).strip(" .!?")) or m.group(1))
+        return True
+    if re.search(r"\b(?:le|leia|ler) (?:a |essa |esta )?janela\b|\bo que (?:ta|esta) escrito (?:na janela|aqui|nessa janela)\b", clean):
+        tool("read_window")
+        return True
+    if re.search(r"\bquais botoes\b|\bque botoes\b", clean):
+        tool("list_controls")
+        return True
+    m = re.match(r"^(?:salva|salve) (?:esse |este |o )?layout(?: como| com o nome)? ?(.*)$", clean)
+    if m:
+        tool("save_layout", name=m.group(1) or "padrao")
+        return True
+    m = re.match(r"^(?:layout|arruma as janelas(?: d[oa]| como)?|volta o layout(?: d[oa])?)\s*(.*)$", clean)
+    if m and (clean.startswith(("layout ", "volta o layout")) or clean.startswith("arruma as janelas")):
+        tool("apply_layout", name=m.group(1) or "padrao")
+        return True
+    m = re.match(r"^(?:coloca|poe|deixa|bota)? ?(?:o |a )?(.+?) e (?:o |a )?(.+?) lado a lado$", clean) \
+        or re.match(r"^(?:coloca|poe|deixa|bota)? ?(?:o |a )?(.+?) lado a lado(?: com (?:o |a )?(.+))?$", clean)
+    if m:
+        tool("side_by_side", first=m.group(1), second=m.group(2) or "")
+        return True
+    m = re.match(r"^(?:manda|joga|move|leva) (?:essa janela|isso|ela|a janela|o |a )?\s*(.*?)\s*(?:para|pra|pro) (?:a )?(?:outra|segunda|2a) tela$", clean)
+    if m:
+        tool("to_second_screen", title=m.group(1).strip())
+        return True
+    m = re.search(r"\b(liga|ligar|ativa|desliga|desligar|desativa)\s+(?:o\s+)?(wi-?fi|wi fi|bluetooth)\b", clean)
+    if m:
+        tool("radio", kind=m.group(2), on=m.group(1).startswith(("liga", "ativa")))
+        return True
+    m = re.search(r"\b(?:modo|tema) (escuro|claro|noturno|dark|light)\b", clean)
+    if m and not re.search(r"\b(?:reator|bolha|jarvis|tela do)\b", clean):
+        tool("dark_mode", on=m.group(1) in ("escuro", "noturno", "dark"))
+        return True
+    m = re.search(r"\b(?:som|audio|saida de som|saida)\b.*?\b(?:no|na|para o|para a|pro|pra)\s+(fone|caixa|headset|alto[- ]falante|tv|monitor)\b", clean) \
+        or re.match(r"^(?:troca|muda) (?:a )?saida de som(?: para (?:o |a )?(.+))?$", clean)
+    if m:
+        tool("audio_output", which=m.group(1) or "")
+        return True
+    m = re.search(r"\bresolucao\b.*?\b(\d{3,4})\s*(?:x|por)\s*(\d{3,4})\b", clean)
+    if m:
+        tool("set_resolution", width=int(m.group(1)), height=int(m.group(2)))
+        return True
+    if re.fullmatch(r"(?:apaga|desliga|apague|desligue) (?:a )?tela|(?:apaga|desliga) o monitor", clean):
+        tool("screen_off")
+        return True
+    m = re.match(r"^(?:instala|instale|instalar|baixa e instala)\s+(?:o |a |um |uma )?(?:programa )?(.+)$", clean)
+    if m:
+        tool("install_program", name=m.group(1))
+        return True
+    m = re.match(r"^(?:desinstala|desinstale|desinstalar|remove o programa)\s+(?:o |a )?(.+)$", clean)
+    if m:
+        tool("uninstall_program", name=m.group(1))
+        return True
+    m = re.match(r"^(?:atualiza|atualize|atualizar)\s+(?:tudo|todos os programas|os programas|(?:o |a )?(.+))$", clean)
+    if m and not re.search(r"\b(?:pagina|aba|bolha|jarvis|voce|vc)\b", clean):
+        tool("update_programs", name=(m.group(1) or "").strip())
+        return True
+    if re.search(r"\b(?:limpa|limpe|libera|libere|esvazia)\s+(?:a |o )?(?:memoria ram|ram|memoria do (?:pc|windows|computador)|memoria)\b", clean) \
+            and "da memoria" not in clean:
+        tool("clean_memory")
+        return True
+    if re.search(r"\b(?:limpa|limpe|faz uma limpeza|faca uma limpeza)\s+(?:no |o |os )?(?:pc|computador|temporarios|arquivos temporarios)\b"
+                 r"|\besvazia (?:a )?lixeira\b|\blimpeza do pc\b", clean):
+        tool("cleanup")
+        return True
+    if re.search(r"\b(?:limpa|apaga)\s+(?:os )?downloads velhos\b|\bdownloads antigos\b", clean):
+        tool("clean_old_downloads")
+        return True
+    if re.search(r"\bpor ?que (?:o (?:pc|computador) )?(?:ta|esta|tá) (?:tao )?(?:lento|travando)\b|\b(?:pc|computador|notebook) (?:ta|esta) (?:lento|travando)\b|\bo que (?:ta|esta) pesando\b", clean):
+        tool("why_slow")
+        return True
+    m = re.search(r"\bvolume d[oa] (.+?)\s+(?:em|pra|para|no)\s+(\d{1,3})\b", clean)
+    if m:
+        tool("app_volume", app=m.group(1), percent=int(m.group(2)))
+        return True
+    m = re.match(r"^(?:o |a )?(?:volume d[oa] )?(.+?) mais (alto|baixo)$", clean)
+    if m and not re.search(r"\b(?:som|volume)$", m.group(1)) and m.group(1) not in ("som", "volume", "fala", "voce"):
+        tool("app_volume", app=m.group(1), delta=20 if m.group(2) == "alto" else -20)
+        return True
+    m = re.match(r"^(?:imprime|imprima|imprimir|manda imprimir)\s+(?:o |a )?(?:arquivo )?(.+)$", clean)
+    if m:
+        tool("print_file", path=number_ref(m.group(1)))
+        return True
+    m = re.match(r"^(?:cola|cole) o que eu copiei antes$|^(?:cola|cole) (?:o |a )?" + ORDINAL + r" (?:da area|do historico)", clean)
+    if m:
+        tool("clipboard_paste", index=ordinal_to_number(clean) if m.groups() and m.group(1) else 2)
+        return True
+    if re.search(r"\bhistorico da area de transferencia\b|\bo que eu copiei (?:hoje|antes|por ultimo)\??$", clean):
+        tool("clipboard_list")
+        return True
+    m = re.match(r"^(?:organiza|organize|arruma|arrume)\s+(?:a pasta |a minha pasta |os |as |o |a |meus |minhas )?(.+?)(?:\s+por\s+(tipo|data))?$", clean)
+    if m and (normalize(m.group(1)) in FOLDERS or " pasta " in f" {clean} " or re.search(r"[a-z]:[\\/]", m.group(1))):
+        tool("organize_folder", folder=m.group(1), by=m.group(2) or "tipo")
+        return True
+    m = re.match(r"^(?:compacta|compacte|zipa|zipe)\s+(?:a pasta |o arquivo |o |a )?(.+)$", clean)
+    if m:
+        tool("compress", path=number_ref(m.group(1)))
+        return True
+    m = re.match(r"^(?:descompacta|descompacte|extrai|extraia|deszipa)\s+(?:o |a )?(?:arquivo )?(.+)$", clean)
+    if m:
+        tool("extract", path=number_ref(m.group(1)))
+        return True
+    if re.search(r"\bdesfaz (?:a ultima (?:acao|mudanca|coisa)|o que (?:voce|vc) fez|a organizacao|o renomear|a renomeacao)\b", clean):
+        tool("undo_file")
+        return True
+    m = re.match(r"^(?:converte|converta|transforma|transforme)\s+(?:o |a |as |os )?(?:arquivo )?(.+?)\s+(?:para|pra|em)\s+(pdf|mp3|mp4|wav|jpg|png|gif|m4a)$", clean)
+    if m:
+        tool("convert_file", path=number_ref(m.group(1)), to=m.group(2))
+        return True
+    m = re.match(r"^(?:diminui|diminua|comprime|comprima) (?:o |a )?(?:arquivo )?(.+?)(?: para mandar| pra mandar)?(?: no zap| no whats(?:app)?)?$", clean)
+    if m:
+        tool("shrink_file", path=number_ref(m.group(1)))
+        return True
+    if re.search(r"\bgrava os ultimos\b|\bsalva o clipe\b|\bclipa (?:isso|ai)\b|\bgrava (?:esse|o) lance\b", clean):
+        tool("game_clip")
+        return True
+    if re.search(r"\b(?:mostra|abre) (?:o )?(?:fps|game bar|xbox game bar)\b", clean):
+        tool("game_bar")
+        return True
+    if re.search(r"\bsaude do (?:pc|computador)\b|\brelatorio de saude\b|\bcomo (?:ta|esta) (?:a saude do |o )(?:pc|computador)\b", clean):
+        tool("health_report")
+        return True
+    if re.search(r"\b(?:o que|quais programas|que programas) (?:abre|abrem|inicia|iniciam) com o windows\b|\bprogramas da inicializacao\b", clean):
+        tool("list_startup")
+        return True
+    if re.fullmatch(r"(?:salva|salve|desfaz|desfaca|refaz|refaca|nova aba|abre uma nova aba|reabre a aba|seleciona tudo|"
+                    r"atualiza a pagina|recarrega a pagina|negrito|italico|sublinhado|salvar como|localiza|nova janela)", clean):
+        key = {"desfaca": "desfaz", "refaca": "refaz", "abre uma nova aba": "nova aba", "salve": "salva",
+               "atualiza a pagina": "atualiza", "recarrega a pagina": "atualiza", "localiza": "localizar"}.get(clean, clean)
+        tool("app_shortcut", action=key)
+        return True
+    return False
+
+
+def skills_router(text, clean):
+    taught = H.parse_teach(clean_prefix(text))
+    if taught:
+        tool("teach_skill", trigger=taught[0], todo=taught[1])
+        return True
+    if re.search(r"\b(?:quais|lista as|mostra as|lista de) (?:habilidades|skills)\b|\bque habilidades\b", clean):
+        tool("list_skills")
+        return True
+    m = re.search(r"\bimporta(?:r)? (?:a |uma )?(?:habilidade|skill)\s+(https://\S+)", text, re.I)
+    if m:
+        tool("import_skill", url=m.group(1))
+        return True
+    m = re.match(r"^(aprova|apaga|remove|exclui)\s+a\s+(?:habilidade|skill)\s+(.+)$", clean)
+    if m:
+        tool("approve_skill" if m.group(1) == "aprova" else "remove_skill", name=m.group(2).strip(" .!?"))
         return True
     return False
 
@@ -1488,18 +1677,25 @@ def is_yes(answer):
 
 
 def confirm(question):
+    return ask(question, "Confirmar", classify=answer_kind, hint=" (sim ou não)", typed=" (s/n)") is True
+
+
+def ask(question, card_title="Pergunta", card_text=None, classify=None, hint="", typed=""):
+    """Pergunta e espera a resposta (falada, digitada, no botão ou no celular) por até 60 s.
+    classify(texto) -> valor, ou None se aquilo não é resposta (outro pedido). Devolve o valor ou None."""
+    classify = classify or (lambda t: t.strip() or None)
     if not queue_mode:
         try:
-            answer = input(f"Jarvis > {question} (s/n) ")
+            answer = input(f"Jarvis > {question}{typed} ")
         except (EOFError, KeyboardInterrupt):
-            return False
-        return is_yes(answer)
-    print(f"Jarvis > {question} (s/n)")
-    U.speech(question + " (sim ou não)")
-    U.card("Confirmar", question)
+            return None
+        return classify(answer)
+    print(f"Jarvis > {question}{typed}")
+    U.speech(question + hint)
+    U.card(card_title, card_text if card_text is not None else question)
     speak(question)
     set_state("parado")
-    if listener is not None and origin != "celular":  # do celular, o "sim" vem de lá (o microfone do PC não)
+    if listener is not None and origin != "celular":  # do celular, a resposta vem de lá (o microfone do PC não)
         listener.ask_answer()
     deadline, later, relistens = time.time() + 60, [], 0
     try:
@@ -1514,7 +1710,7 @@ def confirm(question):
                 continue
             if not answer:  # o microfone não ouviu nada: ainda dá para digitar ou dizer "Jarvis, sim"
                 continue
-            kind = answer_kind(answer)
+            kind = classify(answer)
             if kind is None and source == "voz":
                 # pela voz, ruído vira frase solta ("Obrigado."): não cancela, escuta de novo
                 if listener is not None and origin != "celular" and (relistens := relistens + 1) <= 2:
@@ -1522,14 +1718,75 @@ def confirm(question):
                 continue
             if kind is None:  # outro pedido no meio: cancela este e faz o novo em seguida
                 later.append((source, answer))
-                set_state("pensando")  # fecha o card "Posso enviar?"
-                return False
-            set_state("pensando")  # respondeu: o card "Sim/Não" sai da tela na hora
+                set_state("pensando")  # fecha o card da pergunta
+                return None
+            set_state("pensando")  # respondeu: o card sai da tela na hora
             return kind
-        return False
+        return None
     finally:
         for item in later:
             commands.put(item)
+
+
+def confirm_danger(question):
+    """Ações perigosas (apagar, desinstalar): o "sim" e, se o senhor configurou, a senha falada (96)."""
+    if not confirm(question):
+        return False
+    secret = os.environ.get("BOLHA_SENHA_FALADA", "").strip()
+    if not secret:
+        return True
+    said = ask("Diga a senha das ações perigosas, senhor.", "Senha", "Diga a senha (ela não aparece na tela)",
+               classify=lambda t: t.strip() or None)
+    if said and normalize(secret) in normalize(said):
+        return True
+    print("Jarvis > Senha errada. Não fiz, senhor.")
+    return False
+
+
+def choose(question, options):
+    """Pergunta com opções num card ("qual dos dois, senhor?"). Devolve a opção escolhida ou None (18)."""
+    options = [str(o).strip() for o in options if str(o).strip()][:8]
+    if not options:
+        return None
+    if len(options) == 1:
+        return options[0]
+
+    def pick(text):
+        t = normalize(text)
+        n = ordinal_to_number(t) if re.fullmatch(rf"(?:o |a )?(?:{ORDINAL}|opcao \d+)", t) or t.isdigit() else None
+        if n is None and (m := re.search(r"\b(\d)\b", t)):
+            n = int(m.group(1))
+        if n and 1 <= n <= len(options):
+            return options[n - 1]
+        i = M_best(t, options)
+        return options[i] if i is not None else None
+
+    text = json.dumps({"pergunta": question, "opcoes": options}, ensure_ascii=False)
+    said = " ".join(f"{i}: {o}." for i, o in enumerate(options, 1))
+    return ask(f"{question} {said}", "Escolha", text, classify=pick)
+
+
+def M_best(text, options):
+    import difflib
+    best, score = None, 0.0
+    for i, o in enumerate(options):
+        on = normalize(o)
+        s = 1.0 if on in text or text in on else difflib.SequenceMatcher(None, text, on).ratio()
+        if s > score:
+            best, score = i, s
+    return best if score >= 0.6 else None
+
+
+def ask_choice(question, options):
+    """Ferramenta da IA: pergunta com opções; o resultado volta para ela decidir."""
+    if isinstance(options, str):
+        options = [o for o in re.split(r"\s*[;|\n]\s*", options) if o]
+    picked = choose(question, options or [])
+    if picked is None:
+        print("Jarvis > Ninguém escolheu.")
+        return False
+    print(f"Jarvis > O senhor escolheu: {picked}")
+    return picked
 
 
 def summarize_file(ref):
@@ -1569,8 +1826,8 @@ def show_help():
     return True
 
 
-TOOL_GROUPS = ["som", "programas e sites", "arquivos e pastas", "ler e resumir", "mídia", "navegador", "memória", "janelas e teclado",
-               "sistema", "energia", "informação", "rotinas", "whatsapp", "instagram", "aprendizado"]
+TOOL_GROUPS = ["mãos", "jogos", "som", "programas e sites", "arquivos e pastas", "ler e resumir", "mídia", "navegador", "memória", "janelas e teclado",
+               "sistema", "energia", "informação", "rotinas", "whatsapp", "instagram", "aprendizado", "habilidades"]
 
 TOOLS = [
     {"name": "set_volume", "args": '{"percent":0-100}', "group": "som",
@@ -1795,6 +2052,27 @@ TOOLS = [
     {"name": "list_routines", "args": "{}", "group": "rotinas",
      "desc": "listar as rotinas", "examples": ["quais rotinas tem"],
      "run": lambda a: F.list_routines()},
+    # ---- habilidades (skills)
+    {"name": "use_skill", "args": '{"name":"nome da habilidade"}', "group": "habilidades",
+     "desc": "carregar e seguir uma habilidade (receita pronta) quando o pedido combinar com ela",
+     "examples": ["modo aula", "planeja o meu dia"],
+     "run": lambda a: H.use(a.get("name", ""), run_actions, handle)},
+    {"name": "list_skills", "args": "{}", "group": "habilidades",
+     "desc": "listar as habilidades", "examples": ["quais habilidades você tem?"],
+     "run": lambda a: H.list_skills()},
+    {"name": "teach_skill", "args": '{"trigger":"frase que o senhor vai dizer","todo":"o que fazer"}', "group": "habilidades",
+     "desc": "criar uma habilidade: quando o senhor disser X, fazer Y", "examples": ["aprende: quando eu disser modo aula, abre o Teams"],
+     "run": lambda a: H.create(a.get("trigger", ""), a.get("todo", ""))},
+    {"name": "import_skill", "args": '{"url":"https://..."}', "group": "habilidades",
+     "desc": "importar uma habilidade da internet (só o texto; ações só depois de aprovar)",
+     "examples": ["importa a habilidade https://github.com/.../SKILL.md"],
+     "run": lambda a: H.import_skill(a.get("url", ""))},
+    {"name": "approve_skill", "args": '{"name":"nome"}', "group": "habilidades",
+     "desc": "aprovar uma habilidade importada para ela poder agir (pede confirmação)", "examples": ["aprova a habilidade receitas"],
+     "run": lambda a: H.approve(a.get("name", ""), confirm)},
+    {"name": "remove_skill", "args": '{"name":"nome"}', "group": "habilidades",
+     "desc": "apagar uma habilidade do senhor (pede confirmação)", "examples": ["apaga a habilidade modo aula"],
+     "run": lambda a: H.remove(a.get("name", ""), confirm)},
     # ---- aprendizado (o motor que faz ele melhorar)
     {"name": "what_went_wrong", "args": '{"day":"hoje|ontem|AAAA-MM-DD"}', "group": "aprendizado",
      "desc": "listar os pedidos que deram errado", "examples": ["o que deu errado hoje?"],
@@ -1834,6 +2112,143 @@ TOOLS = [
     {"name": "memory_backup", "args": '{"dest":"pendrive | pasta (vazio = G:\\Jarvis\\backups)"}', "group": "aprendizado",
      "desc": "fazer backup da memória", "examples": ["faz backup da memória no pendrive"],
      "run": lambda a: A.backup(a.get("dest", ""))},
+    # ---- mãos: botões e janelas de qualquer programa
+    {"name": "click_ui", "args": '{"name":"texto do botão, menu ou link"}', "group": "mãos",
+     "desc": "clicar em qualquer botão/menu de qualquer programa pelo nome (pede confirmação se precisar olhar a tela)",
+     "examples": ["clica em Salvar", "clica no botão Enviar"],
+     "run": lambda a: MA.click_ui(a.get("name", ""), N.vision if N.available() else None, confirm)},
+    {"name": "read_window", "args": "{}", "group": "mãos",
+     "desc": "ler o que está escrito na janela da frente (para entender o programa aberto)", "examples": ["lê essa janela"],
+     "run": lambda a: MA.read_window()},
+    {"name": "list_controls", "args": "{}", "group": "mãos",
+     "desc": "listar os botões e menus da janela da frente", "examples": ["quais botões tem aqui?"],
+     "run": lambda a: MA.list_controls()},
+    {"name": "fill_field", "args": '{"field":"nome do campo (ou vazio)","text":"texto"}', "group": "mãos",
+     "desc": "escrever num campo de qualquer programa (formulários)", "examples": ["escreve João no campo Nome"],
+     "run": lambda a: MA.fill_field(a.get("field", ""), a.get("text", ""))},
+    {"name": "app_shortcut", "args": '{"action":"salva|desfaz|refaz|nova aba|fecha a aba|negrito|imprimir|..."}', "group": "mãos",
+     "desc": "atalho do programa da frente por voz (sabe os do Word em português)", "examples": ["salva", "desfaz", "nova aba"],
+     "run": lambda a: MA.app_shortcut(a.get("action", ""))},
+    {"name": "side_by_side", "args": '{"first":"janela","second":"outra janela (opcional)"}', "group": "janelas e teclado",
+     "desc": "colocar duas janelas lado a lado", "examples": ["coloca o chrome e o word lado a lado"],
+     "run": lambda a: MA.side_by_side(a.get("first", ""), a.get("second", ""))},
+    {"name": "to_second_screen", "args": '{"title":"janela (vazio = a da frente)"}', "group": "janelas e teclado",
+     "desc": "mandar uma janela para a segunda tela", "examples": ["manda essa janela para a outra tela"],
+     "run": lambda a: MA.to_second_screen(a.get("title", ""))},
+    {"name": "save_layout", "args": '{"name":"nome"}', "group": "janelas e teclado",
+     "desc": "guardar a posição das janelas como um layout", "examples": ["salva esse layout como trabalho"],
+     "run": lambda a: MA.save_layout(a.get("name", ""))},
+    {"name": "apply_layout", "args": '{"name":"nome"}', "group": "janelas e teclado",
+     "desc": "arrumar as janelas num layout salvo (abre o que faltar)", "examples": ["layout trabalho"],
+     "run": lambda a: MA.apply_layout(a.get("name", ""))},
+    # ---- Windows
+    {"name": "radio", "args": '{"kind":"wifi|bluetooth","on":true}', "group": "sistema",
+     "desc": "ligar ou desligar o Wi-Fi ou o Bluetooth", "examples": ["desliga o bluetooth"],
+     "run": lambda a: MA.radio(a.get("kind", "wifi"), bool(a.get("on", True)))},
+    {"name": "dark_mode", "args": '{"on":true}', "group": "sistema",
+     "desc": "modo escuro ou claro do Windows", "examples": ["ativa o modo escuro"],
+     "run": lambda a: MA.dark_mode(bool(a.get("on", True)))},
+    {"name": "audio_output", "args": '{"which":"fone|caixa|nome do aparelho"}', "group": "som",
+     "desc": "trocar a saída de som (fone ou caixa)", "examples": ["coloca o som no fone"],
+     "run": lambda a: MA.audio_output(a.get("which", ""))},
+    {"name": "set_resolution", "args": '{"width":1366,"height":768}', "group": "sistema",
+     "desc": "mudar a resolução da tela", "examples": ["muda a resolução para 1366x768"],
+     "run": lambda a: MA.set_resolution(a.get("width", 0), a.get("height", 0))},
+    {"name": "screen_off", "args": "{}", "group": "sistema",
+     "desc": "apagar o monitor", "examples": ["apaga a tela"],
+     "run": lambda a: MA.screen_off()},
+    {"name": "install_program", "args": '{"name":"programa"}', "group": "sistema",
+     "desc": "instalar programa pelo winget (pede confirmação)", "examples": ["instala o VLC"],
+     "run": lambda a: MA.install_program(a.get("name", ""), confirm)},
+    {"name": "update_programs", "args": '{"name":"programa (vazio = todos)"}', "group": "sistema",
+     "desc": "atualizar os programas pelo winget (pede confirmação)", "examples": ["atualiza tudo"],
+     "run": lambda a: MA.update_programs(confirm, a.get("name", ""))},
+    {"name": "uninstall_program", "args": '{"name":"programa"}', "group": "sistema",
+     "desc": "desinstalar um programa (pede confirmação e a senha, se houver)", "examples": ["desinstala o VLC"],
+     "run": lambda a: MA.uninstall_program(a.get("name", ""), confirm_danger)},
+    {"name": "cleanup", "args": "{}", "group": "sistema",
+     "desc": "limpar temporários e a Lixeira, dizendo quanto libera (pede confirmação)", "examples": ["limpa o pc"],
+     "run": lambda a: MA.cleanup(confirm)},
+    {"name": "clean_old_downloads", "args": '{"days":90}', "group": "arquivos e pastas",
+     "desc": "mandar para a Lixeira os downloads velhos (pede confirmação)", "examples": ["limpa os downloads velhos"],
+     "run": lambda a: MA.clean_old_downloads(confirm, int(a.get("days", 90) or 90), DOWNLOADS)},
+    {"name": "clean_memory", "args": "{}", "group": "sistema",
+     "desc": "limpador de memória: libera RAM sem fechar nada e mostra antes e depois", "examples": ["limpa a memória"],
+     "run": lambda a: MA.clean_memory()},
+    {"name": "why_slow", "args": "{}", "group": "sistema",
+     "desc": "dizer por que o PC está lento (o culpado) e oferecer fechar", "examples": ["por que tá lento?"],
+     "run": lambda a: MA.why_slow(confirm, F.close_app)},
+    {"name": "app_volume", "args": '{"app":"programa","percent":50,"delta":0}', "group": "som",
+     "desc": "volume de um programa só (Discord mais alto, jogo mais baixo)", "examples": ["discord mais alto", "volume do spotify em 30"],
+     "run": lambda a: MA.app_volume(a.get("app", ""), a.get("percent"), a.get("delta"))},
+    {"name": "print_file", "args": '{"path":"caminho ou número do resultado"}', "group": "arquivos e pastas",
+     "desc": "imprimir um arquivo", "examples": ["imprime o primeiro"],
+     "run": lambda a: MA.print_file(resolve_path(a.get("path", "1")))},
+    {"name": "clipboard_list", "args": "{}", "group": "janelas e teclado",
+     "desc": "mostrar o histórico da área de transferência", "examples": ["histórico da área de transferência"],
+     "run": lambda a: MA.clipboard_list()},
+    {"name": "clipboard_paste", "args": '{"index":2}', "group": "janelas e teclado",
+     "desc": "colar algo copiado antes (2 = o penúltimo)", "examples": ["cola o que eu copiei antes"],
+     "run": lambda a: MA.clipboard_paste(a.get("index", 2))},
+    {"name": "organize_folder", "args": '{"folder":"downloads|pasta","by":"tipo|data"}', "group": "arquivos e pastas",
+     "desc": "organizar uma pasta em subpastas por tipo ou data (pede confirmação; dá para desfazer)",
+     "examples": ["organiza os downloads"],
+     "run": lambda a: MA.organize_folder(folder_of(a.get("folder", "downloads")), confirm, a.get("by", "tipo"))},
+    {"name": "batch_rename", "args": '{"folder":"pasta","pattern":"novo nome (ou data)","kind":"Imagens|pdf|... (opcional)"}',
+     "group": "arquivos e pastas", "desc": "renomear vários arquivos de uma vez (pede confirmação; dá para desfazer)",
+     "examples": ["renomeia as fotos da pasta praia para praia 2026"],
+     "run": lambda a: MA.batch_rename(folder_of(a.get("folder", "")), a.get("pattern", ""), confirm, a.get("kind", ""))},
+    {"name": "compress", "args": '{"path":"caminho ou número"}', "group": "arquivos e pastas",
+     "desc": "compactar em .zip", "examples": ["compacta a pasta projetos"],
+     "run": lambda a: MA.compress(_path_or_folder(a.get("path", "")))},
+    {"name": "extract", "args": '{"path":"caminho ou número"}', "group": "arquivos e pastas",
+     "desc": "descompactar um .zip", "examples": ["descompacta o primeiro"],
+     "run": lambda a: MA.extract(_path_or_folder(a.get("path", "")))},
+    {"name": "undo_file", "args": "{}", "group": "arquivos e pastas",
+     "desc": "desfazer a última ação de arquivo (mover, renomear, organizar)", "examples": ["desfaz o que você fez"],
+     "run": lambda a: MA.undo_last()},
+    {"name": "convert_file", "args": '{"path":"caminho, número ou pasta de imagens","to":"pdf|mp3|jpg|png|mp4"}',
+     "group": "arquivos e pastas", "desc": "converter arquivo (imagens para PDF, vídeo para MP3...)",
+     "examples": ["converte o primeiro para mp3", "transforma a pasta prints em pdf"],
+     "run": lambda a: MA.convert(_path_or_folder(a.get("path", "")), a.get("to", ""))},
+    {"name": "shrink_file", "args": '{"path":"caminho ou número"}', "group": "arquivos e pastas",
+     "desc": "diminuir um arquivo grande para mandar no zap", "examples": ["diminui esse vídeo para mandar no zap"],
+     "run": lambda a: MA.shrink_for_sending(_path_or_folder(a.get("path", "")))},
+    {"name": "record_macro", "args": '{"name":"nome"}', "group": "mãos",
+     "desc": "observar e gravar cliques e teclas para repetir depois (botão PARAR)", "examples": ["observa o que eu faço"],
+     "run": lambda a: _record_macro(a.get("name", ""))},
+    {"name": "stop_macro", "args": "{}", "group": "mãos",
+     "desc": "parar de gravar a macro", "examples": ["para de gravar"],
+     "run": lambda a: MA.stop_recording() or print("Jarvis > Não estava gravando.") or False},
+    {"name": "play_macro", "args": '{"name":"nome"}', "group": "mãos",
+     "desc": "repetir uma macro gravada", "examples": ["repete a macro planilha"],
+     "run": lambda a: MA.play_macro(a.get("name", ""), stop=stop_event)},
+    {"name": "list_macros", "args": "{}", "group": "mãos",
+     "desc": "listar as macros", "examples": ["quais macros você tem"],
+     "run": lambda a: MA.list_macros()},
+    # ---- jogos e saúde do PC
+    {"name": "open_game", "args": '{"name":"jogo"}', "group": "jogos",
+     "desc": "abrir jogo da Steam ou da Epic pelo nome", "examples": ["abre o jogo Omori"],
+     "run": lambda a: MA.open_game(a.get("name", ""))},
+    {"name": "game_clip", "args": "{}", "group": "jogos",
+     "desc": "salvar os últimos 30 segundos do jogo (Xbox Game Bar)", "examples": ["grava os últimos 30 segundos"],
+     "run": lambda a: MA.game_clip()},
+    {"name": "game_bar", "args": "{}", "group": "jogos",
+     "desc": "abrir o Xbox Game Bar (FPS e desempenho)", "examples": ["mostra o fps"],
+     "run": lambda a: MA.game_bar()},
+    {"name": "game_priority", "args": '{"name":"jogo (vazio = a janela da frente)"}', "group": "jogos",
+     "desc": "dar prioridade alta ao jogo", "examples": ["dá prioridade para o jogo"],
+     "run": lambda a: MA.game_priority(a.get("name", ""))},
+    {"name": "health_report", "args": "{}", "group": "sistema",
+     "desc": "relatório de saúde do PC: disco, RAM, temperatura e atualizações pendentes", "examples": ["como tá a saúde do pc"],
+     "run": lambda a: MA.health_report()},
+    {"name": "list_startup", "args": "{}", "group": "sistema",
+     "desc": "listar o que abre com o Windows", "examples": ["o que abre com o windows?"],
+     "run": lambda a: MA.list_startup()},
+    {"name": "ask_choice", "args": '{"question":"pergunta","options":["opção 1","opção 2"]}', "group": "informação",
+     "desc": "perguntar ao senhor com opções num card quando estiver em dúvida (use continue:true)",
+     "examples": ["(dúvida entre dois arquivos ou contatos)"],
+     "run": lambda a: ask_choice(a.get("question", ""), a.get("options", []))},
     {"name": "show_help", "args": "{}", "group": "sistema",
      "desc": "mostrar tudo o que eu sei fazer", "examples": ["o que você sabe fazer"],
      "run": lambda a: show_help()},
@@ -1973,6 +2388,12 @@ def ai_context(request=""):
             learned = ""
         if learned:
             parts.append(learned)
+        try:
+            skills = H.prompt_for(request)
+        except Exception:
+            skills = ""
+        if skills:
+            parts.append(skills)
     return "\n".join(parts) + "\n\nPedido: "
 
 
@@ -2153,6 +2574,8 @@ def ask_ai_router(user_text):
             return True
         reply = str(data.get("reply") or "").strip()
         more = data.get("continue") is True or str(data.get("continue")).lower() == "true"
+        if any(str(a.get("name")) == "use_skill" for a in actions) and "use_skill" not in failed:
+            more = True  # carregou a receita: a IA precisa ver e seguir
         if more and actions:
             if step + 1 < MAX_STEPS:
                 if reply:
@@ -2480,8 +2903,24 @@ _novas = []  # quem mandou mensagem desde o último resumo
 def watch_world(every=60):
     """Mensagem nova no WhatsApp (pelo WAHA) e bateria fraca viram aviso falado. BOLHA_AVISOS=0 desliga."""
     seen, warned_battery = {}, False
-    first = True
+    first, last_daily = True, None
     while True:
+        today = datetime.now().date()
+        if last_daily != today and not first:  # uma vez por dia: disco quase cheio (60) e programa novo no início (94)
+            last_daily = today
+            try:
+                for d, free, total in MA.low_disks():
+                    commands.put(("aviso", f"Senhor, o disco {d[:2]} está quase cheio: só {free / 1024 ** 3:.0f} "
+                                           "gigas livres. Diga limpa o PC."))
+                for name in MA.new_startup_programs():
+                    commands.put(("aviso", f"Senhor, um programa novo começou a abrir com o Windows: {name}."))
+            except Exception:
+                pass
+        elif first:
+            try:
+                MA.new_startup_programs()  # a primeira olhada só guarda o que já existe
+            except Exception:
+                pass
         try:
             if W.configured():
                 for cid, name, text, ts in W.incoming():
@@ -2527,10 +2966,65 @@ def handle(text):
         failed, _ = run_actions(learned)
         if not failed:
             return
+    skill = H.match_trigger(clean_prefix(text))
+    if skill:  # "modo aula": a habilidade que o senhor ensinou
+        D.route("habilidade")
+        log_action("use_skill", skill.name)
+        H.use(skill.name, run_actions, handle)
+        return
+    parts = split_multi(text)
+    if len(parts) > 1:  # "abre o Spotify, toca lofi e baixa o volume": um de cada vez
+        D.route("varios")
+        for part in parts:
+            handle(part)
+        return
     if fast_local_router(text):
         D.route("atalho")
         return
     ask_ai_router(text)
+
+
+# verbos de pedidos que fazem sentido sozinhos: só esses são cortados em vários pedidos (17)
+SAFE_SPLIT = {"abre", "abra", "fecha", "feche", "toca", "toque", "coloca", "coloque", "poe", "bota", "aumenta",
+              "aumente", "abaixa", "abaixe", "baixa", "baixe", "diminui", "diminua", "muta", "mute", "desmuta",
+              "silencia", "pausa", "pause", "pula", "liga", "desliga", "minimiza", "maximiza", "bloqueia", "tira",
+              "deixa", "mostra", "inicia", "ativa", "desativa", "limpa", "organiza", "procura", "pesquisa"}
+
+
+def split_multi(text):
+    """Vários pedidos numa frase, só se cada pedaço é um pedido completo por si (nada de "e me explica isso")."""
+    body = clean_prefix(text)
+    clean = normalize(body)
+    if LATER.search(clean) or not re.search(r"[,;]|\s(?:e|depois)\s", clean):
+        return [text]
+    parts = H.split_requests(body)
+    if len(parts) < 2:
+        return [text]
+    for part in parts:
+        words = normalize(part).split()
+        if not words or words[0] not in SAFE_SPLIT or CONTEXT_WORDS.search(normalize(part)):
+            return [text]
+    return parts
+
+
+CONTEXT_WORDS = re.compile(r"\b(?:isso|isto|esse|essa|esses|essas|ele|ela|eles|elas|la|nele|nela|disso|dele|dela)\b")
+
+
+stop_event = threading.Event()  # o PARAR: interrompe macro, modo agente e leitura em voz alta
+
+
+def _record_macro(name):
+    U.card("Gravando", json.dumps({"titulo": "Gravando a macro", "botao": "PARAR", "pedido": "para de gravar"},
+                                  ensure_ascii=False), 300000)
+    return MA.record_macro(name)
+
+
+def _path_or_folder(ref):
+    """Caminho, número do resultado da última busca ou nome de pasta conhecida ("downloads")."""
+    key = normalize(ref)
+    if key in FOLDERS:
+        return FOLDERS[key]
+    return resolve_path(number_ref(str(ref)))
 
 
 def expand_aliases(text):
@@ -2919,6 +3413,8 @@ def run():
     F.on_alarm = lambda message: commands.put(("lembrete", message))  # timers também falam
     M.reminder_watcher(commands.put)
     D.weekly_watcher()  # M4: todo domingo sai o relatorio.md
+    if os.environ.get("BOLHA_AREA_TRANSFERENCIA", "").strip() != "0":
+        MA.watch_clipboard()  # histórico do que o senhor copia (só na memória, nunca em disco)
     if os.environ.get("BOLHA_AVISOS", "").strip() != "0":
         threading.Thread(target=watch_world, daemon=True).start()
     hint = M.habit_hint()
