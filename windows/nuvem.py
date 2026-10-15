@@ -430,3 +430,110 @@ def transcribe(wav, name="fala.wav", mime="audio/wav"):
     if errors:
         raise CloudError("não consegui entender o áudio (" + "; ".join(errors) + ")")
     return ""
+
+
+# ------------------------- ver (imagem -> texto) -------------------------
+GROQ_VISION = ["meta-llama/llama-4-scout-17b-16e-instruct", "meta-llama/llama-4-maverick-17b-128e-instruct"]
+
+
+def vision(prompt, image, mime="image/png", max_tokens=1200):
+    """A IA olha uma imagem (print da tela) e responde: Gemini; se faltar ou falhar, um modelo de visão do Groq."""
+    import base64
+    data = base64.b64encode(image).decode()
+    errors = []
+    key = api_key()
+    if key:
+        body = {"contents": [{"role": "user", "parts": [{"text": prompt}, {"inlineData": {"mimeType": mime, "data": data}}]}],
+                "generationConfig": {"temperature": 0.1, "maxOutputTokens": max_tokens}}
+        for model in _in_order([m for m in models() if m not in _dead]):
+            try:
+                out = _call(_search_post, model, _with_thinking(body, model not in _no_thinking_cfg), key)
+                text = "".join(p.get("text", "") for p in out["candidates"][0]["content"]["parts"] if not p.get("thought"))
+                if text.strip():
+                    return text
+            except _Http as h:
+                errors.append(f"{model}: HTTP {h.code}")
+                fail = _http_fail("Gemini", h, h.body)
+                if fail:
+                    raise fail from h
+                if h.code == 429:
+                    _limited[model] = time.time()
+            except (KeyError, IndexError, TypeError):
+                errors.append(f"{model}: resposta vazia")
+            except (urllib.error.URLError, TimeoutError, OSError) as e:
+                errors.append(f"{model}: {getattr(e, 'reason', e)}")
+    gkey = groq_key()
+    if gkey:
+        for model in GROQ_VISION:
+            if model in _dead:
+                continue
+            body = {"model": model, "max_tokens": max_tokens, "temperature": 0.1, "messages": [{"role": "user", "content": [
+                {"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{data}"}}]}]}
+            try:
+                out = _groq_post(body, gkey)
+                text = out["choices"][0]["message"]["content"] or ""
+                if text.strip():
+                    return text
+            except urllib.error.HTTPError as e:
+                errors.append(f"{model}: HTTP {e.code}")
+                if e.code == 404:
+                    _dead.add(model)
+            except (KeyError, IndexError, TypeError, urllib.error.URLError, TimeoutError, OSError) as e:
+                errors.append(f"{model}: {e}")
+    if not key and not gkey:
+        raise CloudError("para ver a tela preciso da chave do Gemini (setx GEMINI_API_KEY)")
+    raise CloudError("nenhuma IA conseguiu olhar a imagem (" + "; ".join(errors[-3:]) + ")")
+
+
+# ------------------------- ferramentas nativas (Groq) -------------------------
+
+def groq_tools(system, user, tools, temperature=0.0, max_tokens=1024):
+    """Pedido com as ferramentas na chamada nativa (function calling), não JSON no texto.
+    Devolve {"actions": [{"name", "args"}], "reply": texto}. Levanta CloudError se não der."""
+    key = groq_key()
+    if not key:
+        raise CloudError("sem GROQ_API_KEY")
+    errors, limited = [], False
+    for model in _in_order(groq_models(key)):
+        body = {"model": model, "temperature": temperature, "max_tokens": max_tokens, "tools": tools,
+                "tool_choice": "auto", "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+        if model.startswith("openai/gpt-oss"):
+            body["reasoning_effort"] = "low"
+        try:
+            data = _groq_post(body, key)
+        except urllib.error.HTTPError as e:
+            detail = _detail(e)
+            errors.append(f"{model}: HTTP {e.code} {_message(detail)}".strip())
+            fail = _http_fail("Groq", e, detail)
+            if fail:
+                raise fail from e
+            if e.code == 429:
+                limited = True
+                _limited[model] = time.time()
+            elif e.code == 404:
+                _dead.add(model)
+            continue
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            if _timed_out(e):
+                errors.append(f"{model}: demorou mais de {TIMEOUT} s")
+                continue
+            raise CloudError(f"sem conexão com o Groq ({getattr(e, 'reason', e)})") from e
+        try:
+            msg = data["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError):
+            errors.append(f"{model}: resposta vazia")
+            continue
+        actions = []
+        for call in msg.get("tool_calls") or []:
+            fn = call.get("function") or {}
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except ValueError:
+                args = {}
+            if fn.get("name"):
+                actions.append({"name": fn["name"], "args": args if isinstance(args, dict) else {}})
+        reply = re.sub(r"<think>.*?</think>", "", msg.get("content") or "", flags=re.S).strip()
+        if actions or reply:
+            return {"actions": actions, "reply": reply}
+        errors.append(f"{model}: resposta vazia")
+    raise _all_failed("Groq", errors, limited)

@@ -68,7 +68,7 @@ def memoria_temporaria(tmp_path, monkeypatch):
 
 
 # Módulos novos do plano 3.0: tudo o que eles guardam em G:\Jarvis vai para a pasta do teste.
-MODULOS_COM_ARQUIVO = ["diario", "aprende", "habilidades", "maos", "documentos", "rotina", "integracoes"]
+MODULOS_COM_ARQUIVO = ["diario", "aprende", "habilidades", "maos", "documentos", "rotina", "integracoes", "voz"]
 
 
 @pytest.fixture(autouse=True)

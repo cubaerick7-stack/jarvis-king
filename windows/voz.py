@@ -43,6 +43,7 @@ JARVIS_VOSK = ["jarvis", "jarbas", "javis", "jarves", "jervis", "jarvi", "jarve"
 JARVIS_WHISPER = {"jarvis", "jarbas", "jarbis", "javis", "jarves", "jervis", "jarvi", "jarvas", "garvis"}
 MAX_COMMAND = 12.0  # segundos
 END_SILENCE = 1.5  # segundos de silêncio que encerram o pedido (uma pausa para pensar não corta a frase)
+END_SILENCE_LONG = 1.0  # depois de uma frase comprida, o fim chega mais rápido
 NO_SPEECH = 5.0  # desiste se você não falar nada
 FOLLOW_UP_WAIT = 6.0  # ele te fez uma pergunta: escuta a resposta sem precisar dizer o nome
 GO_ON_WAIT = 4.0  # frase parou no meio ("abre o..."): espera até isso você continuar, sem bipe
@@ -60,6 +61,13 @@ DUCK_LEVEL = 0.15  # volume do PC enquanto você fala (música alta atrapalha ou
 DEBUG = os.environ.get("JARVIS_VOZ_DEBUG", "").strip() == "1"
 
 speaking = threading.Event()  # enquanto ele fala, não se escuta (para não ativar sozinho)
+CACHE = Path(os.environ.get("JARVIS_CACHE_VOZ", r"G:\Jarvis\cache\voz"))  # frases já faladas: tocam na hora (16)
+SETTINGS = Path(r"G:\Jarvis\config\voz.json")  # calibração do microfone e barulho de cada hora
+MIN_LEVEL = 350.0  # o mínimo para contar como fala; a calibração ("calibra o microfone") ajusta
+CONVERSATION_WAIT = 8.0  # depois de responder, escuta mais 8 s sem precisar dizer o nome (6)
+_stop_talk = threading.Event()  # "Bolha, para": corta a fala na hora (5)
+_say_lock = threading.Lock()  # uma fala de cada vez (a frase pronta e a resposta não se atropelam)
+VOCAB = []  # vocabulário pessoal (contatos, jogos, apelidos): ajuda o Whisper e corrige a transcrição (7, 8)
 heard_seconds = 0.0  # quanto levou para ouvir (gravar + transcrever) o último pedido falado: vai para o cronômetro
 
 
@@ -152,10 +160,10 @@ def record_command(read_block, noise=300.0, before=(), recalibrate=False, no_spe
     recalibrate = o som do PC acabou de ser abaixado: mede o barulho de novo nos primeiros blocos.
     no_speech = quanto esperar você começar a falar."""
     global last_levels
-    threshold = max(350.0, noise * 2.5)
+    threshold = max(MIN_LEVEL, noise * 2.5)
     before = [bytes(b) for b in before]
     spoke_before = sum(rms(b) >= threshold for b in before) >= 3
-    chunks, spoke, quiet, elapsed, loudest = list(before), False, 0.0, 0.0, 0.0
+    chunks, spoke, quiet, elapsed, loudest, talked = list(before), False, 0.0, 0.0, 0.0, 0.0
     step = BLOCK / SAMPLE_RATE
     first = []
     while elapsed < MAX_COMMAND:
@@ -166,19 +174,48 @@ def record_command(read_block, noise=300.0, before=(), recalibrate=False, no_spe
         if len(first) <= ECHO_BLOCKS:
             first.append(level)
             if recalibrate and len(first) == ECHO_BLOCKS + 1:  # o menor bloco nunca fica abaixo do barulho real
-                threshold = max(350.0, min(noise, min(first)) * 2.5)
-        if len(first) > ECHO_BLOCKS and level >= threshold:
+                threshold = max(MIN_LEVEL, min(noise, min(first)) * 2.5)
+        if len(first) > ECHO_BLOCKS and level >= threshold and is_speech(block):
             spoke, quiet = True, 0.0
+            talked += step
         else:
             quiet += step
         if len(first) > ECHO_BLOCKS:
             loudest = max(loudest, level)
         last_levels = (loudest, threshold)
-        if spoke and quiet >= END_SILENCE:
+        # quem já falou uma frase inteira (mais de 2,5 s) terminou com 1 s de silêncio; no começo, 1,5 s (4)
+        if spoke and quiet >= (END_SILENCE_LONG if talked >= 2.5 else END_SILENCE):
             break
         if not spoke and elapsed >= (2.0 if spoke_before else no_speech):
             return b"".join(chunks) if spoke_before else b""
     return b"".join(chunks)
+
+
+_vad = None
+
+
+def is_speech(block):
+    """Detector de voz leve (4): com o webrtcvad instalado (opcional), barulho constante (ventilador, chuva) não
+    conta como fala. Sem ele, só o volume decide."""
+    global _vad
+    if _vad is None:
+        try:
+            import webrtcvad
+            _vad = webrtcvad.Vad(2)
+        except Exception:
+            _vad = False
+    if not _vad:
+        return True
+    frame = int(SAMPLE_RATE * 0.02) * 2  # 20 ms em bytes
+    data = bytes(block)
+    frames = [data[i:i + frame] for i in range(0, len(data) - frame + 1, frame)]
+    if not frames:
+        return True
+    try:
+        voiced = sum(_vad.is_speech(f, SAMPLE_RATE) for f in frames)
+    except Exception:
+        return True
+    return voiced * 2 >= len(frames)
 
 
 def strip_wake(text):
@@ -257,9 +294,20 @@ def after_wake(text, lenient_first=False):
             return " ".join(words[i + 1:]).strip(" ,.!?;:-")
         if i + 1 < len(plain) and p + plain[i + 1] in WHISPER_WAKE:  # "Já vis, toca lofi"
             return " ".join(words[i + 2:]).strip(" ,.!?;:-")
-    if lenient_first and plain and _near_name(plain[0]):  # só se o nome exato não apareceu
+    if lenient_first and plain and _near_name(plain[0]) and (len(plain) == 1 or _looks_like_request(plain[1:])):
+        # "Bola, toca lofi" vale (o Vosk ouviu o nome certo); "olha só que legal" não: depois não vem um pedido (9)
         return " ".join(words[1:]).strip(" ,.!?;:-")
     return None
+
+
+REQUEST_START = set("""abre abra fecha feche toca toque coloca coloque poe bota aumenta abaixa baixa diminui muta desmuta
+liga desliga manda mande envia pesquisa pesquise procura procure busca mostra minimiza maximiza bloqueia tira faz faca
+cria escreve digita le leia resume deixa volta muda troca apaga limpa organiza instala atualiza lembra me qual quais
+quanto quantos quem como onde que o a pausa pula para pare continua vai entra salva grava modo clica aperta""".split())
+
+
+def _looks_like_request(words):
+    return bool(words) and words[0] in REQUEST_START
 
 
 def unfinished(text):
@@ -551,27 +599,242 @@ def _synth(text, path):
     raise RuntimeError("; ".join(errors))
 
 
+def _cache_file(text):
+    import hashlib
+    key = hashlib.sha1(f"{VOICE}|{RATE}|{PITCH}|{text}".encode("utf-8")).hexdigest()[:20]
+    return CACHE / f"{key}.mp3"
+
+
+def synth_cached(text, path):
+    """Frases curtas ficam guardadas: na segunda vez tocam na hora, sem esperar a internet (16)."""
+    file = _cache_file(text)
+    if file.is_file() and file.stat().st_size > 0:
+        import shutil
+        shutil.copyfile(file, path)
+        return
+    _synth(text, path)
+    if len(text) <= 120:
+        try:
+            CACHE.mkdir(parents=True, exist_ok=True)
+            import shutil
+            shutil.copyfile(path, file)
+        except OSError:
+            pass
+
+
+def prewarm(phrases):
+    """Grava as frases prontas ("Verificando, senhor.") em segundo plano, para a primeira vez já ser na hora."""
+    def run():
+        for p in phrases:
+            text = clean_for_speech(p)
+            if text and not _cache_file(text).is_file():
+                tmp = Path(tempfile.gettempdir()) / f"jarvis_pre_{int(time.time() * 1000)}.mp3"
+                try:
+                    synth_cached(text, tmp)
+                except Exception:
+                    return  # sem voz agora (sem internet?): tenta de novo na próxima vez que abrir
+                finally:
+                    try:
+                        tmp.unlink()
+                    except OSError:
+                        pass
+    threading.Thread(target=run, daemon=True).start()
+
+
+def sentences(text):
+    """A fala em frases (15): a primeira toca enquanto as outras ainda estão sendo geradas."""
+    parts = [p.strip() for p in re.split(r"(?<=[.!?;])\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9\"(])", text) if p.strip()]
+    out = []
+    for p in parts:  # frase muito curta junta com a próxima (soa mais natural)
+        if out and len(out[-1]) < 25:
+            out[-1] += " " + p
+        else:
+            out.append(p)
+    return out or [text]
+
+
+def stop_speaking():
+    """Corta a fala na hora ("Bolha, para", botão PARAR)."""
+    _stop_talk.set()
+    try:
+        _mci("stop jarvisvoz")
+    except Exception:
+        pass
+    return True
+
+
 def say(text, on_state=None):
     text = clean_for_speech(text)
     if not text:
         return
-    # Um arquivo por fala: o anterior pode ainda estar preso pelo Windows.
-    path = Path(tempfile.gettempdir()) / f"jarvis_fala_{int(time.time() * 1000)}.mp3"
-    _synth(text, path)
-    speaking.set()
-    if on_state:
-        on_state("falando")
-    try:
-        _play_mp3(path)
-    finally:
-        time.sleep(0.2)  # o eco da caixa de som some antes de voltar a ouvir
-        speaking.clear()
-        if on_state:
-            on_state("parado")
+    with _say_lock:
+        _stop_talk.clear()
+        parts = sentences(text)
+        ready = queue.Queue()
+
+        def produce():  # gera as próximas frases enquanto a primeira toca
+            for i, part in enumerate(parts):
+                if _stop_talk.is_set():
+                    break
+                # Um arquivo por frase: o anterior pode ainda estar preso pelo Windows.
+                path = Path(tempfile.gettempdir()) / f"jarvis_fala_{int(time.time() * 1000)}_{i}.mp3"
+                try:
+                    synth_cached(part, path)
+                    ready.put(path)
+                except Exception as e:
+                    ready.put(e)
+                    return
+            ready.put(None)
+
+        threading.Thread(target=produce, daemon=True).start()
+        speaking.set()
+        played = 0
         try:
-            path.unlink()
-        except OSError:
-            pass
+            while True:
+                item = ready.get()
+                if item is None:
+                    break
+                if isinstance(item, Exception):
+                    if played == 0:
+                        raise item
+                    break
+                try:
+                    if not _stop_talk.is_set():
+                        if on_state and played == 0:
+                            on_state("falando")
+                        _play_mp3(item)
+                        played += 1
+                finally:
+                    try:
+                        item.unlink()
+                    except OSError:
+                        pass
+                if _stop_talk.is_set():
+                    break
+        finally:
+            time.sleep(0.2)  # o eco da caixa de som some antes de voltar a ouvir
+            speaking.clear()
+            if on_state:
+                on_state("parado")
+
+
+def say_async(text, on_state=None):
+    """Fala sem esperar (a frase pronta enquanto a IA pensa)."""
+    threading.Thread(target=lambda: _quiet(say, text, None), daemon=True).start()
+
+
+def _quiet(fn, *args):
+    try:
+        fn(*args)
+    except Exception:
+        pass
+
+
+# ------------------------- vocabulário pessoal (7, 8) -------------------------
+
+def set_vocabulary(words):
+    """Nomes de contatos, jogos, pastas e apelidos: vão no "prompt" do Whisper (ele escreve igual) e corrigem
+    a transcrição ("abre o o mori" -> "abre o Omori")."""
+    seen, out = set(), []
+    for w in words:
+        w = re.sub(r"\s+", " ", str(w or "")).strip()
+        if 3 <= len(w) <= 40 and w.lower() not in seen:
+            seen.add(w.lower())
+            out.append(w)
+    VOCAB[:] = out[:150]
+    prompt = NAME + (". " + ", ".join(VOCAB) if VOCAB else "")
+    N.STT_PROMPT = prompt[:600]
+    return len(VOCAB)
+
+
+COMMON_WORDS = set("""abre toca para pare volume musica video arquivo pasta senhor bolha jarvis youtube google sim nao
+mais menos tela janela agora hoje amanha ontem""".split())
+
+
+def fix_words(text, vocab=None):
+    """Troca pedaços que soam como uma palavra do vocabulário pela palavra certa ("o mori" -> "Omori").
+    Primeiro os iguais (sem espaço e acento), depois os bem parecidos; o que já foi trocado não mexe de novo."""
+    vocab = VOCAB if vocab is None else vocab
+    if not vocab or not text:
+        return text
+    keys = {_plain(v): v for v in vocab if len(_plain(v)) >= 4 and _plain(v) not in COMMON_WORDS}
+    tokens = [[w, False] for w in str(text).split()]  # [palavra, já é do vocabulário]
+
+    def run(fuzzy):
+        i, out = 0, []
+        while i < len(tokens):
+            for size in (3, 2, 1):
+                chunk = tokens[i:i + size]
+                if len(chunk) < size or any(t[1] for t in chunk):
+                    continue
+                joined = "".join(_plain(t[0]) for t in chunk)
+                if len(joined) < 4 or (size == 1 and joined in COMMON_WORDS):
+                    continue
+                best = keys.get(joined)
+                if best is None and fuzzy and len(joined) >= 5 and size <= 2:
+                    close = difflib.get_close_matches(joined, list(keys), n=1, cutoff=0.88)
+                    best = keys[close[0]] if close else None
+                if best is not None:
+                    tail = re.match(r".*?([,.!?;:]*)$", chunk[-1][0]).group(1)
+                    out.append([best + tail, True])
+                    i += size
+                    break
+            else:
+                out.append(tokens[i])
+                i += 1
+        tokens[:] = out
+
+    run(False)
+    run(True)
+    return " ".join(t[0] for t in tokens)
+
+
+# ------------------------- calibração do microfone (2) e barulho por hora (3) -------------------------
+
+def load_settings():
+    global MIN_LEVEL
+    try:
+        data = json.loads(SETTINGS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if isinstance(data, dict) and isinstance(data.get("limiar"), (int, float)):
+        MIN_LEVEL = float(max(80.0, min(3000.0, data["limiar"])))
+    return data if isinstance(data, dict) else {}
+
+
+def save_settings(**changes):
+    data = {}
+    try:
+        data = json.loads(SETTINGS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        pass
+    data.update(changes)
+    try:
+        SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+        SETTINGS.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    except OSError:
+        pass
+    return data
+
+
+def calibration_threshold(levels):
+    """O limiar a partir de alguns segundos em que o senhor disse "Bolha" 3 vezes: entre o barulho do quarto e a
+    sua voz. (limiar, barulho, voz)"""
+    levels = sorted(float(x) for x in levels if x is not None)
+    if len(levels) < 10:
+        return None
+    noise = levels[len(levels) // 5]  # o quarto mais calmo
+    voice = levels[int(len(levels) * 0.95) - 1]  # os picos da fala
+    if voice < noise * 2:  # não deu para ouvir a fala por cima do barulho
+        return None
+    threshold = max(80.0, min(noise * 2.5, noise + (voice - noise) * 0.3))
+    return round(threshold), round(noise), round(voice)
+
+
+def hour_noise(profile, hour):
+    """O barulho que costuma ter nesta hora (aprendido ao longo dos dias), ou None."""
+    value = (profile or {}).get(str(hour))
+    return float(value) if isinstance(value, (int, float)) else None
 
 
 def synth_mp3(text):
@@ -599,8 +862,37 @@ def beep():
 
 
 def duck(level=DUCK_LEVEL):
-    """Abaixa o som do PC enquanto você fala o pedido. Devolve a função que volta o volume
-    (ou None se não precisou ou não deu para mexer)."""
+    """Abaixa a música e o jogo enquanto você fala o pedido (10): cada programa que está tocando som, menos o
+    próprio Bolha (o bipe continua alto). Devolve a função que volta o volume (ou None se não precisou)."""
+    try:
+        from pycaw.pycaw import AudioUtilities
+        changed = []
+        for sess in AudioUtilities.GetAllSessions():
+            try:
+                if not sess.Process or sess.Process.pid == os.getpid() or sess.State != 1:  # 1 = tocando agora
+                    continue
+                vol = sess.SimpleAudioVolume
+                old = vol.GetMasterVolume()
+                if old > level:
+                    vol.SetMasterVolume(level, None)
+                    changed.append((vol, old))
+            except Exception:
+                continue
+        if changed:
+            def restore_sessions():
+                for vol, old in changed:
+                    try:
+                        vol.SetMasterVolume(old, None)
+                    except Exception:
+                        pass
+            return restore_sessions
+    except Exception:
+        pass
+    return _duck_master(level)
+
+
+def _duck_master(level):
+    """Reserva: abaixa o volume geral."""
     try:
         from pycaw.pycaw import AudioUtilities
         vol = AudioUtilities.GetSpeakers().EndpointVolume
@@ -621,6 +913,13 @@ def duck(level=DUCK_LEVEL):
 
 
 # ------------------------- ouvir -------------------------
+STOP = {"para", "pare", "parar", "chega", "silencio", "cala", "quieto", "stop", "paraa"}
+
+
+def asks_stop(text):
+    """ "Bolha, para" / "Bolha, chega": o nome e logo depois a palavra de parar (a própria fala dele não conta)."""
+    words = [_plain(w) for w in str(text or "").split()]
+    return any(_sounds_like_name(w) and i + 1 < len(words) and words[i + 1] in STOP for i, w in enumerate(words))
 
 class Listener(threading.Thread):
     """Fica ouvindo o nome dele; depois grava o pedido e manda o texto para put(("voz", texto))."""
@@ -633,14 +932,40 @@ class Listener(threading.Thread):
         self.answer_wanted = threading.Event()  # confirmação: ouve sem precisar dizer "Jarvis"
         self.ready = threading.Event()
         self.follow_wanted = threading.Event()
+        self.calibrate_wanted = threading.Event()
+        self.follow_quiet = False  # conversa contínua: escuta sem bipe
+        self.on_interrupt = None  # "Bolha, para" enquanto ele fala
         self.error = None
 
     def ask_answer(self):
         self.answer_wanted.set()
 
-    def follow_up(self):
-        """Depois de uma pergunta dele: escuta uma vez sem o nome; se ninguém falar, volta a esperar o nome."""
+    def follow_up(self, quiet=False):
+        """Depois de uma pergunta dele: escuta uma vez sem o nome; se ninguém falar, volta a esperar o nome.
+        quiet=True: conversa contínua (escuta 8 s sem bipe, depois de qualquer resposta)."""
+        self.follow_quiet = quiet
         self.follow_wanted.set()
+
+    def calibrate(self):
+        """ "calibra o microfone": o senhor diz "Bolha" 3 vezes e ele acerta o volume mínimo sozinho (2)."""
+        self.calibrate_wanted.set()
+
+    def _calibrate(self, read_block):
+        global MIN_LEVEL
+        self.on_state("ouvindo")
+        beep()
+        levels = [rms(read_block()) for _ in range(int(8 / (BLOCK / SAMPLE_RATE)))]  # 8 segundos
+        found = calibration_threshold(levels)
+        self.on_state("parado")
+        if not found:
+            self.put(("alerta", "Não consegui ouvir sua voz acima do barulho, senhor. Chegue mais perto do "
+                                "microfone ou aumente o volume dele no Windows e diga calibra o microfone de novo."))
+            return
+        threshold, noise, voice = found
+        MIN_LEVEL = float(threshold)
+        save_settings(limiar=threshold, ruido_calibrado=noise, voz=voice, calibrado=time.strftime("%Y-%m-%d %H:%M"))
+        self.put(("alerta", f"Microfone calibrado, senhor: sua voz chega a {voice}, o quarto fica em {noise}; "
+                            f"agora conto como fala a partir de {threshold}."))
 
     def _hear(self, read_block, noise, before=(), no_speech=NO_SPEECH, quiet=False):
         """Grava (com o som do PC baixinho) e transcreve. None = ninguém falou.
@@ -725,7 +1050,22 @@ class Listener(threading.Thread):
                 except queue.Empty:
                     raise RuntimeError("o microfone parou de mandar som (desconectado?)") from None
 
+            profile = load_settings().get("ruido_por_hora", {}) or {}
+            learned = hour_noise(profile, time.localtime().tm_hour)
+            if learned:
+                noise = learned  # começa com o barulho que costuma ter nesta hora (3)
+            last_save = time.time()
             while True:
+                if self.calibrate_wanted.is_set():
+                    self.calibrate_wanted.clear()
+                    self._calibrate(read_block)
+                    continue
+                if time.time() - last_save > 600:  # a cada 10 min guarda o barulho desta hora
+                    last_save = time.time()
+                    hour = str(time.localtime().tm_hour)
+                    old = hour_noise(profile, hour)
+                    profile[hour] = round(noise if old is None else old * 0.7 + noise * 0.3)
+                    save_settings(ruido_por_hora=profile)
                 if self.answer_wanted.is_set():
                     while speaking.is_set():
                         read_block()
@@ -738,8 +1078,13 @@ class Listener(threading.Thread):
                     while speaking.is_set():
                         read_block()
                     self.follow_wanted.clear()
-                    beep()
-                    text = self._hear(read_block, noise, no_speech=FOLLOW_UP_WAIT, quiet=True)
+                    quiet_follow = self.follow_quiet
+                    if not quiet_follow:
+                        beep()
+                    text = self._hear(read_block, noise, no_speech=CONVERSATION_WAIT if quiet_follow else FOLLOW_UP_WAIT,
+                                      quiet=True)
+                    if quiet_follow and text and (len(text.split()) < 2 or not text.strip(" .!?")):
+                        text = ""  # na conversa contínua, uma palavra solta costuma ser barulho
                     if text and text.strip():
                         self.put(("voz", strip_wake(text)))
                     else:
@@ -748,6 +1093,19 @@ class Listener(threading.Thread):
                 block = read_block()
                 if speaking.is_set():
                     recent.clear()
+                    # enquanto ele fala, só escuta o "Bolha, para" (5)
+                    if rec.AcceptWaveform(bytes(block)):
+                        heard_now = json.loads(rec.Result()).get("text", "")
+                    else:
+                        heard_now = json.loads(rec.PartialResult()).get("partial", "")
+                    if heard_now and asks_stop(heard_now):
+                        rec.Reset()
+                        stop_speaking()
+                        if self.on_interrupt:
+                            try:
+                                self.on_interrupt()
+                            except Exception:
+                                pass
                     continue
                 recent.append(bytes(block))
                 level = rms(block)

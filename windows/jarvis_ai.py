@@ -939,8 +939,16 @@ def fast_local_router(user_text):
     text = POLITE_END.sub("", POLITE_START.sub("", full)).strip(" .!?") or full
     clean = normalize(text)
 
+    if STOP_ONLY.match(clean) or STOP_ONLY.match(normalize(user_text)):
+        print(f"Jarvis > {vary(['Parei, senhor.', 'Pronto, parei.', 'Parado, senhor.'])}")
+        return True
+
     if small_talk(normalize(user_text)) or small_talk(clean):
         return True
+
+    if brain_router(text, clean):
+        return True
+
 
     # pedido com hora ("toca lofi às 7h", "amanhã abre o Spotify", "me acorda 6h30"): não é para agora,
     # a IA agenda (antes o atalho do "toca ..." tocava na hora)
@@ -963,6 +971,10 @@ def fast_local_router(user_text):
             and not lonely & {"cancela", "cancelar", "para", "pare"}:
         print("Jarvis > Não há nada esperando confirmação, senhor.")
         return True
+
+    # 13: "fecha ele", "manda isso pra Ana", "abre lá": quem é "ele/isso/lá" só a conversa diz. A IA resolve.
+    if CONTEXT_WORDS.search(clean) and not CONTEXT_OK.search(clean) and not (last_results and RESULT_VERBS.search(clean)):
+        return False
 
     if (learning_router(text, clean) or skills_router(text, clean) or routine_router(text, clean)
             or docs_router(text, clean) or hands_router(text, clean)):
@@ -1502,6 +1514,45 @@ def hands_router(text, clean):
         key = {"desfaca": "desfaz", "refaca": "refaz", "abre uma nova aba": "nova aba", "salve": "salva",
                "atualiza a pagina": "atualiza", "recarrega a pagina": "atualiza", "localiza": "localizar"}.get(clean, clean)
         tool("app_shortcut", action=key)
+        return True
+    return False
+
+
+def brain_router(text, clean):
+    """Cérebro e conversa: personalidade, papo, ver a tela, traduzir, agente, microfone e vocabulário."""
+    m = re.search(r"\b(?:fica|seja|fale|fala|responde|responda)\s+(?:mais\s+)?(serio|formal|engracado|divertido|curto|"
+                  r"direto|resumido|detalhado|completo)\b|\bpersonalidade (normal|padrao|seria|engracada|curta)\b", clean)
+    if m:
+        word = m.group(1) or m.group(2)
+        kind = {"formal": "serio", "seria": "serio", "engracado": "humor", "engracada": "humor", "divertido": "humor",
+                "direto": "curto", "resumido": "curto", "curta": "curto", "completo": "detalhado",
+                "padrao": "normal"}.get(word, word)
+        tool("set_personality", style=kind)
+        return True
+    if re.search(r"\b(?:vamos|bora|quero) (?:conversar|bater (?:um )?papo|trocar uma ideia)\b|^modo papo$", clean):
+        tool("chat_mode", on=True)
+        return True
+    m = re.search(r"\b(?:o que (?:e|eh|tem) (?:isso|isto|aqui)(?: na tela)?|o que (?:ta|esta) (?:aparecendo|escrito) na tela|"
+                  r"qual (?:e |eh )?o erro(?: aqui| na tela)?|(?:olha|ve|veja|analisa) (?:a|minha) tela|le a tela)\b(.*)$", clean)
+    if m:
+        tool("look_screen", question=text)
+        return True
+    if re.search(r"\btraduz(?:a|ir)? (?:isso|o que (?:ta|esta) selecionado|o texto selecionado|a selecao)\b", clean):
+        tool("translate_selection")
+        return True
+    if re.search(r"\btraduz(?:a|ir)? (?:a tela|o que (?:ta|esta) na tela|essa pagina|esta pagina)\b", clean):
+        tool("look_screen", question="Traduza para o português o texto principal da tela.")
+        return True
+    m = re.match(r"^(?:modo agente|agente|faz sozinho|faca sozinho|executa sozinho)[:,]?\s+(.+)$", clean)
+    if m:
+        tool("agent_task", goal=_original(text, m.group(1)) or m.group(1))
+        return True
+    if re.search(r"\bcalibra(?:r)? (?:o )?microfone\b|\bajusta (?:o )?microfone\b", clean):
+        tool("calibrate_mic")
+        return True
+    m = re.match(r"^(?:aprende|anota|guarda) (?:a palavra|o nome|essa palavra) (.+)$", clean)
+    if m:
+        tool("add_vocabulary", words=_original(text, m.group(1)))
         return True
     return False
 
@@ -2298,7 +2349,7 @@ TOOLS = [
     {"name": "set_alias", "args": '{"alias":"apelido","value":"o que quer dizer"}', "group": "aprendizado",
      "desc": "guardar um apelido (\"o patrão\" = Erick Cuba, \"meu jogo\" = Omori)",
      "examples": ["quando eu falar meu jogo é o Omori", "o patrão é apelido do Erick Cuba"],
-     "run": lambda a: A.set_alias(a.get("alias", ""), a.get("value", ""))},
+     "run": lambda a: A.set_alias(a.get("alias", ""), a.get("value", "")) and (refresh_vocabulary() or True)},
     {"name": "remember_person", "args": '{"name":"nome","field":"aniversario|quem_e|gosta|...","value":"valor"}',
      "group": "aprendizado", "desc": "guardar algo sobre uma pessoa (aniversário, quem é, do que gosta)",
      "examples": ["o aniversário do Erick é 3 de maio", "a Ana gosta de chocolate"],
@@ -2588,6 +2639,28 @@ TOOLS = [
     {"name": "update_bolha", "args": "{}", "group": "sistema",
      "desc": "atualizar o próprio Bolha pelo GitHub (pede confirmação)", "examples": ["se atualiza"],
      "run": lambda a: AT.update(confirm)},
+    # ---- cérebro
+    {"name": "look_screen", "args": '{"question":"o que o senhor perguntou sobre a tela"}', "group": "informação",
+     "desc": "olhar a tela (print + IA) e responder: o que é isso, qual o erro, traduzir a tela",
+     "examples": ["o que é isso na tela?", "qual o erro aqui?"], "run": lambda a: look_screen(a.get("question", ""))},
+    {"name": "translate_selection", "args": "{}", "group": "informação",
+     "desc": "traduzir o texto selecionado (ou o da tela)", "examples": ["traduz isso"],
+     "run": lambda a: translate_selection()},
+    {"name": "agent_task", "args": '{"goal":"o que fazer, em vários passos"}', "group": "mãos",
+     "desc": "modo agente: fazer uma tarefa de vários passos num programa, mostrando cada passo, com PARAR",
+     "examples": ["faz sozinho: cria uma pasta no Drive chamada Fotos"], "run": lambda a: agent_task(a.get("goal", ""))},
+    {"name": "set_personality", "args": '{"style":"normal|serio|humor|curto|detalhado"}', "group": "memória",
+     "desc": "ajustar a personalidade (mais sério, mais humor, mais curto)", "examples": ["fica mais sério"],
+     "run": lambda a: _set_personality(a.get("style", "normal"))},
+    {"name": "chat_mode", "args": '{"on":true}', "group": "memória",
+     "desc": "modo papo: conversa livre, ele pergunta de volta e lembra do assunto", "examples": ["vamos conversar"],
+     "run": lambda a: chat_mode(bool(a.get("on", True)))},
+    {"name": "calibrate_mic", "args": "{}", "group": "sistema",
+     "desc": "calibrar o microfone (diga Bolha 3 vezes)", "examples": ["calibra o microfone"],
+     "run": lambda a: calibrate_mic()},
+    {"name": "add_vocabulary", "args": '{"words":"nomes separados por vírgula"}', "group": "memória",
+     "desc": "ensinar palavras para ele entender por voz (nomes, jogos)", "examples": ["aprende a palavra Omori"],
+     "run": lambda a: add_vocabulary(a.get("words", ""))},
     {"name": "show_help", "args": "{}", "group": "sistema",
      "desc": "mostrar tudo o que eu sei fazer", "examples": ["o que você sabe fazer"],
      "run": lambda a: show_help()},
@@ -2620,20 +2693,45 @@ AI_EXAMPLES = [
 ]
 
 
-def build_ai_prompt():
-    tools = "\n".join(f"{t['name']} {t['args']} - {t['desc']}" for t in TOOLS)
-    examples = "\n".join(f"Usuário: {u}\nJSON: {j}" for u, j in AI_EXAMPLES)
+PERSONALITY = {
+    "serio": "Personalidade escolhida pelo senhor: SÉRIO. Nada de piadas; respostas formais e objetivas.",
+    "humor": "Personalidade escolhida pelo senhor: HUMOR SECO. Uma tirada elegante de mordomo inglês quando couber.",
+    "curto": "Personalidade escolhida pelo senhor: CURTO. Responda com o mínimo de palavras (uma frase).",
+    "detalhado": "Personalidade escolhida pelo senhor: DETALHADO. Explique um pouco mais quando ajudar.",
+}
+
+
+def personality():
+    try:
+        return normalize(M.load()["perfil"].get("personalidade", ""))
+    except Exception:
+        return ""
+
+
+def build_ai_prompt(tools=None, native=False):
+    tools = TOOLS if tools is None else tools
+    listed = "\n".join(f"{t['name']} {t['args']} - {t['desc']}" for t in tools)
+    examples = "\n".join(f"Usuário: {u}\nJSON: {j}" for u, j in AI_EXAMPLES
+                         if tools is TOOLS or any(f'"{t["name"]}"' in j for t in tools) or '"actions":[]' in j)
+    style = PERSONALITY.get(personality(), "")
+    if native:
+        head = ("Para agir, chame as ferramentas (function calling); pode chamar várias. Em conversa ou pergunta de "
+                "conhecimento, responda só em texto curto. Se precisar VER o resultado de uma ferramenta antes de "
+                "terminar, passe _continuar=true nela.")
+        tool_part = ""
+    else:
+        head = ('Responda SOMENTE JSON válido, sem explicações, neste formato:\n'
+                '{"actions":[{"name":"acao","args":{}}],"reply":"frase curta","continue":false}')
+        tool_part = f"\nFerramentas disponíveis (use só estas, com estes nomes):\n{listed}\n"
     return f"""Seu nome é {NAME}: você é o assistente do Windows do usuário. Fala português do Brasil como um mordomo
 calmo, educado e um pouco espirituoso, chamando o usuário de "senhor". Curto e direto: suas respostas são faladas em voz alta.
 Entrega de mordomo: sóbrio, preciso e seguro. Use frases curtas com pontuação natural para pausas.
 Tom neutro no cotidiano, sério em avisos e confirmações; humor seco só quando combinar.
 Sem entusiasmo exagerado, exclamações repetidas ou instruções de atuação entre colchetes.
-Responda SOMENTE JSON válido, sem explicações, neste formato:
-{{"actions":[{{"name":"acao","args":{{}}}}],"reply":"frase curta","continue":false}}
-
-Ferramentas disponíveis (use só estas, com estes nomes):
-{tools}
-
+Não repita sempre as mesmas frases: varie o jeito de confirmar.
+{style}
+{head}
+{tool_part}
 Regras:
 - abrir, executar, rodar ou jogar um programa/jogo = open_target com o nome do programa
 - um número sozinho ("2") depois de uma busca = open_search_result com esse índice
@@ -2669,6 +2767,10 @@ Regras:
 - se nenhuma ferramenta serve, diga isso em reply; nunca finja que fez
 - fala pela metade, pensando alto ("tipo...", "é que...", "calma", "espera"), reclamação ou desabafo
   SEM um pedido claro = actions vazio (NUNCA pesquise só porque não entendeu); pergunte em reply o que ele quer
+- em dúvida entre duas ou mais opções (dois arquivos, dois contatos), use ask_choice com as opções e continue
+- uma habilidade combina com o pedido = use_skill com o nome dela e siga a receita que voltar
+- pedidos sobre o que está na tela ("o que é isso?", "qual o erro aqui?") = look_screen com a pergunta
+- botões e campos de programas: click_ui, fill_field, read_window; para tarefas de vários passos num programa = agent_task
 
 Exemplos:
 {examples}
@@ -2776,22 +2878,25 @@ def local_enabled():
     return os.environ.get("JARVIS_LOCAL", "").strip() == "1"
 
 
-def ai_backends():
-    """Ordem de quem pensa: Gemini, depois Groq (e o Qwen só se JARVIS_LOCAL=1)."""
+def ai_backends(prefer=None):
+    """Ordem de quem pensa: Gemini, depois Groq (e o Qwen só se JARVIS_LOCAL=1). prefer="Groq" põe o Groq
+    na frente (pedido simples: ele responde mais rápido)."""
     order = []
     if N.available():
         order.append(("Gemini", ask_cloud))
     if N.groq_available():
         order.append(("Groq", ask_groq))
+    if prefer:
+        order.sort(key=lambda b: b[0] != prefer)
     if local_enabled():
         order.append(("Qwen", ask_local))
     return order
 
 
-def think(system, user, parse=None, skip=(), **kw):
+def think(system, user, parse=None, skip=(), prefer=None, **kw):
     """Pergunta para a primeira IA disponível; se falhar (ou a resposta não servir), tenta a próxima."""
     errors = []
-    for name, fn in ai_backends():
+    for name, fn in ai_backends(prefer):
         if name in skip:
             continue
         try:
@@ -2854,6 +2959,8 @@ def run_actions(actions):
     """Executa as ações; devolve as que falharam e o que cada uma mostrou."""
     failed, seen = [], []
     for i, action in enumerate(actions):
+        if stop_event.is_set():  # o PARAR no meio de várias ações
+            break
         name = str(action.get("name", ""))
         args = action.get("args", {})
         args = args if isinstance(args, dict) else {}
@@ -2886,17 +2993,149 @@ def _failure_reason(entry):
     return said[-1] if said else ""
 
 
-def ask_ai_router(user_text):
+# ===================== CÉREBRO: quem decide, com quais ferramentas (14) =====================
+# ferramentas que sempre vão para a IA; as outras entram só quando o pedido fala do assunto delas
+CORE_TOOLS = ["open_target", "play_youtube", "set_volume", "change_volume", "media_control", "search_files",
+              "open_search_result", "research", "web_search", "weather", "type_text", "press_keys", "window_control",
+              "add_reminder", "schedule_request", "remember", "set_profile", "use_skill", "ask_choice", "click_ui",
+              "look_screen", "whatsapp_send", "close_app", "open_url", "spotify_play"]
+MAX_TOOLS = 34
+HEAVY = re.compile(r"\b(?:explica|explique|resume|resuma|resumo|escreve|escreva|redacao|texto sobre|carta|traduz|traduza|"
+                   r"tela|imagem|foto|documento|contrato|pdf|compara|compare|analisa|analise|detalh|passo a passo|"
+                   r"agente|planeja|planeje|receita)\w*")
+
+
+def is_heavy(text):
+    """Pedido pesado (texto longo, tela, documento, explicação): o Gemini decide. O resto, o Groq (mais rápido)."""
+    return len(str(text)) > 280 or bool(HEAVY.search(normalize(text)))
+
+
+def _stems(text):
+    return {w[:5] for w in re.findall(r"[a-z0-9]+", normalize(text)) if len(w) > 2}
+
+
+def select_tools(request, n=MAX_TOOLS):
+    """As ferramentas que a IA vê neste pedido: as de sempre e as que combinam com as palavras dele (menos
+    texto para a IA ler = resposta mais rápida e menos cota gasta)."""
+    want = _stems(request)
+    try:
+        for _, acts in A.examples_for(request):  # o que deu certo antes em pedido parecido
+            want |= {a["name"][:5] for a in acts}
+            want |= {f"@{a['name']}" for a in acts}
+    except Exception:
+        pass
+    scored = []
+    for t in TOOLS:
+        if t["name"] in CORE_TOOLS:
+            continue
+        hay = _stems(" ".join([t["name"].replace("_", " "), t["desc"], " ".join(t["examples"]), t["group"]]))
+        score = len(want & hay) + (5 if f"@{t['name']}" in want else 0)
+        if score:
+            scored.append((score, t))
+    scored.sort(key=lambda x: -x[0])
+    picked = [TOOLS_BY_NAME[name] for name in CORE_TOOLS if name in TOOLS_BY_NAME]
+    picked += [t for _, t in scored[: max(0, n - len(picked))]]
+    return picked
+
+
+def _schema_value(raw):
+    raw = raw.strip()
+    if raw.startswith('"'):
+        return {"type": "string", "description": raw.strip('"')[:120]}
+    if raw.startswith("["):
+        inner = raw[1:].lstrip()
+        return {"type": "array", "items": {"type": "array", "items": {"type": "string"}} if inner.startswith("[")
+                else {"type": "string"}}
+    if re.match(r"^(?:true|false)", raw):
+        return {"type": "boolean"}
+    if re.match(r"^-?\d", raw):
+        return {"type": "number", "description": raw[:60]}
+    return {"type": "string", "description": raw[:60]}
+
+
+def _template_args(template):
+    """'{"query":"texto","site":"google|youtube"}' -> [("query", '"texto"'), ("site", '"google|youtube"')]."""
+    out, i, text = [], 0, str(template).strip()[1:-1]
+    while i < len(text):
+        m = re.compile(r'\s*"(\w+)"\s*:\s*').match(text, i)
+        if not m:
+            break
+        i, depth, quote, start = m.end(), 0, False, m.end()
+        while i < len(text):
+            c = text[i]
+            if c == '"' and text[i - 1] != "\\":
+                quote = not quote
+            elif not quote and c in "[{":
+                depth += 1
+            elif not quote and c in "]}":
+                depth -= 1
+            elif not quote and c == "," and depth == 0:
+                break
+            i += 1
+        out.append((m.group(1), text[start:i]))
+        i += 1
+    return out
+
+
+def tool_schemas(tools):
+    """O catálogo no formato de chamada nativa (OpenAI/Groq)."""
+    out = []
+    for t in tools:
+        props = {k: _schema_value(v) for k, v in _template_args(t["args"])}
+        props["_continuar"] = {"type": "boolean", "description": "true se precisa ver o resultado antes de terminar"}
+        out.append({"type": "function", "function": {"name": t["name"], "description": t["desc"][:300],
+                                                     "parameters": {"type": "object", "properties": props}}})
+    return out
+
+
+def native_tools_on():
+    return os.environ.get("BOLHA_FERRAMENTAS_NATIVAS", "").strip() != "0"
+
+
+def decide(user_text, prompt, tools):
+    """A IA escolhe as ações: o Groq com as ferramentas nativas no pedido simples; o Gemini (JSON) no pesado,
+    e cada um é reserva do outro."""
+    heavy = is_heavy(user_text)
+    if not heavy and N.groq_available() and native_tools_on():
+        try:
+            with D.timing("pensar"):
+                data = N.groq_tools(build_ai_prompt(tools, native=True), prompt, tool_schemas(tools))
+            more = False
+            for a in data["actions"]:
+                more = more or bool(a["args"].pop("_continuar", False))
+            data["continue"] = more
+            return data
+        except Exception as e:
+            print(f"Jarvis > (ferramentas nativas do Groq falharam: {str(e)[:120]}; usando o modo de texto)")
+    return think(build_ai_prompt(tools), prompt, parse=parse_json, prefer=None if heavy else "Groq")
+
+
+FILLERS = ["Verificando, senhor.", "Um instante, senhor.", "Já vejo, senhor.", "Só um momento, senhor."]
+
+
+def ask_ai_router(user_text, steps=None, agent=False):
     """Modo ciclo: a IA age, vê o resultado e decide o próximo passo, até terminar."""
+    max_steps = steps or MAX_STEPS
     history, done = [], []
     D.route("ia")
-    for step in range(MAX_STEPS):
+    backends = ai_backends()
+    # o Qwen local guarda o começo do prompt em cache: com ele, o catálogo vai sempre inteiro e igual
+    tools = TOOLS if backends and backends[0][0] == "Qwen" else select_tools(user_text)
+    if voice_out and origin == "voz" and ai_backends():  # 6/16: começa a falar na hora, enquanto a IA pensa
+        try:
+            V.say_async(vary(FILLERS), set_state)
+        except Exception:
+            pass
+    for step in range(max_steps):
+        if stop_event.is_set():
+            print("Jarvis > Parei, senhor.")
+            return True
         prompt = ai_context(user_text) + user_text
         if history:
             prompt += ("\n\nO que você já fez neste pedido e o resultado de cada ação:\n"
                        + "\n".join(history) + "\n\nDecida o próximo passo ou termine.")
         try:
-            data = think(AI_PROMPT, prompt, parse=parse_json)
+            data = decide(user_text, prompt, tools)
             if not isinstance(data, dict):
                 data = parse_json(data)
         except Exception as e:
@@ -2907,6 +3146,10 @@ def ask_ai_router(user_text):
             return False
 
         actions = data["actions"]
+        if agent and actions:  # cada passo do agente aparece num card com o PARAR
+            U.card("Agente", json.dumps({"titulo": f"Passo {step + 1}", "texto": "; ".join(
+                f"{a.get('name')} {' '.join(str(v) for v in (a.get('args') or {}).values())}" for a in actions)[:300],
+                "botao": "PARAR", "pedido": "para o agente"}, ensure_ascii=False), 60000)
         failed, seen = run_actions(actions)
         history += seen
         done += actions
@@ -2919,7 +3162,7 @@ def ask_ai_router(user_text):
         if any(str(a.get("name")) == "use_skill" for a in actions) and "use_skill" not in failed:
             more = True  # carregou a receita: a IA precisa ver e seguir
         if more and actions:
-            if step + 1 < MAX_STEPS:
+            if step + 1 < max_steps:
                 if reply:
                     print(f"Jarvis > {reply}")
                 continue
@@ -2968,15 +3211,18 @@ def warm_up_ai():
 
 
 SMALL_TALK = [
-    (rf"^(oi|ola|opa|eai|e ai|fala|salve|bom dia|boa tarde|boa noite|hey),?( {CALL})?[!. ]*$", "Oi! Diga o que precisa."),
-    (rf"^(oi |ola |e ai |fala )?({CALL},? )?(tudo bem|tudo certo|como (voce|vc) esta|beleza)( {CALL})?\??$", "Tudo certo por aqui! Em que posso ajudar?"),
-    (rf"^(obrigad[oa]|valeu|vlw|brigad[oa]|show|top|massa|perfeito),?( {CALL})?[!. ]*$", "Tamo junto!"),
+    (rf"^(oi|ola|opa|eai|e ai|fala|salve|bom dia|boa tarde|boa noite|hey),?( {CALL})?[!. ]*$",
+     ["Às suas ordens, senhor.", "Pois não, senhor?", "Olá, senhor. Em que posso ajudar?", "Estou aqui, senhor."]),
+    (rf"^(oi |ola |e ai |fala )?({CALL},? )?(tudo bem|tudo certo|como (voce|vc) esta|beleza)( {CALL})?\??$", ["Tudo em ordem por aqui, senhor. E com o senhor?", "Todos os sistemas funcionando, senhor.",
+      "Tudo certo, senhor. Em que posso ajudar?"]),
+    (rf"^(obrigad[oa]|valeu|vlw|brigad[oa]|show|top|massa|perfeito),?( {CALL})?[!. ]*$",
+     ["Por nada, senhor.", "Sempre às ordens, senhor.", "É um prazer, senhor.", "Disponha, senhor."]),
     (rf"^({CALL},? )?(quem e voce|quem e vc|qual (e )?(o )?seu nome)\??$",
      f"Meu nome é {NAME}, seu assistente do Windows. Diga \"o que você sabe fazer\"."),
     # "calma", "peraí", "deixa eu pensar": ainda não é um pedido, então não faz nada
     (rf"^({CALL},? )?(calma|espera|espere|pera|perai|pera ai|aguarda|aguenta ai|um momento|um minuto|"
      rf"so um (momento|minuto|segundo)|deixa eu (pensar|ver|lembrar))((,? )(mano|ai|ae|{CALL}))*[!.,? ]*$",
-     "Tudo bem, senhor. Pode falar quando quiser."),
+     ["Tudo bem, senhor. Pode falar quando quiser.", "Sem pressa, senhor.", "Aguardo, senhor."]),
 ]
 # "eu não falei o que quero ainda", "não pesquisa quando eu mandar algo assim": a fala não era pedido
 END = r"(?=\s*(?:[,.!?]|$))"  # fim da frase: "ainda não falei com a Ana, manda..." é pedido
@@ -2988,7 +3234,7 @@ NOT_A_REQUEST = re.compile(rf"\b(?:ainda nao (?:te )?(?:falei|disse|pedi)(?: o q
 def small_talk(clean):
     for pattern, answer in SMALL_TALK:
         if re.search(pattern, clean):
-            print(f"Jarvis > {answer}")
+            print(f"Jarvis > {vary(answer) if isinstance(answer, list) else answer}")  # 19: não repete sempre igual
             return True
     if NOT_A_REQUEST.search(clean):
         print("Jarvis > Entendido, senhor. Só faço algo quando o senhor terminar de dizer o que quer.")
@@ -3320,6 +3566,14 @@ def handle(text):
     if DOC.dictation["ativo"]:  # ditando: tudo o que o senhor fala vai para o documento
         D.route("ditado")
         return DOC.dictate(clean_prefix(text) or text)
+    if papo["ativo"]:
+        words = normalize(clean_prefix(text)).split()
+        if PAPO_END.search(normalize(text)):
+            return chat_mode(False)
+        if not words or words[0] not in V.REQUEST_START - {"o", "a", "que", "qual", "quais", "quanto", "quantos",
+                                                           "quem", "como", "onde", "me"}:
+            D.route("papo")
+            return chat(text)
     feedback = A.is_feedback(text)
     if feedback is not None and D.last is not None:
         D.route("nota")
@@ -3372,10 +3626,183 @@ def split_multi(text):
     return parts
 
 
+CONTEXT_OK = re.compile(r"\b(?:ess[ae]|est[ae]) (?:janela|aba|pagina|musica|video|layout|lista|arquivo|pasta|planilha|"
+                        r"documento|pdf|mes|semana)\b|^(?:fecha|minimiza|maximiza|salva|desfaz|copia|cola) (?:isso|isto)$|"
+                        r"\bme (?:lembra|avisa|acorda)\b|\bpor ?que (?:voce|vc) fez isso\b|\bo que e isso\b|"
+                        r"\bqual (?:o|e o) erro\b|\btraduz(?:a)? isso\b|\bnao (?:era|e|foi) isso\b|\besquece isso\b")
+RESULT_VERBS = re.compile(r"\b(?:abre|abra|mostra|le|leia|resume|resuma|apaga|imprime|copia|move|renomeia|"
+                          r"manda|compacta|converte)\b")
 CONTEXT_WORDS = re.compile(r"\b(?:isso|isto|esse|essa|esses|essas|ele|ela|eles|elas|la|nele|nela|disso|dele|dela)\b")
 
 
 stop_event = threading.Event()  # o PARAR: interrompe macro, modo agente e leitura em voz alta
+
+
+# ------------------------- modo papo (21) -------------------------
+papo = {"ativo": False, "assunto": ""}
+PAPO_END = re.compile(r"\b(?:chega de papo|para de conversar|sai do papo|fim do papo|tchau|ate mais|depois a gente conversa)\b")
+CHAT_PROMPT = ("Você é {name}, o mordomo-IA do João (chama de senhor), num papo livre e descontraído, em voz alta. "
+               "Responda em 1 a 3 frases curtas, com opinião e personalidade de mordomo espirituoso, e termine quase "
+               "sempre com UMA pergunta de volta sobre o assunto, para a conversa continuar. Lembre do que já foi dito. "
+               "Sem emojis nem markdown.")
+
+
+def chat_mode(on=True):
+    papo["ativo"] = bool(on)
+    if not on:
+        try:
+            A.set_pref("papo_assunto", papo["assunto"])
+        except Exception:
+            pass
+        print(f"Jarvis > {vary(['Foi um prazer conversar, senhor.', 'Quando quiser, continuamos, senhor.'])}")
+        return True
+    last = A.pref("papo_assunto", "") or ""
+    print("Jarvis > " + (f"Com prazer, senhor. Da última vez falamos de {last}. Seguimos nisso ou outro assunto?"
+                         if last else "Com prazer, senhor. Sobre o que vamos conversar?"))
+    return True
+
+
+def chat(text):
+    try:
+        answer = think(CHAT_PROMPT.format(name=NAME) + "\n" + (PERSONALITY.get(personality(), "")),
+                       ai_context(text) + text, json_mode=False, temperature=0.8, prefer="Groq", num_predict=300)
+    except Exception as e:
+        print(f"Jarvis > Agora não consigo conversar ({e}).")
+        return False
+    papo["assunto"] = str(text)[:80]
+    print(f"Jarvis > {re.sub(r'[*_#`]', '', str(answer)).strip()}")
+    return True
+
+
+# ------------------------- ver a tela (23, 65) e modo agente (39) -------------------------
+SCREEN_PROMPT = ("Você é {name}, o mordomo-IA do João, olhando o print da tela dele. Pedido do senhor: \"{q}\". "
+                 "Responda em português do Brasil, em 2 a 4 frases curtas, direto ao ponto (se for erro, diga o que "
+                 "significa e como resolver). Sem markdown.")
+
+
+def _screen_png():
+    import mss
+    import mss.tools
+    with (getattr(mss, "MSS", None) or mss.mss)() as sct:
+        shot = sct.grab(sct.monitors[1])
+        return mss.tools.to_png(shot.rgb, shot.size)
+
+
+def look_screen(question):
+    """ "o que é isso?", "qual o erro aqui?": print da tela + IA."""
+    try:
+        U.behind()  # o reator sai da frente para o print pegar o que o senhor está vendo
+        time.sleep(0.4)
+        png = _screen_png()
+    except Exception as e:
+        print(f"Jarvis > Não consegui olhar a tela: {e}.")
+        return False
+    finally:
+        U.front()
+    try:
+        with D.timing("pensar"):
+            answer = N.vision(SCREEN_PROMPT.format(name=NAME, q=question or "o que é isso?"), png)
+    except Exception as e:
+        print(f"Jarvis > Não consegui entender a tela: {e}.")
+        return False
+    print(f"Jarvis > {re.sub(r'[*_#`]', '', str(answer)).strip()}")
+    return True
+
+
+TRANSLATE_PROMPT = ("Traduza o texto para o português do Brasil (se já estiver em português, para o inglês). "
+                    "Responda só com a tradução.")
+
+
+def translate_selection():
+    """Traduz o texto selecionado (copia, traduz e deixa a tradução copiada)."""
+    try:
+        import pyperclip
+        before = pyperclip.paste()
+        F.press_keys("ctrl+c")
+        time.sleep(0.4)
+        text = pyperclip.paste()
+    except Exception:
+        text, before = "", ""
+    if not text or text == before and not text.strip():
+        return look_screen("Traduza para o português o texto principal da tela.")
+    try:
+        out = think(TRANSLATE_PROMPT, text[:6000], json_mode=False, temperature=0.1, prefer="Groq")
+    except Exception as e:
+        print(f"Jarvis > Não consegui traduzir: {e}.")
+        return False
+    out = str(out).strip()
+    try:
+        pyperclip.copy(out)
+    except Exception:
+        pass
+    print(f"Jarvis > Tradução (já copiada):\n{out[:1500]}")
+    return True
+
+
+AGENT_STEPS = 12
+
+
+def agent_task(goal):
+    """Modo agente: "faz X no programa Y" em vários passos, cada passo num card, com o PARAR."""
+    goal = str(goal or "").strip()
+    if not goal:
+        print("Jarvis > O que o senhor quer que eu faça sozinho?")
+        return False
+    U.card("Agente", json.dumps({"titulo": "Modo agente", "texto": goal, "botao": "PARAR", "pedido": "para o agente"},
+                                ensure_ascii=False), 120000)
+    return ask_ai_router("MODO AGENTE (vários passos; use read_window, list_controls, click_ui, fill_field, "
+                         "press_keys e look_screen; confira o resultado de cada passo antes do próximo): " + goal,
+                         steps=AGENT_STEPS, agent=True)
+
+
+def refresh_vocabulary():
+    """O vocabulário do Whisper: apelidos, pessoas, jogos, contatos do zap e o vocabulario.txt do senhor (7)."""
+    words = []
+    try:
+        data = A.load()
+        words += list(data["apelidos"].values()) + [p.get("nome", "") for p in data["pessoas"].values()]
+    except Exception:
+        pass
+    try:
+        words += [name for name, _ in MA.steam_games().values()]
+    except Exception:
+        pass
+    try:
+        if W.configured():
+            words += [n for n, *_ in W.recent_chats(30)]
+    except Exception:
+        pass
+    try:
+        file = Path(r"G:\Jarvis\config\vocabulario.txt")
+        words += [w.strip() for w in file.read_text(encoding="utf-8").splitlines() if w.strip()]
+    except OSError:
+        pass
+    return V.set_vocabulary(words)
+
+
+def add_vocabulary(words):
+    file = Path(r"G:\Jarvis\config\vocabulario.txt")
+    try:
+        file.parent.mkdir(parents=True, exist_ok=True)
+        with file.open("a", encoding="utf-8") as f:
+            for w in re.split(r"\s*[,;]\s*", str(words)):
+                if w.strip():
+                    f.write(w.strip() + "\n")
+    except OSError as e:
+        print(f"Jarvis > Não consegui guardar: {e}.")
+        return False
+    n = refresh_vocabulary()
+    print(f"Jarvis > Anotado, senhor: vou entender \"{words}\" quando o senhor falar. ({n} palavras no vocabulário)")
+    return True
+
+
+def calibrate_mic():
+    if listener is None:
+        print("Jarvis > A voz está desligada; não tenho microfone para calibrar.")
+        return False
+    print("Jarvis > Depois do bipe, diga \"Bolha\" três vezes, com calma, do lugar onde o senhor costuma falar.")
+    listener.calibrate()
+    return True
 
 
 def alert(text):
@@ -3386,6 +3813,17 @@ def alert(text):
 def _screen(kind, on):
     if kind == "hud":
         U.hud_show(on)
+
+
+def _set_personality(style):
+    style = normalize(style) or "normal"
+    if style == "normal":
+        M.forget("personalidade")
+        print("Jarvis > De volta ao meu jeito de sempre, senhor.")
+        return True
+    M.set_profile("personalidade", style)
+    print(f"Jarvis > {PERSONALITY.get(style, 'Anotado.').split('. ', 1)[-1]}")
+    return True
 
 
 def _enter_mode(name):
@@ -3756,6 +4194,9 @@ def respond(text):
     """Executa o pedido; mostra a fala do Jarvis no reator (listas viram cartão) e fala em voz alta."""
     global _pedido
     _ran.clear()
+    stop_event.clear()
+    if origin == "voz":
+        text = V.fix_words(text)  # "abre o o mori" -> "abre o Omori" (vocabulário pessoal)
     _pedido = text
     D.start(text, origin, V.heard_seconds if origin == "voz" else 0.0)  # M1/M5: diário e cronômetro
     V.heard_seconds = 0.0
@@ -3792,8 +4233,34 @@ def respond(text):
     line = D.finish(say)
     if line and origin != "teste":
         print(line)  # M5: o cronômetro do pedido aparece no console
-    if say.rstrip().endswith("?") and listener is not None and origin != "celular":
-        listener.follow_up()  # ele perguntou algo: a resposta vem sem precisar dizer "Bolha"
+    if listener is not None and origin != "celular" and not stop_event.is_set():
+        if say.rstrip().endswith("?"):
+            listener.follow_up()  # ele perguntou algo: a resposta vem sem precisar dizer "Bolha"
+        elif origin == "voz" and say and conversation_on():
+            listener.follow_up(quiet=True)  # 6: conversa contínua, mais 8 s sem precisar do nome
+
+
+def conversation_on():
+    return os.environ.get("BOLHA_CONVERSA", "").strip() != "0"
+
+
+STOP_ONLY = re.compile(rf"^(?:{CALL},? )?(?:para|pare|parar|chega|silencio|cala a boca|para tudo|para de falar|"
+                       rf"para o agente|parar agente|stop|cancela tudo)[.! ]*$")
+
+
+def interrupt():
+    """O PARAR (voz, botão ou celular): corta a fala, o modo agente, a macro e a leitura, na hora."""
+    stop_event.set()
+    V.stop_speaking()
+    MA.stop_recording()
+    DOC.reader["ativo"] = False
+
+
+def incoming(source, text):
+    """Tudo o que chega (janela, celular, teclado) passa aqui: o "para" age na hora, sem esperar a fila."""
+    if STOP_ONLY.match(normalize(text or "")):
+        interrupt()
+    commands.put((source, text))
 
 
 def handle_spoken(text):
@@ -3807,7 +4274,7 @@ def keyboard_reader():
         except (EOFError, KeyboardInterrupt):
             commands.put(("teclado", "sair"))
             return
-        commands.put(("teclado", text))
+        incoming("teclado", text)
 
 
 def start_voice():
@@ -3834,6 +4301,7 @@ def start_voice():
         V.open_mic_settings()
         return
     listener = candidate
+    listener.on_interrupt = interrupt  # "Bolha, para" enquanto ele fala
     mic = V.mic_name()
     print(f'Voz ligada{" (" + mic + ")" if mic else ""}: diga "{NAME}" e faça o pedido depois do bipe.')
 
@@ -3846,7 +4314,7 @@ def hear_phone(audio, name, mime):
 def start_phone():
     """O Bolha no celular (veja CELULAR no LEIA-ME): liga se tiver a BOLHA_SENHA."""
     try:
-        line = C.start(lambda text: commands.put(("celular", text)), NAME, hear_phone,
+        line = C.start(lambda text: incoming("celular", text), NAME, hear_phone,
                        V.synth_mp3 if voice_out else None)
     except Exception as e:
         line = f"Celular desligado: {e}"
@@ -3877,6 +4345,11 @@ def run():
     F.on_alarm = lambda message: commands.put(("lembrete", message))  # timers também falam
     M.reminder_watcher(commands.put)
     D.weekly_watcher()  # M4: todo domingo sai o relatorio.md
+    V.load_settings()  # a calibração do microfone
+    threading.Thread(target=refresh_vocabulary, daemon=True).start()  # vocabulário pessoal para o Whisper
+    if voice_out:
+        V.prewarm(FILLERS + THANKS + ["Às suas ordens, senhor.", "Pois não, senhor?", "Parei, senhor.",
+                                      "Pronto, senhor.", "Por nada, senhor."])  # 16: frases prontas
     I.watcher(commands.put)  # preços e encomendas vigiados
     U.card_filter = R.hide_card  # modo visita: os cards pessoais não aparecem
     threading.Thread(target=_startup_check, daemon=True).start()  # 105: autoteste ao abrir
@@ -3985,7 +4458,7 @@ def main():
             os._exit(0)
 
         try:
-            U.start(worker, lambda text: commands.put(("janela", text)), NAME)  # o reator fica na thread principal
+            U.start(worker, lambda text: incoming("janela", text), NAME)  # o reator fica na thread principal
         except Exception as e:
             print(f"A janela do reator não abriu ({e}). Sigo sem ela.")
             if started.is_set():  # o Jarvis já está rodando na outra thread
