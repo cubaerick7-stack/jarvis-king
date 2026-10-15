@@ -129,7 +129,7 @@ COMUNICACAO
   "ouve os audios da Ana", "grava um audio de 10 segundos pra mae" (sempre pergunta antes de mandar)
 - "a mae e VIP": a mensagem dela avisa na hora, ate no nao perturbe; com VIPs, os outros so no resumo.
 - "nao perturbe ate as 18h" / "por 2 horas" / "desliga o nao perturbe" (ele conta o que chegou)
-- Gmail e Agenda (uma vez): crie um acesso OAuth "App para computador" em console.cloud.google.com,
+- Gmail e Agenda (uma vez; passo a passo em CONECTAR O GOOGLE, mais abaixo): crie um acesso OAuth "App para computador" em console.cloud.google.com,
   ative a Gmail API e a Google Calendar API, e faca
      setx GOOGLE_CLIENT_ID "..."   e   setx GOOGLE_CLIENT_SECRET "..."
   (para os slides, ative tambem a Google Slides API e a Google Drive API)
@@ -162,6 +162,30 @@ SLIDES (faculdade)
   COMUNICACAO: ative tambem a Google Slides API e a Google Drive API no console.cloud.google.com e diga
   "conecta o Google" de novo, se ja tinha conectado antes). Ele cria no seu Google Slides, abre e baixa o PDF.
   Para usar sempre o Google: setx BOLHA_SLIDES google
+
+CONECTAR O GOOGLE (passo a passo, uma vez so; serve para Gmail, Agenda e Slides)
+1. Entre em console.cloud.google.com com a sua conta do Google.
+2. No alto, "Selecionar projeto" > "Novo projeto" > nome: Bolha > Criar. Selecione o projeto Bolha.
+3. Menu > "APIs e servicos" > "Biblioteca". Procure e clique em "Ativar" em cada uma:
+     Gmail API,  Google Calendar API,  Google Slides API,  Google Drive API
+4. Menu > "APIs e servicos" > "Tela de consentimento OAuth" (ou "Google Auth Platform"):
+     tipo Externo > nome do app: Bolha > seu e-mail > Salvar.
+   Em "Publico-alvo" (ou "Usuarios de teste") > "Adicionar usuarios" > coloque o SEU e-mail > Salvar.
+5. Menu > "APIs e servicos" > "Credenciais" > "Criar credenciais" > "ID do cliente OAuth" >
+     tipo de aplicativo: "App para computador" > nome: Bolha > Criar.
+   Aparecem o "ID do cliente" e a "Chave secreta do cliente".
+6. No PowerShell (troque pelos seus):
+     setx GOOGLE_CLIENT_ID "o-id-do-cliente.apps.googleusercontent.com"
+     setx GOOGLE_CLIENT_SECRET "a-chave-secreta"
+   Feche o PowerShell, abra outro e abra o Bolha.
+7. Diga (ou digite) "conecta o Google". O navegador abre: escolha sua conta. Se aparecer "o Google nao
+   verificou este app", clique em "Avancado" > "Acessar Bolha (nao seguro)": e normal, o app e seu.
+   Marque todas as permissoes > Continuar. Aparece "Pronto!": volte para o Bolha.
+8. Pronto. Teste: "tenho e-mail novo?", "o que tenho hoje na agenda?",
+   "faz uma apresentacao sobre fotossintese no google slides".
+- As chaves ficam so nas variaveis do Windows (setx), nunca em arquivo.
+- Se um dia trocar as permissoes ou der erro de acesso, diga "conecta o Google" de novo.
+- Para ver se ligou: "quais integracoes eu tenho?".
 
 TELA E CELULAR
 - HUD na direita: processador, memoria, clima, proxima tarefa (clique pergunta) e temperatura.
