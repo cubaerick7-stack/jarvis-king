@@ -408,6 +408,16 @@ def web_snippets(query, limit=8):
 
 
 def weather(city=""):
+    text = weather_line(city)
+    if text.startswith("Não consegui"):
+        _say(text)
+        return False
+    _say(text)
+    return True
+
+
+def weather_line(city=""):
+    """A linha do clima (sem imprimir nada): o HUD usa numa thread separada."""
     city = str(city).strip()
     fmt = urllib.parse.quote("%l: %C, %t (sensação %f), umidade %h, vento %w", safe="%")
     url = f"https://wttr.in/{urllib.parse.quote(city)}?format={fmt}&lang=pt&m"
@@ -421,10 +431,8 @@ def weather(city=""):
         try:
             text = _open_meteo(city)
         except Exception as e2:
-            _say(f"Não consegui ver o clima agora ({e}; {e2}).")
-            return False
-    _say(text)
-    return True
+            return f"Não consegui ver o clima agora ({e}; {e2})."
+    return text
 
 
 _OPS = {

@@ -3724,7 +3724,7 @@ def handle(text):
         if skill["ia"] and not (skill["acoes"] or skill["pedidos"]):
             ask_ai_router(f"{text}\n(Siga a habilidade {skill.name}: {skill['receita']})")
             return
-        tee = io.StringIO()
+        tee = _Tee(sys.stdout)  # mostra e guarda o que as ações disseram (para a IA terminar a receita)
         with contextlib.redirect_stdout(tee) if skill["ia"] else contextlib.nullcontext():
             H.use(skill.name, run_actions, handle)
         if skill["ia"]:  # as ações já rodaram: a IA faz o resto da receita
@@ -4192,10 +4192,8 @@ def hud_loop(every=15):
         try:
             if time.time() - weather_at > 1800:
                 weather_at = time.time()
-                tee = io.StringIO()
-                with contextlib.redirect_stdout(tee):
-                    F.weather(M.load()["perfil"].get("cidade", ""))
-                m = CLIMA.match(tee.getvalue().replace("Jarvis > ", "").strip())
+                # nada de redirect_stdout aqui: ele troca o console do programa inteiro, não só desta thread
+                m = CLIMA.match(F.weather_line(M.load()["perfil"].get("cidade", "")))
                 weather_line = f"{int(m.group(3))}° {m.group(2).strip()}" if m else weather_line
             if time.time() - temp_at > 300:  # 89: temperatura a cada 5 min (quando o Windows informa)
                 temp_at = time.time()
