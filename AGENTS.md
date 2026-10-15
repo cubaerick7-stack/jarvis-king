@@ -37,3 +37,14 @@ O ponto de encontro é o GitHub: o que não tiver `push` o outro não enxerga.
 - `windows/nuvem.py`: Gemini e Groq. `windows/memoria.py`: memória em `G:\Jarvis\config`.
 - `windows/ui.py` + `windows/interface/reator.html`: a tela do reator. `windows/celular.py`: o reator no celular.
 - `windows/waha.py`: WhatsApp pelo WAHA. `windows/instagram.py`: API oficial do Instagram.
+- Plano 3.0 (`PLANO-100.md`):
+  - `windows/diario.py`: diário de cada pedido, cronômetro, "o que deu errado", relatório da semana e de erro.
+  - `windows/aprende.py`: "errou/boa", correções, exemplos para a IA, apelidos, pessoas, preferências, backup.
+  - `windows/habilidades.py` + `windows/skills/<nome>/SKILL.md`: as habilidades (as 70 de fábrica e as do senhor).
+  - `windows/maos.py`: UI Automation (clicar/ler/preencher), janelas, Windows, winget, limpeza, RAM, macros, jogos.
+  - `windows/documentos.py`: busca dentro dos arquivos, leitura em voz alta, ditado, planilhas, fotos por data.
+  - `windows/rotina.py`: modos com "sai do modo", não perturbe, VIP, visita, Pomodoro, listas, contas, chuva.
+  - `windows/integracoes.py`: área de integrações, Gmail/Agenda, Home Assistant, preço, Correios, vídeo.
+  - `windows/autoteste.py`: autoteste, atualizar pelo git e sem internet.
+- Testes: tudo que um módulo novo grava em `G:\Jarvis` vai para a pasta do teste (`MODULOS_COM_ARQUIVO` em
+  `tests/conftest.py`): módulo novo que grava arquivo entra nessa lista.

@@ -12,3 +12,34 @@ procura o arquivo FO 1102
 mostra o primeiro na pasta
 abre a calculadora
 abre youtube
+
+
+TESTE DE PRONTO NO PC (PLANO-100: so conta como feito quando passar aqui)
+
+Motor
+  (faz 3 pedidos e um que falha) o que deu errado hoje?
+  abre o edge  ->  errou, era o Chrome  ->  abre o edge   (a segunda vez ja abre o Chrome)
+  (num domingo, ou) gera o relatorio da semana   (abra G:\Jarvis\config\relatorio.md)
+  (olhe o console: cada pedido mostra "(tempo ... ouvir ... pensar ... fazer ... falar)")
+
+Fase 1
+  calibra o microfone   (diga Bolha 3 vezes; o "precisa de 350" some)
+  (pergunte algo longo) Bolha, para        (corta a fala na hora)
+  como esta o clima?  ->  (sem dizer Bolha, em ate 8 s) e amanha?
+  aprende a palavra Omori  ->  (por voz) abre o Omori ; manda pro Erick Cuba
+  pedido simples (ex.: abre o chrome) responde em menos de 2 s
+  pedido para a IA: a voz comeca em ate 1,5 s ("Verificando, senhor.")
+  abre o Spotify, toca lofi e baixa o volume
+  (ao abrir) o card do autoteste mostra o que esta fora e como arrumar
+
+Fase 2
+  quais integracoes eu tenho?   (setx de uma nova e reabrir liga sozinha)
+  le o primeiro em voz alta (um PDF de 10 paginas)  ->  continua  ->  volta  ->  para de ler
+  limpa a memoria   (mostra antes e depois)
+  (Bloco de Notas e Word abertos) clica em Salvar
+  modo aula  ->  sai do modo ; modo estudo ; modo jogo ; modo dormir
+  aprende: quando eu disser modo cinema, abre a Netflix   (no dia seguinte: modo cinema)
+  responde que ja vou   (com "sim")
+  salva esse layout como trabalho  ->  (baguncar)  ->  modo trabalho
+  por que ta lento?   (diz o culpado e oferece fechar)
+  instala o VLC   (com "sim")

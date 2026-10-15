@@ -30,6 +30,145 @@ PASSO A PASSO (primeira vez)
    O reator aparece no canto da tela e o console mostra
    "Voz ligada (nome do microfone)". Diga "Bolha, toca lofi".
 
+BOLHA 3.0 (PLANO-100): O QUE HA DE NOVO
+Instale de novo os pacotes:  python -m pip install -U -r requirements.txt
+Tudo funciona por voz ("Bolha, ...") ou digitado. Exemplos (fale do seu jeito):
+
+ELE MELHORA SOZINHO (o motor)
+- Cada pedido vai para o diario G:\Jarvis\config\diario.jsonl, com o cronometro
+  (ouvir, pensar, fazer, falar). O console mostra "(tempo 2,3 s: ouvir 1,1 · pensar 0,8 ...)".
+  "o que deu errado hoje?"   "por que voce fez isso?"   "quanto tempo voce demora?"
+- Ensinar: "boa" (ou o botao com o polegar para cima) aprova; "errou" tira;
+  "errou, era o Chrome" ja faz o certo e da proxima vez o mesmo pedido acerta sem IA.
+  Os acertos viram exemplos para a IA nos pedidos parecidos.
+- Todo domingo sai G:\Jarvis\config\relatorio.md (as 10 falhas mais comuns e o que esta lento):
+  mande para o Claude e o Codex. "gera o relatorio da semana" faz na hora.
+  "gera o relatorio de erro" monta G:\Jarvis\config\relatorio-erro.md, sem chaves nem senhas.
+- "o que voce aprendeu essa semana?"   "mostra o painel da memoria" (com x para apagar cada coisa)
+- Apelidos: "quando eu falar meu jogo e o Omori", "o patrao e apelido do Erick Cuba".
+- Pessoas: "o aniversario do Erick e 3 de maio" (ele avisa no dia), "o que voce sabe sobre a Ana?"
+- "faz backup da memoria no pendrive"
+- Habitos: se voce faz algo toda segunda as 8h, ao abrir ele pergunta "quer que eu faca sozinho?";
+  "sim" vira rotina. Ele tambem aprende o volume de cada programa e a musica de cada hora.
+
+OUVIR E FALAR
+- "calibra o microfone" e diga "Bolha" 3 vezes: acaba o "precisa de 350".
+- "Bolha, para" corta a fala na hora (tambem o botao PARAR e o "para" no celular).
+- Depois de responder ele escuta mais 8 s sem precisar do nome ("e amanha?").
+  Para desligar: setx BOLHA_CONVERSA 0
+- Vocabulario: nomes de contatos, jogos e apelidos vao para o Whisper.
+  "aprende a palavra Omori" ou uma palavra por linha em G:\Jarvis\config\vocabulario.txt
+- Frases prontas ficam guardadas em G:\Jarvis\cache\voz (respondem na hora) e a fala
+  comeca na primeira frase. Pedido para a IA: ele ja diz "Verificando, senhor." enquanto pensa.
+- Opcional, detector de voz melhor:  python -m pip install webrtcvad-wheels
+
+CEREBRO
+- O Groq decide os pedidos simples (com as ferramentas na chamada nativa) e o Gemini os pesados
+  (tela, textos, documentos). So as ferramentas do assunto vao para a IA: mais rapido.
+  Para voltar ao modo de texto: setx BOLHA_FERRAMENTAS_NATIVAS 0
+- Varios pedidos numa frase: "abre o Spotify, toca lofi e baixa o volume".
+- "fecha ele", "manda isso pra Ana": frases com ele/isso/la vao para a IA, que entende pela conversa.
+- Em duvida ele pergunta com opcoes num card ("qual dos dois, senhor?") e voce toca ou diz o numero.
+- "fica mais serio" / "seja mais engracado" / "fala mais curto" / "personalidade normal"
+- "vamos conversar" (modo papo; "tchau" sai)
+- "o que e isso na tela?"  "qual o erro aqui?"  "traduz isso" (texto selecionado)  "traduz a tela"
+- "vou dormir": resumo do dia, lembretes de amanha e apaga a tela.
+
+HABILIDADES (SKILLS)
+- 70 receitas prontas em windows\skills (modo aula, saindo de casa, planejar o dia, quiz,
+  comparar precos, resumo do zap...). "quais habilidades voce tem?"
+- Criar por voz: "aprende: quando eu disser modo cinema, abre a Netflix e coloca o volume em 80".
+  Fica em G:\Jarvis\skills\<nome>\SKILL.md (da para editar no Bloco de Notas).
+- "importa a habilidade https://..." traz so o texto; scripts nunca entram e as acoes
+  so rodam depois de "aprova a habilidade X".
+
+AS MAOS (qualquer programa)
+- "clica em Salvar", "clica no botao Enviar" (UI Automation; sem botao, usa o atalho;
+  por ultimo olha a tela e pergunta antes de clicar)
+- "le essa janela", "quais botoes tem aqui?", "escreve Joao no campo Nome"
+- "salva", "desfaz", "nova aba", "negrito" (sabe os atalhos do Word em portugues)
+- "modo agente: cria uma pasta chamada Fotos no Drive" (passo a passo, com PARAR)
+- "observa o que eu faco" (grava cliques e teclas; PARAR ou "para de gravar") e "repete a macro X"
+- Janelas: "coloca o chrome e o word lado a lado", "manda essa janela para a outra tela",
+  "salva esse layout como trabalho" e depois "layout trabalho"
+- Windows: "desliga o bluetooth", "liga o wifi", "ativa o modo escuro", "coloca o som no fone",
+  "muda a resolucao para 1366x768", "apaga a tela"
+- Programas (winget, sempre com "sim"): "instala o VLC", "atualiza tudo", "desinstala o X"
+- "limpa o pc" (temporarios e Lixeira, diz quanto libera), "limpa os downloads velhos"
+- "limpa a memoria" (libera RAM sem fechar nada e mostra antes e depois)
+- "por que ta lento?" (diz o culpado e oferece fechar)
+- "discord mais alto", "volume do spotify em 30"
+- "imprime o primeiro", "cola o que eu copiei antes", "historico da area de transferencia"
+- "organiza os downloads" (por tipo ou "por data"), "compacta a pasta X", "descompacta o primeiro",
+  "converte o primeiro para mp3" (precisa do ffmpeg: "instala o ffmpeg"), "transforma a pasta prints em pdf",
+  "diminui esse video para mandar no zap", "desfaz o que voce fez" (volta a ultima acao de arquivo)
+- Jogos: "abre o Omori" (acha na Steam e na Epic), "modo jogo", "grava os ultimos 30 segundos", "mostra o fps"
+- "como ta a saude do pc", "o que abre com o windows?" (e ele avisa quando um programa novo entra)
+- Senha falada para apagar e desinstalar (opcional): setx BOLHA_SENHA_FALADA "uma-palavra"
+
+ARQUIVOS E DOCUMENTOS
+- "procura o documento que fala de multa" (procura DENTRO de PDF, Word, Excel e textos)
+- "qual o prazo nesse contrato?" (pergunta sobre o documento)
+- "le o primeiro em voz alta" e depois "continua", "volta", "le a parte 5", "para de ler"
+- "quero ditar uma carta" (cada fala vira paragrafo; "virgula", "ponto final", "nova linha";
+  "apaga a ultima frase"; "fim do ditado" salva o .docx em Documentos)
+- "soma a coluna valor da planilha gastos", "mostra a planilha", "cria uma planilha de gastos"
+- "fotos de julho", "abre o ultimo arquivo baixado", "faz backup da pasta documentos no pendrive"
+- Ele avisa quando o disco esta quase cheio e quando um download termina.
+
+INTERNET E NAVEGADOR
+- "fecha as abas do youtube", "volta para a aba do gmail" (no navegador do Bolha)
+- "resume essa pagina", "le essa pagina em voz alta", "salva essa pagina nos favoritos como receitas",
+  "abre o favorito receitas", "continua o video de onde parei", "resume esse video" (pela legenda)
+- "vigia o preco de https://..." (avisa quando baixar)
+- Correios: "rastreia a encomenda AB123456789BR" (crie a conta gratis em linketrack.com e
+  setx LINKETRACK_USER "..."  e  setx LINKETRACK_TOKEN "...")
+
+COMUNICACAO
+- WhatsApp (WAHA): "responde que ja vou" (a ultima mensagem), "resumo do zap",
+  "ouve os audios da Ana", "grava um audio de 10 segundos pra mae" (sempre pergunta antes de mandar)
+- "a mae e VIP": a mensagem dela avisa na hora, ate no nao perturbe; com VIPs, os outros so no resumo.
+- "nao perturbe ate as 18h" / "por 2 horas" / "desliga o nao perturbe" (ele conta o que chegou)
+- Gmail e Agenda (uma vez): crie um acesso OAuth "App para computador" em console.cloud.google.com,
+  ative a Gmail API e a Google Calendar API, e faca
+     setx GOOGLE_CLIENT_ID "..."   e   setx GOOGLE_CLIENT_SECRET "..."
+  Reabra e diga "conecta o Google": o navegador abre, voce aceita e ele guarda a chave sozinho
+  (GOOGLE_REFRESH_TOKEN, por setx). Depois: "tenho e-mail novo?", "le o e-mail 2",
+  "responde o e-mail 1 dizendo que confirmo", "o que tenho hoje na agenda?", "marca dentista sexta as 15h".
+
+ROTINA E CASA
+- Modos: "modo aula", "modo estudo", "modo trabalho", "modo jogo", "modo dormir", "modo filme",
+  "modo visita". "sai do modo" desfaz tudo (volume, avisos). Os seus: G:\Jarvis\config\modos.json
+- "comeca um pomodoro" (tira YouTube/Instagram da frente no foco), "para o pomodoro"
+- Listas: "anota ovo e leite na lista de compras", "mostra a lista de compras" (toque no item para riscar),
+  "ja comprei o leite", "tarefa: pagar o boleto, prioridade alta", "minhas tarefas"
+- "liga o lembrete de agua" (so com o PC em uso)
+- "a conta de luz vence dia 10 e custa 150" (avisa 2 dias antes, todo mes), "quais contas vencem?"
+- "levo guarda-chuva?", "vou sair" (chuva, lista e bloquear o PC)
+- "toca algo para animar", "quantos dias faltam para a prova?", "conta os dias para a viagem dia 20/12"
+- Despertador com soneca: na hora do alarme diga "mais 10 minutos".
+- Lembretes que repetem: "todo dia 5 me lembra do aluguel", "todo dia as 20h faz backup da pasta documentos"
+- Casa inteligente (Home Assistant): setx HA_URL "http://homeassistant.local:8123" e setx HA_TOKEN "...";
+  depois "apaga a luz do quarto".
+
+TELA E CELULAR
+- HUD na direita: processador, memoria, clima, proxima tarefa (clique pergunta) e temperatura.
+- Atalhos rapidos embaixo a esquerda (e no celular): modos, pausa, volume, despertador e PARAR.
+- Temas: "tema vermelho", "tema dourado", "tema azul" (ou o botao de paleta no alto).
+- Seta para cima na caixa de pedido traz os pedidos anteriores.
+- Celular: o clipe manda arquivo para o PC (cai em Downloads\Bolha do celular);
+  "manda esse pdf pro celular" aparece la com o botao Baixar; avisos viram notificacao do celular.
+- Notificacoes do Windows viram card do Bolha (opcional):
+  python -m pip install winrt-Windows.UI.Notifications winrt-Windows.UI.Notifications.Management winrt-Windows.Foundation winrt-Windows.Foundation.Collections winrt-Windows.ApplicationModel
+  e aceite o "acesso as notificacoes" que o Windows pergunta. Desligar: setx BOLHA_NOTIFICACOES 0
+
+ELE SE CUIDANDO
+- Ao abrir, o autoteste (microfone, voz, IA, WAHA, internet) aparece num card e diz como arrumar.
+  "faz um autoteste" repete.
+- "quais integracoes eu tenho?" mostra o que esta ligado e o setx de cada coisa que falta.
+- "se atualiza" (git pull, com "sim").
+- Sem internet ele avisa e segue com os comandos locais.
+
 ATUALIZAR (quando tiver versao nova no GitHub)
 
    cd G:\Jarvis\jarvis-king

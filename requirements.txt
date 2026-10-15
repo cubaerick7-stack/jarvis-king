@@ -11,3 +11,4 @@ sounddevice
 edge-tts
 pywebview
 gTTS
+Pillow

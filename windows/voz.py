@@ -663,11 +663,19 @@ def stop_speaking():
     return True
 
 
-def say(text, on_state=None):
+_main_calls = [0]  # quantas falas "de verdade" já foram pedidas (a frase pronta não toca depois de uma delas)
+
+
+def say(text, on_state=None, filler=None):
+    """filler = o número de falas de verdade quando a frase pronta foi pedida (None numa fala normal)."""
     text = clean_for_speech(text)
     if not text:
         return
+    if filler is None:
+        _main_calls[0] += 1
     with _say_lock:
+        if filler is not None and _main_calls[0] != filler:
+            return  # a resposta já chegou: o "Verificando, senhor." não toca mais
         _stop_talk.clear()
         parts = sentences(text)
         ready = queue.Queue()
@@ -720,7 +728,8 @@ def say(text, on_state=None):
 
 def say_async(text, on_state=None):
     """Fala sem esperar (a frase pronta enquanto a IA pensa)."""
-    threading.Thread(target=lambda: _quiet(say, text, None), daemon=True).start()
+    snap = _main_calls[0]
+    threading.Thread(target=lambda: _quiet(say, text, None, snap), daemon=True).start()
 
 
 def _quiet(fn, *args):

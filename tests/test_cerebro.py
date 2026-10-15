@@ -241,3 +241,15 @@ def test_para_no_meio_da_fala(monkeypatch):
 def test_nome_parecido_so_vale_antes_de_um_pedido():
     assert V.after_wake("Bola, toca lofi", lenient_first=True) == "toca lofi"
     assert V.after_wake("Olha só que legal", lenient_first=True) is None
+
+
+def test_frase_pronta_nao_toca_depois_da_resposta(monkeypatch):
+    played = []
+    monkeypatch.setattr(V, "_synth", lambda text, path: Path(path).write_bytes(b"mp3"))
+    monkeypatch.setattr(V, "_play_mp3", lambda path: played.append(path))
+    with V._say_lock:  # a resposta pede para falar enquanto a frase pronta ainda nem começou
+        V.say_async("Verificando, senhor.")
+        V._main_calls[0] += 1
+    import time
+    time.sleep(0.2)
+    assert played == []
