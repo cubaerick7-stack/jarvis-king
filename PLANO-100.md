@@ -4,6 +4,56 @@ Plano montado com o João em 14/10/2026 para a "mega atualização". Quem pegar 
 marca `[x]` aqui no mesmo commit. As regras de sempre continuam: grátis, leve no i3 de 8 GB, tudo em
 português, e **sempre pergunta antes de apagar, mandar, publicar, instalar ou gastar dinheiro**.
 
+## O que vem primeiro (a ordem de verdade)
+
+A lista grande mais abaixo é o **cardápio**. Esta aqui é a **fila**: só coisas úteis no dia a dia do João,
+na ordem em que fazem o Bolha melhorar mais. Cada item tem um **teste de pronto**: só conta como feito
+quando passar nele no PC de verdade.
+
+### O motor que faz ele melhorar sozinho (antes de tudo)
+| # | O quê | Por que importa | Pronto quando |
+|---|---|---|---|
+| M1 | **Diário de cada pedido**: o que o senhor disse, o que ele entendeu, o que fez, quanto demorou, se deu erro | Sem isso, ninguém sabe onde ele falha | "o que deu errado hoje?" lista os pedidos que falharam |
+| M2 | **"Errou" e "boa"** por voz ou botão no card | O senhor ensina sem configurar nada | depois de "errou, era o Chrome", o mesmo pedido acerta |
+| M3 | **Acertos viram exemplos** para a IA nos pedidos parecidos | Ele erra menos o mesmo tipo de pedido | um pedido que falhou 2x passa a acertar sem mexer no código |
+| M4 | **Relatório da semana** (`G:\Jarvis\config\relatorio.md`): as 10 falhas mais comuns, o que está lento | É a lista de trabalho do Claude e do Codex | o arquivo sai todo domingo e o senhor manda para nós |
+| M5 | **Cronômetro** em cada pedido (ouvir, pensar, fazer, falar) | Saber o que deixa ele lento | aparece no console e no relatório |
+
+### Fase 1: ouvir, entender e responder rápido
+| # | O quê | Pronto quando |
+|---|---|---|
+| 1 | Calibração do microfone ("diga Bolha 3 vezes") | some o "Não ouvi o pedido (precisa de 350)" |
+| 2 | "Bolha, para" corta a fala na hora | testado com uma resposta longa |
+| 3 | Escuta mais 8 s depois de responder, sem chamar o nome | "e amanhã?" depois do clima funciona |
+| 4 | Vocabulário pessoal (contatos, jogos, pastas) para o Whisper | "abre o Omori" e "manda pro Erick Cuba" acertam por voz |
+| 5 | Roteador: Groq decide o simples, Gemini o pesado | pedido simples responde em menos de 2 s |
+| 6 | Começa a falar na 1ª frase ("Verificando, senhor") | a voz começa em até 1,5 s |
+| 7 | Vários pedidos numa frase | "abre o Spotify, toca lofi e baixa o volume" faz os três |
+| 8 | Autoteste ao abrir (mic, voz, IA, WAHA, internet) num card | o card mostra o que está fora e como arrumar |
+
+### Fase 2: as mãos e as utilidades que o senhor pediu
+| # | O quê | Pronto quando |
+|---|---|---|
+| 9 | **Área de integrações**: cada serviço liga sozinho com `setx CHAVE` e "quais integrações eu tenho?" mostra o que falta | ligar uma integração nova é só o setx e reabrir |
+| 10 | **Leitor de PDF em voz alta** com "continua", "para", "volta" | lê um PDF de 10 páginas em partes |
+| 11 | **Limpador de memória do Windows** (libera RAM sem fechar nada) e diz quanto liberou | "limpa a memória" mostra antes e depois |
+| 12 | Clicar em qualquer botão de qualquer programa pelo nome | "clica em Salvar" no Bloco de Notas e no Word |
+| 13 | Modos prontos: aula, estudo, jogo, dormir | cada modo faz tudo de uma vez e desfaz com "sai do modo" |
+| 14 | "Aprende uma habilidade: quando eu disser X, faça Y" | a habilidade criada por voz funciona no dia seguinte |
+| 15 | Responder o WhatsApp por voz e resumo dos não lidos | "responde que já vou" (com "sim") |
+| 16 | Janelas: lado a lado, 2ª tela, layouts salvos | "modo trabalho" arruma as janelas |
+| 17 | Saúde do PC: disco, RAM, temperatura, o que está pesando | "por que tá lento?" diz o culpado e oferece fechar |
+| 18 | Instalar e atualizar programas pelo winget (com "sim") | "instala o VLC" funciona |
+
+### Fase 3: o resto do cardápio, em blocos pequenos
+Escolhido pelo relatório da semana (M4): primeiro o que mais falha ou o que o senhor mais pede.
+
+### Regra de ouro
+Nada entra sem teste automático e sem o teste de pronto no PC. É melhor 10 coisas que funcionam sempre
+do que 100 que funcionam às vezes.
+
+---
+
 ## Como ele "aprende" de verdade
 
 O Bolha não treina um modelo de IA no PC (o i3 não aguenta e não precisa). Ele aprende como um bom
@@ -178,7 +228,7 @@ Tudo fica na memória (`G:\Jarvis\config`), visível e apagável pela tela.
 
 ---
 
-## 13. Skills: 70 receitas prontas para o Bolha
+## 13. Skills: 70 receitas prontas (cardápio, depois da Fase 2)
 
 Uma skill é uma pasta `G:\Jarvis\skills\<nome>\` com um `SKILL.md` (a receita em texto). A IA vê só o nome e
 uma linha de cada uma; quando o pedido combina, carrega a receita e segue usando as ferramentas que já existem.
