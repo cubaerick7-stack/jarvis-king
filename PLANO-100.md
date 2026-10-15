@@ -175,3 +175,97 @@ Tudo fica na memória (`G:\Jarvis\config`), visível e apagável pela tela.
   não. Nesses, ele usa a visão (print + IA), que é mais lenta e sempre pede confirmação antes de clicar.
 - **Cota grátis da IA**: com 100 recursos usando IA, a cota acaba mais rápido. Por isso o cronômetro (1) e o
   "Groq decide, Gemini só no pesado" (14) vêm primeiro.
+
+---
+
+## 13. Skills: 70 receitas prontas para o Bolha
+
+Uma skill é uma pasta `G:\Jarvis\skills\<nome>\` com um `SKILL.md` (a receita em texto). A IA vê só o nome e
+uma linha de cada uma; quando o pedido combina, carrega a receita e segue usando as ferramentas que já existem.
+Ações perigosas continuam pedindo "sim". Skills importadas da internet entram só com o texto; script só depois
+do senhor aprovar. Antes delas: **o sistema de skills** (pasta, lista na IA, "aprende uma habilidade" por voz,
+importar só o texto).
+
+### Rotina e modos
+- [ ] S1. **modo-aula**: abre Teams/Meet, silencia o WhatsApp, volume em 30, abre o caderno.
+- [ ] S2. **modo-estudo**: Pomodoro de 25 min, lofi baixo, bloqueia YouTube e redes.
+- [ ] S3. **modo-trabalho**: abre e-mail, agenda e as pastas do dia, lado a lado.
+- [ ] S4. **modo-jogo**: fecha o que pesa, não perturbe, Discord aberto, prioridade para o jogo.
+- [ ] S5. **modo-dormir**: boa noite, lembretes de amanhã, despertador, apaga a tela e baixa o volume.
+- [ ] S6. **modo-filme**: tela cheia, som alto, notificações desligadas, luz do HUD apagada.
+- [ ] S7. **modo-visita**: esconde notificações e cards pessoais.
+- [ ] S8. **cheguei-em-casa**: o "papai chegou" com resumo e o que ficou pendente.
+- [ ] S9. **saindo-de-casa**: clima e chuva, o que levar, bloqueia o PC.
+- [ ] S10. **pausa-agora**: 5 minutos de alongamento guiado com contagem.
+
+### Dia a dia
+- [ ] S11. **lista-de-compras**: anota por voz, organiza por seção e manda no zap na hora de sair.
+- [ ] S12. **contas-do-mes**: lista as contas com vencimento e avisa 2 dias antes.
+- [ ] S13. **receita-com-o-que-tem**: "tenho ovo e arroz": pesquisa receita e mostra os passos num card.
+- [ ] S14. **cozinhando**: lê a receita passo a passo, espera o "próximo", com timers.
+- [ ] S15. **aniversarios**: avisa o aniversário e sugere a mensagem (manda só com "sim").
+- [ ] S16. **agua-e-postura**: lembretes ao longo do dia, só com o PC em uso.
+- [ ] S17. **resumo-da-semana**: o que o senhor fez, ouviu e pediu na semana.
+- [ ] S18. **planejar-o-dia**: monta o dia com lembretes, agenda e tarefas, e pergunta o que falta.
+- [ ] S19. **tarefas**: lista de tarefas com prioridade, riscar por voz.
+- [ ] S20. **contagem-regressiva**: "quantos dias para a prova/viagem?" com card.
+
+### Estudo
+- [ ] S21. **explica-simples**: explica um assunto como para uma criança e depois como prova.
+- [ ] S22. **quiz**: faz perguntas sobre um assunto e corrige as respostas faladas.
+- [ ] S23. **resumo-de-pdf**: resume o PDF por capítulos num card com tópicos.
+- [ ] S24. **flashcards**: cria cartões de estudo de um texto e revisa por voz.
+- [ ] S25. **trabalho-escolar**: pesquisa com fontes, monta o esqueleto do trabalho no Word.
+- [ ] S26. **corrige-texto**: corrige o texto copiado (ortografia e clareza) e cola de volta.
+- [ ] S27. **traduz-tela**: traduz o texto selecionado ou da tela.
+- [ ] S28. **conta-explicada**: resolve uma conta mostrando o passo a passo.
+- [ ] S29. **idioma-do-dia**: uma frase em inglês por dia, com pronúncia.
+- [ ] S30. **leitura-em-voz**: lê o artigo ou PDF em voz alta, com pausa e "continua".
+
+### Arquivos e PC
+- [ ] S31. **arrumar-downloads**: separa por tipo, apaga instalador velho (pergunta antes).
+- [ ] S32. **limpeza-do-pc**: temporários, lixeira, cache; diz quanto liberou.
+- [ ] S33. **backup-rapido**: copia uma pasta para o pendrive/outro disco.
+- [ ] S34. **renomear-fotos**: renomeia por data, em lote.
+- [ ] S35. **pdf-de-imagens**: junta prints/fotos num PDF.
+- [ ] S36. **comprimir-para-enviar**: compacta e diminui arquivos grandes para mandar no zap.
+- [ ] S37. **achar-arquivo-perdido**: procura por nome, conteúdo e data aproximada.
+- [ ] S38. **saude-do-pc**: disco, RAM, temperatura, atualizações pendentes, num card.
+- [ ] S39. **por-que-ta-lento**: acha o que está pesando e sugere o que fechar.
+- [ ] S40. **instalar-programa**: instala pelo winget (pergunta antes).
+- [ ] S41. **atualizar-tudo**: atualiza os programas pelo winget (pergunta antes).
+- [ ] S42. **wifi-com-problema**: testa a internet, reinicia o adaptador, mostra o resultado.
+- [ ] S43. **fone-ou-caixa**: troca a saída de som.
+- [ ] S44. **print-e-manda**: print da tela e manda para alguém (pergunta antes).
+- [ ] S45. **gravar-tela**: grava a tela por X minutos e salva.
+
+### Comunicação
+- [ ] S46. **responde-zap**: responde a última mensagem pelo que o senhor ditar (pergunta antes).
+- [ ] S47. **resumo-do-zap**: resume as conversas não lidas, por pessoa.
+- [ ] S48. **ouvir-audios**: transcreve e lê os áudios recebidos.
+- [ ] S49. **avisa-que-atrasei**: manda "vou atrasar X minutos" para quem o senhor disser.
+- [ ] S50. **mensagem-bonita**: escreve parabéns/agradecimento no tom do senhor.
+- [ ] S51. **email-rapido**: dita e manda e-mail (pergunta antes).
+- [ ] S52. **resumo-do-email**: lê e resume os e-mails importantes.
+- [ ] S53. **marcar-compromisso**: cria evento na agenda e lembra antes.
+- [ ] S54. **vip**: mensagem de quem é VIP avisa na hora; o resto só no resumo.
+- [ ] S55. **nao-perturbe-ate**: segura avisos até um horário e conta tudo depois.
+
+### Internet e compras
+- [ ] S56. **comparar-precos**: compara um produto em várias lojas num card.
+- [ ] S57. **vigiar-preco**: avisa quando o preço cair.
+- [ ] S58. **rastrear-encomenda**: acompanha o código dos Correios e avisa mudanças.
+- [ ] S59. **noticias-de**: notícias de um assunto (time, jogo, cidade) num card.
+- [ ] S60. **placar**: placar e próximo jogo do time do senhor.
+- [ ] S61. **cotacoes**: dólar, euro, bitcoin, com variação do dia.
+- [ ] S62. **onde-assistir**: em qual streaming está o filme/série.
+- [ ] S63. **resumo-de-video**: resume um vídeo do YouTube pela legenda.
+- [ ] S64. **pesquisa-profunda**: pesquisa em várias fontes e monta um relatório com links.
+
+### Diversão e jogos
+- [ ] S65. **playlist-do-humor**: música pelo humor ("algo para animar", "para focar").
+- [ ] S66. **abrir-jogo**: abre jogo da Steam/Epic pelo nome e entra no modo jogo.
+- [ ] S67. **dica-do-jogo**: pesquisa dica/guia da parte em que o senhor travou.
+- [ ] S68. **clipe**: salva os últimos 30 s do jogo (Xbox Game Bar).
+- [ ] S69. **piada-e-curiosidade**: uma curiosidade ou piada seca de mordomo.
+- [ ] S70. **contar-historia**: conta uma história curta (para dormir ou passar o tempo).
