@@ -1909,3 +1909,15 @@ def watch_downloads(folder, put, every=5.0):
 
     threading.Thread(target=run, daemon=True).start()
     return True
+
+
+# ========================= GRAVAR A TELA (S45) =========================
+
+def record_screen(minutes=1.0):
+    """Grava a tela pelo Xbox Game Bar (Win+Alt+R) por X minutos; o vídeo vai para Vídeos\\Capturas."""
+    import pyautogui
+    minutes = max(0.1, min(60.0, float(minutes or 1)))
+    pyautogui.hotkey("win", "alt", "r")
+    threading.Timer(minutes * 60, lambda: pyautogui.hotkey("win", "alt", "r")).start()
+    _say(f"Gravando a tela por {minutes:g} minuto{'s' if minutes != 1 else ''} (o vídeo vai para Vídeos, Capturas).")
+    return True

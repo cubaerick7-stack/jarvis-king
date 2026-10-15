@@ -1560,6 +1560,15 @@ def brain_router(text, clean):
 
 def screen_router(text, clean):
     """WhatsApp (responder, resumo, áudios), navegador (abas, página, favoritos, retomar), celular e tela."""
+    m = re.search(r"\b(?:resume|resuma|faz um resumo d)[oe]? (?:esse |este |o )?video\b(?:.*?(https?://\S+))?", text, re.I) \
+        if re.search(r"\bvideo\b", clean) else None
+    if m:
+        tool("summarize_video", url=m.group(1) or "")
+        return True
+    m = re.search(r"\bgrava (?:a )?tela(?: (?:por|durante) (\d+) (?:minutos?|min))?", clean)
+    if m:
+        tool("record_screen", minutes=int(m.group(1) or 1))
+        return True
     m = re.match(r"^(?:responde|responda|responder)(?: (?:pra|para|a|o) (?:ultima|ultima mensagem|ele|ela))?"
                  r"(?: (?:que|dizendo|com))? (.+)$", clean)
     if m and not re.search(r"\b(?:e-?mail|comentario|instagram)\b", clean) and \
@@ -2766,6 +2775,16 @@ TOOLS = [
      "run": lambda a: C.offer_file(_path_or_folder(a.get("path", "1")))},
     {"name": "set_theme", "args": '{"name":"azul|vermelho|dourado"}', "group": "sistema",
      "desc": "trocar o tema (as cores) do reator", "examples": ["tema vermelho"], "run": lambda a: set_theme(a.get("name", ""))},
+    {"name": "write_document", "args": '{"name":"nome do arquivo","text":"texto (parágrafos separados por linha)"}',
+     "group": "ler e resumir", "desc": "escrever um documento do Word (.docx) nos Documentos e abrir",
+     "examples": ["monta o esqueleto do trabalho de história no Word"],
+     "run": lambda a: write_document(a.get("name", ""), a.get("text", ""))},
+    {"name": "record_screen", "args": '{"minutes":1}', "group": "mídia",
+     "desc": "gravar a tela por alguns minutos (Xbox Game Bar)", "examples": ["grava a tela por 2 minutos"],
+     "run": lambda a: MA.record_screen(a.get("minutes", 1))},
+    {"name": "summarize_video", "args": '{"url":"link do YouTube (vazio = o vídeo aberto)"}', "group": "mídia",
+     "desc": "resumir um vídeo do YouTube pela legenda", "examples": ["resume esse vídeo"],
+     "run": lambda a: I.summarize_video(a.get("url") or (B.current_url()[0] if B.is_open() else ""), think)},
     {"name": "show_help", "args": "{}", "group": "sistema",
      "desc": "mostrar tudo o que eu sei fazer", "examples": ["o que você sabe fazer"],
      "run": lambda a: show_help()},
@@ -3619,6 +3638,8 @@ def watch_world(every=60):
                                            "gigas livres. Diga limpa o PC."))
                 for name in MA.new_startup_programs():
                     commands.put(("aviso", f"Senhor, um programa novo começou a abrir com o Windows: {name}."))
+                for name in A.birthdays_on(today):  # S15
+                    commands.put(("aviso", f"Senhor, hoje é aniversário de {name}. Quer que eu mande uma mensagem?"))
             except Exception:
                 pass
         elif first:
@@ -3691,10 +3712,19 @@ def handle(text):
         if not failed:
             return
     skill = H.match_trigger(clean_prefix(text))
-    if skill:  # "modo aula": a habilidade que o senhor ensinou
+    if skill:  # "modo aula": a habilidade que o senhor ensinou (ou uma de fábrica com gatilho)
         D.route("habilidade")
         log_action("use_skill", skill.name)
-        H.use(skill.name, run_actions, handle)
+        if skill["ia"] and not (skill["acoes"] or skill["pedidos"]):
+            ask_ai_router(f"{text}\n(Siga a habilidade {skill.name}: {skill['receita']})")
+            return
+        tee = io.StringIO()
+        with contextlib.redirect_stdout(tee) if skill["ia"] else contextlib.nullcontext():
+            H.use(skill.name, run_actions, handle)
+        if skill["ia"]:  # as ações já rodaram: a IA faz o resto da receita
+            done = "\n".join(line for line in tee.getvalue().splitlines() if line.strip())[-1500:]
+            ask_ai_router(f"{text}\n(Habilidade {skill.name}. Já feito, com este resultado:\n{done}\n"
+                          f"Faça o resto da receita, sem repetir o que já foi feito: {skill['receita']})")
         return
     parts = split_multi(text)
     if len(parts) > 1:  # "abre o Spotify, toca lofi e baixa o volume": um de cada vez
@@ -4186,6 +4216,22 @@ def alert(text):
 def _screen(kind, on):
     if kind == "hud":
         U.hud_show(on)
+
+
+def write_document(name, text):
+    name = re.sub(r'[<>:"/\\|?*]', "", str(name or "").strip()) or f"Documento {datetime.now():%d-%m-%Y %H-%M}"
+    path = DOCUMENTS / (re.sub(r"\.docx$", "", name, flags=re.I) + ".docx")
+    try:
+        DOC.write_docx(path, [p for p in str(text).split("\n")])
+    except OSError as e:
+        print(f"Jarvis > Não consegui salvar o documento: {e}.")
+        return False
+    print(f"Jarvis > Documento salvo em {path}.")
+    try:
+        os.startfile(str(path))
+    except (OSError, AttributeError):
+        pass
+    return str(path)
 
 
 def _set_personality(style):

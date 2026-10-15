@@ -60,7 +60,7 @@ def test_nao_corta_o_que_depende_do_contexto(jarvis, frase):
     assert jarvis.split_multi(frase) == [frase]
 
 
-RECEITAS = pytest.mark.skipif(not H.BUILTIN.is_dir(), reason="as receitas de fábrica entram junto com as ferramentas delas")
+RECEITAS = pytest.mark.skipif(False, reason="")
 
 
 @RECEITAS
@@ -116,3 +116,31 @@ def test_receita_sem_acoes_volta_para_a_ia_seguir(jarvis, monkeypatch):
     monkeypatch.setattr(jarvis, "think", think)
     jarvis.ask_ai_router("faz a receita")
     assert "Passo 1: pesquise." in seen[1]
+
+
+def test_ferramentas_citadas_nas_receitas_existem(jarvis):
+    import re
+    for s in H.load_all().values():
+        for name in re.findall(r"\b[a-z]+_[a-z_]+\b", s["receita"]):
+            if name in ("time_favorito",):  # campo do perfil, não ferramenta
+                continue
+            assert name in jarvis.TOOLS_BY_NAME, (s.name, name)
+
+
+def test_gatilho_faz_as_acoes_e_a_ia_termina_a_receita(jarvis, monkeypatch):
+    done = []
+    jarvis.TOOLS_BY_NAME["rain_warning"]["run"] = lambda a: done.append("chuva") or True
+    jarvis.TOOLS_BY_NAME["list_show"]["run"] = lambda a: done.append("lista") or True
+    seen = []
+    monkeypatch.setattr(jarvis, "ask_ai_router", lambda text, **k: seen.append(text) or True)
+    jarvis.handle("vou sair")
+    assert done == ["chuva", "lista"]
+    assert "bloquear" in seen[0] and "Já feito" in seen[0]
+
+
+def test_setenta_receitas_do_plano():
+    planned = {s.get("plano") for s in H.load_all().values()}
+    import re
+    nums = sorted(int(p[1:]) for f in H.BUILTIN.glob("*/SKILL.md")
+                  for p in re.findall(r"^plano: (S\d+)$", f.read_text(encoding="utf-8"), re.M))
+    assert nums == list(range(1, 71))

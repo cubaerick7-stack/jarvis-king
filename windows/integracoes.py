@@ -597,3 +597,47 @@ def watcher(put, every=3 * 3600):
                     pass
             time.sleep(every)
     threading.Thread(target=loop, daemon=True).start()
+
+
+# ========================= RESUMO DE VÍDEO PELA LEGENDA (S63) =========================
+
+def video_id(url):
+    m = re.search(r"(?:v=|youtu\.be/|shorts/|embed/)([\w-]{11})", str(url or ""))
+    return m.group(1) if m else None
+
+
+def youtube_transcript(url, fetch=None):
+    """O texto da legenda do vídeo (português se tiver, senão a primeira), sem chave de API. "" se não tiver."""
+    import html as _html
+    vid = video_id(url)
+    if not vid:
+        return ""
+    get = fetch or _fetch
+    page = get(f"https://www.youtube.com/watch?v={vid}&hl=pt-BR")
+    tracks = re.findall(r'"baseUrl":"(https:[^"]+?timedtext[^"]+)"[^}]*?"languageCode":"([\w-]+)"', page)
+    if not tracks:
+        return ""
+    tracks.sort(key=lambda t: 0 if t[1].startswith("pt") else 1)
+    xml = get(tracks[0][0].encode().decode("unicode_escape"))
+    lines = re.findall(r"<text[^>]*>(.*?)</text>", xml, re.S)
+    return re.sub(r"\s+", " ", " ".join(_html.unescape(re.sub(r"<[^>]+>", "", line)) for line in lines)).strip()
+
+
+def summarize_video(url, think, fetch=None):
+    try:
+        text = youtube_transcript(url, fetch)
+    except Exception as e:
+        _say(f"Não consegui pegar a legenda do vídeo: {e}.")
+        return False
+    if not text:
+        _say("Esse vídeo não tem legenda que eu consiga ler.")
+        return False
+    try:
+        out = think("Resuma o vídeo pela legenda, em português do Brasil, em até 6 tópicos curtos e uma frase de conclusão.",
+                    text[:30000], json_mode=False, temperature=0.2)
+    except Exception as e:
+        _say(f"Não consegui resumir: {e}.")
+        return False
+    _say("Resumindo o vídeo...")
+    print(re.sub(r"[*_#`]", "", str(out)).strip())
+    return True

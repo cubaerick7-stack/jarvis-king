@@ -86,9 +86,11 @@ def parse(text, folder=None):
     recipe = re.sub(r"```(?:acoes|pedidos)\s*\n.*?```", "", body, flags=re.S).strip()
     name = meta.get("nome") or (folder.name if folder else "") or "habilidade"
     triggers = [t.strip() for t in re.split(r"[;|]", meta.get("gatilhos", "")) if t.strip()]
+    # ia: a receita ainda precisa da IA depois das ações (sem ações, sempre precisa)
+    needs_ai = norm(meta.get("ia", "")) == "sim" or not (actions or requests)
     return Skill(nome=slug(name), descricao=meta.get("descricao", "").strip(), gatilhos=triggers, receita=recipe,
                  acoes=actions, pedidos=requests, aprovada=norm(meta.get("aprovada", "sim")) != "nao",
-                 origem=meta.get("origem", ""), pasta=str(folder or ""))
+                 origem=meta.get("origem", ""), pasta=str(folder or ""), ia=needs_ai and bool(recipe))
 
 
 def load_all():
@@ -187,11 +189,10 @@ def use(name, run_actions, run_request):
     for request in skill["pedidos"]:
         if run_request(request) is False:
             ok = False
-    if skill["receita"]:
-        _say(f"Habilidade {skill.name}:" if not (skill["acoes"] or skill["pedidos"]) else f"Habilidade {skill.name} feita.")
-        if not (skill["acoes"] or skill["pedidos"]):
-            print(skill["receita"][:4000])  # a IA lê a receita e segue (modo ciclo)
-    else:
+    if skill["ia"]:
+        _say(f"Habilidade {skill.name}, receita para seguir:")
+        print(skill["receita"][:4000])  # a IA lê a receita e segue (modo ciclo)
+    elif not (skill["acoes"] or skill["pedidos"]):
         _say(f"Habilidade {skill.name} feita.")
     return ok
 
