@@ -131,7 +131,7 @@ def finish(said=""):
         entry["ok"] = False
     entry["total"] = entry.total
     _append(entry)
-    if entry["rota"] != "nota":  # o "errou"/"boa" fala do pedido anterior: ele continua sendo o último
+    if entry["rota"] not in ("nota", "meta"):  # "errou"/"boa" e "por que fez isso?" falam do pedido anterior
         last = entry
     return stopwatch_line(entry)
 

@@ -1314,8 +1314,18 @@ def fast_local_router(user_text):
     return False
 
 
+META_TOOLS = {"what_went_wrong", "explain_last", "error_report", "weekly_report", "stopwatch_today", "learned_week"}
+
+
 def learning_router(text, clean):
     """Diário, aprendizado, apelidos e pessoas: o motor que faz ele melhorar."""
+    handled = _learning_router(text, clean)
+    if handled and D.current is not None and any(a["nome"] in META_TOOLS for a in D.current["acoes"]):
+        D.route("meta")  # perguntas sobre o próprio Bolha não viram o "último pedido" (do "errou" e do "por quê")
+    return handled
+
+
+def _learning_router(text, clean):
     m = re.search(r"\bo que (?:deu|foi|saiu|ficou) errado\b(?:.*?\b(hoje|ontem)\b)?", clean)
     if m:
         tool("what_went_wrong", day=m.group(1) or "hoje")

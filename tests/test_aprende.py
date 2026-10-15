@@ -258,3 +258,11 @@ def test_volume_preferido_de_cada_programa(jarvis, monkeypatch):
     monkeypatch.setattr(threading, "Timer", lambda s, fn, args=(): type("T", (), {"start": lambda self: fn(*args)})())
     jarvis.learn_from_action("open_target", {"target": "Spotify"}, True)
     assert applied == [35]
+
+
+def test_perguntas_sobre_o_bolha_nao_viram_o_ultimo_pedido(jarvis, capsys):
+    jarvis.respond("abre o edge")
+    jarvis.respond("o que deu errado hoje?")
+    capsys.readouterr()
+    jarvis.respond("por que você fez isso?")
+    assert "abre o edge" in capsys.readouterr().out

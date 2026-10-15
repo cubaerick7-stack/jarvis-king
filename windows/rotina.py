@@ -412,7 +412,7 @@ def check_item(name, text, done=True):
     if not hits:
         _say(f"Não achei isso na lista de {key}.")
         return False
-    _say(f"{'Risquei' if done else 'Voltei'} {hits} item{'s' if hits > 1 else ''} da lista de {key}.")
+    _say(f"{'Risquei' if done else 'Voltei'} {hits} {'itens' if hits > 1 else 'item'} da lista de {key}.")
     return True
 
 
@@ -424,7 +424,7 @@ def remove_items(name, text):
     lists[key] = [x for x in lists.get(key, []) if not any(w in norm(x["item"]) for w in wanted)]
     _save(LISTS, lists)
     removed = before - len(lists[key])
-    _say(f"Tirei {removed} item{'s' if removed != 1 else ''} da lista de {key}." if removed else "Não achei isso na lista.")
+    _say(f"Tirei {removed} {'itens' if removed != 1 else 'item'} da lista de {key}." if removed else "Não achei isso na lista.")
     return removed > 0
 
 
@@ -474,7 +474,7 @@ def show_list(name, card=None):
     pending = sum(1 for x in _load(LISTS, {}).get(key, []) if not x.get("feito"))
     if card:
         card(f"Lista de {key}", text)
-    _say(f"Lista de {key}: {pending} item{'s' if pending != 1 else ''} para {'comprar' if key == 'compras' else 'fazer'}.")
+    _say(f"Lista de {key}: {pending} {'itens' if pending != 1 else 'item'} para {'comprar' if key == 'compras' else 'fazer'}.")
     print(text)
     return True
 
