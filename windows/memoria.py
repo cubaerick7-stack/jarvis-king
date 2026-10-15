@@ -392,3 +392,53 @@ def context():
     if data["conversa"]:
         parts.append("Conversa recente:\n" + "\n".join(f"Usuário: {c['voce']}\nJarvis: {c['jarvis']}" for c in data["conversa"]))
     return "\n".join(parts)
+
+
+# ------------------------- hábitos viram rotinas (28) -------------------------
+WEEKDAYS = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
+_VERB = {"open_target": "abre {}", "play_youtube": "toca {}", "run_routine": "modo {}", "enter_mode": "modo {}",
+         "open_url": "abre o site {}", "spotify_play": "toca {} no spotify"}
+
+
+def habit_routines(now=None, days=30):
+    """Hábitos fortes o bastante para virar rotina: [{pedido, hora, repetir, dia, texto}].
+    Mesmo pedido em 3+ dias diferentes, sempre perto da mesma hora."""
+    now = now or datetime.now()
+    groups = defaultdict(list)
+    for t, name, detail in _log_entries():
+        name = name.replace("ia:", "")
+        if name in _VERB and now - t <= timedelta(days=days):
+            groups[(name, detail)].append(t)
+    out = []
+    for (name, detail), times in groups.items():
+        by_day = {}
+        for t in sorted(times):
+            by_day.setdefault(t.date(), t)  # a primeira vez de cada dia
+        if len(by_day) < HABIT_DAYS:
+            continue
+        minutes = sorted(t.hour * 60 + t.minute for t in by_day.values())
+        median = minutes[len(minutes) // 2]
+        if any(abs(m - median) > 60 for m in minutes):
+            continue  # cada dia numa hora diferente: não é rotina
+        weekdays = {d.weekday() for d in by_day}
+        if len(weekdays) == 1:
+            repeat, label = "semanal", f"toda {WEEKDAYS[next(iter(weekdays))]}"
+        elif weekdays <= {0, 1, 2, 3, 4} and len(weekdays) >= 3:
+            repeat, label = "dias uteis", "nos dias úteis"
+        else:
+            repeat, label = "diario", "todo dia"
+        try:
+            what = next(iter(json.loads(detail).values()))
+        except Exception:
+            what = detail
+        hour = f"{median // 60:02d}:{median % 60:02d}"
+        day = now.date()
+        if repeat == "semanal":
+            day += timedelta(days=(next(iter(weekdays)) - day.weekday()) % 7)
+        if datetime.combine(day, datetime.min.time()).replace(hour=median // 60, minute=median % 60) <= now:
+            day += timedelta(days=7 if repeat == "semanal" else 1)
+        request = _VERB[name].format(what)
+        out.append({"pedido": request, "hora": hour, "repetir": repeat, "dia": day.isoformat(),
+                    "texto": f"Senhor, {label} por volta das {hour} o senhor pede \"{request}\". "
+                             f"Quer que eu faça sozinho?"})
+    return out

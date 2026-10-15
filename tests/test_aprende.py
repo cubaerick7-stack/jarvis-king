@@ -208,3 +208,53 @@ def test_painel_da_memoria_tem_botao_de_apagar():
     items = A.panel_items({"perfil": {"nome": "João"}, "fatos": [], "lembretes": []})
     assert {"tipo": "apelido", "texto": "meu jogo = Omori", "apaga": "esquece o apelido meu jogo"} in items
     assert items[0]["apaga"] == "esquece nome"
+
+
+# ------------------------- 28: hábito vira rotina; 31: preferências automáticas -------------------------
+
+def _log(lines):
+    import memoria
+    memoria.ACTION_LOG.write_text("".join(f"{t}\t{n}\t{d}\n" for t, n, d in lines), encoding="utf-8")
+
+
+def test_habito_de_toda_segunda_vira_rotina(jarvis, monkeypatch):
+    import memoria
+    mondays = ["2026-09-21", "2026-09-28", "2026-10-05"]
+    _log([(f"{d}T08:0{i}:00", "open_target", '{"target": "teams"}') for i, d in enumerate(mondays)])
+    now = datetime(2026, 10, 10, 9, 0)
+    [h] = memoria.habit_routines(now)
+    assert h["pedido"] == "abre teams" and h["repetir"] == "semanal" and h["dia"] == "2026-10-12"
+    assert "toda segunda" in h["texto"]
+    monkeypatch.setattr(memoria, "habit_routines", lambda: [h])
+    assert jarvis.offer_habit().startswith("Senhor, toda segunda")
+    jarvis.respond("sim")
+    [r] = memoria.load()["lembretes"]
+    assert r["texto"] == "abre teams" and r["repetir"] == "semanal" and r["pedido"] and r["hora"] == "08:01"
+    assert jarvis.offer_habit() == ""  # não pergunta de novo
+
+
+def test_horarios_espalhados_nao_viram_rotina():
+    import memoria
+    _log([("2026-10-01T08:00:00", "play_youtube", '{"query": "lofi"}'),
+          ("2026-10-02T15:00:00", "play_youtube", '{"query": "lofi"}'),
+          ("2026-10-03T22:00:00", "play_youtube", '{"query": "lofi"}')])
+    assert memoria.habit_routines(datetime(2026, 10, 10)) == []
+
+
+def test_aprende_a_musica_de_cada_hora(jarvis):
+    for _ in range(3):
+        jarvis.learn_from_action("play_youtube", {"query": "Lofi"}, True)
+    period = "manha" if datetime.now().hour < 12 else "tarde" if datetime.now().hour < 18 else "noite"
+    assert A.pref(f"musica_{period}") == "lofi"
+    import rotina
+    assert rotina.mood_query("") == "lofi"
+
+
+def test_volume_preferido_de_cada_programa(jarvis, monkeypatch):
+    A.app_volume_pref("spotify", 35)
+    applied = []
+    monkeypatch.setattr(jarvis, "set_volume", lambda v: applied.append(v))
+    import threading
+    monkeypatch.setattr(threading, "Timer", lambda s, fn, args=(): type("T", (), {"start": lambda self: fn(*args)})())
+    jarvis.learn_from_action("open_target", {"target": "Spotify"}, True)
+    assert applied == [35]

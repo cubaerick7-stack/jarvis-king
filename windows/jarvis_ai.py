@@ -847,6 +847,7 @@ def tool(tool_name, /, **args):
     with D.timing("fazer"):
         result = TOOLS_BY_NAME[tool_name]["run"](args)
     D.action(tool_name, args, result is not False)
+    learn_from_action(tool_name, args, result)
     return result
 
 
@@ -856,6 +857,7 @@ def act(name, fn, *args):
     with D.timing("fazer"):
         result = fn(*args)
     D.action(name, named_args(name, args), result is not False)
+    learn_from_action(name, named_args(name, args), result)
     return result
 
 
@@ -967,8 +969,11 @@ def fast_local_router(user_text):
     # "sim"/"não" sozinho sem nada esperando resposta (a pergunta já foi respondida): não vira pedido novo,
     # senão a IA repetia a última ação (mandava a mesma mensagem duas vezes)
     lonely = set(re.findall(r"\w+", clean))
-    if lonely and lonely <= (YES_WORDS | NO_WORDS | {"senhor", "pode", "mandar", "manda", "obrigado"}) \
+    if lonely and lonely <= (YES_WORDS | NO_WORDS | {"senhor", "pode", "mandar", "manda", "obrigado", "quero", "faz",
+                                                     "faca", "sozinho"}) \
             and not lonely & {"cancela", "cancelar", "para", "pare"}:
+        if habit_offer:  # 28: "quer que eu faça sozinho?" -> vira rotina
+            return accept_habit(answer_kind(clean) is not False)
         print("Jarvis > Não há nada esperando confirmação, senhor.")
         return True
 
@@ -2275,7 +2280,7 @@ TOOLS = [
      "run": lambda a: F.rename_item(resolve_path(a.get("src", "1")), a.get("new_name", ""))},
     {"name": "delete_item", "args": '{"path":"caminho ou número"}', "group": "arquivos e pastas",
      "desc": "mandar para a Lixeira (sempre pergunta antes)", "examples": ["apaga o terceiro"],
-     "run": lambda a: F.send_to_recycle_bin(resolve_path(a.get("path", "")), confirm)},
+     "run": lambda a: F.send_to_recycle_bin(resolve_path(a.get("path", "")), confirm_danger)},
     # ---- teclado e janelas
     {"name": "type_text", "args": '{"text":"texto"}', "group": "janelas e teclado",
      "desc": "digitar um texto no programa da frente", "examples": ["digita bom dia a todos"],
@@ -2919,6 +2924,7 @@ def execute_ai_action(name, args):
         D.action(name, args, False)
         return False
     D.action(name, args, result is not False)
+    learn_from_action(name, args, result)
     return result
 
 
@@ -4181,7 +4187,7 @@ def set_theme(name):
 def hud_loop(every=15):
     """O HUD fixo: CPU, RAM, clima, hora e a próxima tarefa, atualizado sozinho."""
     import psutil
-    weather_line, weather_at = "", 0.0
+    weather_line, weather_at, temp, temp_at = "", 0.0, None, 0.0
     while True:
         try:
             if time.time() - weather_at > 1800:
@@ -4191,6 +4197,12 @@ def hud_loop(every=15):
                     F.weather(M.load()["perfil"].get("cidade", ""))
                 m = CLIMA.match(tee.getvalue().replace("Jarvis > ", "").strip())
                 weather_line = f"{int(m.group(3))}° {m.group(2).strip()}" if m else weather_line
+            if time.time() - temp_at > 300:  # 89: temperatura a cada 5 min (quando o Windows informa)
+                temp_at = time.time()
+                try:
+                    temp = MA.temperature()
+                except Exception:
+                    temp = None
             now = datetime.now()
             pending = sorted((r for r in M.load()["lembretes"] if not r.get("avisado") and not r.get("despertador")),
                              key=lambda r: (r.get("data", ""), r.get("hora") or "99:99"))
@@ -4198,7 +4210,7 @@ def hud_loop(every=15):
             U.hud({"cpu": round(psutil.cpu_percent(interval=None)), "ram": round(psutil.virtual_memory().percent),
                    "clima": weather_line, "hora": now.strftime("%H:%M"),
                    "proxima": (f"{nxt.get('hora') or ''} {nxt['texto']}".strip()[:60] if nxt else ""),
-                   "modo": R.state.get("modo", ""), "naoPerturbe": R.dnd_active()})
+                   "modo": R.state.get("modo", ""), "naoPerturbe": R.dnd_active(), "temp": temp})
         except Exception:
             pass
         time.sleep(every)
@@ -4206,6 +4218,65 @@ def hud_loop(every=15):
 
 def on_phone_file(path):
     commands.put(("aviso", f"Chegou do celular: {Path(path).name}. Está em Downloads, na pasta Bolha do celular."))
+
+
+# ------------------------- hábitos viram rotinas (28) e preferências automáticas (31) -------------------------
+habit_offer = {}
+
+
+def offer_habit():
+    """Ao abrir: um hábito forte vira a pergunta "quer que eu faça sozinho?" (uma vez por hábito)."""
+    try:
+        offered = set(A.pref("habitos_oferecidos", []) or [])
+        found = [h for h in M.habit_routines() if h["pedido"] not in offered]
+    except Exception:
+        return ""
+    if not found:
+        return ""
+    habit_offer.clear()
+    habit_offer.update(found[0])
+    return found[0]["texto"]
+
+
+def accept_habit(yes):
+    offer = dict(habit_offer)
+    habit_offer.clear()
+    A.set_pref("habitos_oferecidos", (A.pref("habitos_oferecidos", []) or []) + [offer["pedido"]])
+    if not yes:
+        print("Jarvis > Tudo bem, senhor. Não pergunto mais sobre isso.")
+        return True
+    M.add_reminder(offer["pedido"], offer["dia"], offer["hora"], pedido=True, repetir=offer["repetir"])
+    print(f"Jarvis > Combinado: virou rotina. Faço \"{offer['pedido']}\" sozinho às {offer['hora']}.")
+    return True
+
+
+def learn_from_action(name, args, result):
+    """31: o que o senhor faz vira preferência (volume de cada programa, música de cada hora do dia)."""
+    if result is False:
+        return
+    try:
+        if name == "set_volume":
+            proc = MA._process_name(F.user_target_window()) if F.user_target_window() else ""
+            if proc and proc not in ("explorer", "python", "pythonw", "windowsterminal"):
+                A.app_volume_pref(proc, args.get("percent", args.get("args", 50)))
+        elif name == "open_target":
+            target = normalize(args.get("target", "")).replace(" ", "")
+            names = F.PROCESS_ALIASES.get(normalize(args.get("target", "")), [target])
+            pref = next((A.app_volume_pref(n) for n in names if A.app_volume_pref(n) is not None), None)
+            if pref is not None:
+                threading.Timer(2.5, set_volume, args=(pref,)).start()
+                print(f"Jarvis > (volume em {pref}%, como o senhor gosta no {args.get('target')})")
+        elif name == "play_youtube" and args.get("query"):
+            period = "manha" if datetime.now().hour < 12 else "tarde" if datetime.now().hour < 18 else "noite"
+            counts = A.pref(f"musicas_{period}", {}) or {}
+            q = str(args["query"]).strip().lower()
+            counts[q] = int(counts.get(q, 0)) + 1
+            A.set_pref(f"musicas_{period}", dict(sorted(counts.items(), key=lambda kv: -kv[1])[:20]))
+            top, n = max(counts.items(), key=lambda kv: kv[1])
+            if n >= 3:
+                A.set_pref(f"musica_{period}", top)  # "toca algo" nesta hora toca o preferido
+    except Exception:
+        pass
 
 
 def alert(text):
@@ -4783,7 +4854,7 @@ def run():
         MA.watch_clipboard()  # histórico do que o senhor copia (só na memória, nunca em disco)
     if os.environ.get("BOLHA_AVISOS", "").strip() != "0":
         threading.Thread(target=watch_world, daemon=True).start()
-    hint = M.habit_hint()
+    hint = offer_habit() or M.habit_hint()
     if hint:
         announce(hint, "Sugestão")
         try:  # a IA vê a sugestão na conversa e entende o "sim" que vier depois

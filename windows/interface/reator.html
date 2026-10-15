@@ -1399,6 +1399,7 @@ window.hudDados = (d) => {
   const selos = document.getElementById('hudSelos'); selos.replaceChildren();
   if (d.modo) selos.append(cria('span', 'selo', `modo ${d.modo}`));
   if (d.naoPerturbe) selos.append(cria('span', 'selo dnd', 'não perturbe'));
+  if (d.temp) selos.append(cria('span', `selo${d.temp >= 85 ? ' dnd' : ''}`, `CPU ${Math.round(d.temp)}°C`));
 };
 window.hudMostra = (sim) => document.getElementById('hud').classList.toggle('off', !sim);
 document.getElementById('hud').addEventListener('click', (e) => { const b = e.target.closest('[data-pedido]'); if (b) pede(b.dataset.pedido); });
