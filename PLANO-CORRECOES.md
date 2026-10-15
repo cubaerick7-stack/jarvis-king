@@ -79,8 +79,13 @@ nada pesado para o i3.
   - Se achar mais de um: card "Qual deles, senhor?" com as opções.
 - **Pesquisa do Windows:** só como último recurso, com o nome limpo (nunca a frase inteira). Depois, conferir se
   abriu uma janela nova; se não abriu, avisar.
-- **Teste de pronto:** "abre pra mim o omori", "abre aquele jogo do minecraft" e "joga hollow knight" abrem o
-  jogo certo; um nome que não existe responde "não achei X na área de trabalho, Steam, Epic nem no Everything".
+- **Caso real, o Minecraft:** ele nem reconheceu o nome e, quando reconheceu, não abriu. O Minecraft não é um
+  .exe comum: vem pelo **Minecraft Launcher**, que é app da Microsoft Store/Xbox (abre por `shell:AppsFolder`) ou
+  o launcher antigo (`MinecraftLauncher.exe`). Precisa de apelidos conhecidos ("minecraft" -> Minecraft Launcher),
+  da busca nos apps da Store por parte do nome e de conferir se o launcher abriu de verdade.
+- **Teste de pronto:** "abre pra mim o omori", "abre o minecraft", "abre aquele jogo do minecraft" e "joga hollow
+  knight" abrem o jogo certo; um nome que não existe responde "não achei X na área de trabalho, Steam, Epic nem
+  no Everything".
 
 ## 5. "Abre X" não pode ir direto para a pesquisa do Windows
 
@@ -135,9 +140,43 @@ nada pesado para o i3.
   e nenhum navegador abre. No ACORDEI, ele fala o bom dia com notícias (com imagem), clima, roupa e lembretes, e
   termina com "Tenha um bom dia" e a música final.
 
+## 8. Falar como um assistente de verdade (menos "senhor", menos robô)
+
+- [ ] **O que aconteceu:** ele fala "senhor" em quase toda frase ("Pronto, senhor", "Verificando, senhor", "Às
+  suas ordens, senhor"). Fica robótico, com cara de frase programada.
+- **O que o João quer:** falar natural, como um assistente de verdade. O "senhor" só quando cabe: no
+  cumprimento, num aviso importante, numa confirmação. Nada de repetir em toda resposta.
+- **Onde mexer:**
+  - O prompt da IA (`build_ai_prompt`, `ANSWER_PROMPT`, `MORNING_PROMPT`, `GREETING_PROMPT`, `CHAT_PROMPT`):
+    trocar "chama o usuário de senhor" por "use 'senhor' só de vez em quando, quando soar natural (no máximo
+    uma vez a cada várias respostas)".
+  - As frases prontas fixas no código: as listas `FILLERS`, `THANKS`, o `SMALL_TALK`, os avisos e as respostas
+    das ferramentas. A maioria perde o "senhor" ("Pronto.", "Um instante.", "Abrindo o Chrome."), e as listas
+    ganham mais variedade.
+  - Respostas mais curtas e diretas, com o jeito de conversa e não de relatório.
+  - Uma trava simples: se a última resposta já teve "senhor", a próxima frase pronta vem sem.
+- **Teste de pronto:** 10 pedidos seguidos e o "senhor" aparece no máximo 2 ou 3 vezes; as respostas soam
+  naturais.
+
+## 9. Sem internet, a IA local entra sozinha
+
+- [ ] **O que o João quer:** quando a internet cair, o Bolha usa sozinho a IA local que já está baixada (o
+  Qwen 1.7B pelo Ollama, que é leve), sem precisar do `setx JARVIS_LOCAL 1`. Quando a internet voltar, ele volta
+  para o Gemini e o Groq.
+- **Como fazer:** no `ai_backends()`, se `autoteste.internet()` for falso e o Ollama estiver aberto com o
+  modelo, colocar o Qwen na lista. Avisar uma vez: "Estou sem internet; sigo com a IA local, mais simples."
+- **Decidido:** não usar o Gemma de 7,2 GB no PC (8 GB de RAM não aguentam). Fica o Qwen leve como reserva.
+- **Teste de pronto:** com o Wi-Fi desligado, "me explica o que é fotossíntese" responde pela IA local; com o Wi-Fi
+  ligado de novo, volta para a nuvem.
+
 ---
 
 ## Ordem sugerida
 
-1, 2 (WhatsApp: é o que mais irrita e a correção é pequena) -> 7 (despertador) -> 4 e 5 (abrir programas e jogos) -> 6 (música) -> 3 (voz,
-depois do microfone novo).
+1. Itens 1 e 2 (WhatsApp): é o que mais irrita, e a correção é pequena.
+2. Item 8 (falar natural): é rápido.
+3. Itens 4 e 5 (abrir programas e jogos, incluindo o Minecraft).
+4. Item 7 (despertador dentro do Bolha).
+5. Item 6 (música descrita).
+6. Item 9 (IA local sem internet).
+7. Item 3 (voz), depois do microfone novo.
