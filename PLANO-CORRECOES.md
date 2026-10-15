@@ -169,6 +169,30 @@ nada pesado para o i3.
 - **Teste de pronto:** com o Wi-Fi desligado, "me explica o que é fotossíntese" responde pela IA local; com o Wi-Fi
   ligado de novo, volta para a nuvem.
 
+## 10. Slides da faculdade: "faz um slide sobre X e manda no zap"
+
+- [ ] **O que o João quer:** "faz um slide sobre (tema) para a faculdade, com (tantos) slides, e manda pro
+  (contato)" ou "...e manda pra mim no zap". O WhatsApp do Bolha (WAHA) é outro número, então mandar para o
+  próprio João funciona igual a mandar para qualquer contato.
+- **Como funcionaria:**
+  1. **Conteúdo:** o Gemini pesquisa o tema (research, com as fontes) e monta o roteiro em JSON: título,
+     de 6 a 12 slides com título e 3 a 5 tópicos curtos cada, notas do apresentador e um slide final de
+     referências. O tom e o nível seguem o pedido (ex.: "para a aula de Direito Civil", "nível de faculdade").
+  2. **Arquivo:** o Bolha monta o **.pptx** com o `python-pptx` (leve, sem precisar do PowerPoint), num modelo
+     bonito e limpo (capa, título e tópicos, duas colunas, fechamento) e com as cores do tema do Bolha.
+     Opcional: uma imagem por slide, só de fonte livre (Wikimedia), com o crédito no slide.
+  3. **Salvar e mostrar:** salva em `Documentos\Slides\<tema>.pptx`, abre para o João ver e diz quantos slides
+     fez. O "muda o slide 3" ou "acrescenta um slide sobre Y" edita o mesmo arquivo.
+  4. **Mandar:** pergunta "É esse contato: Fulano?" (item 2) e envia pelo WhatsApp. Também manda um **PDF**
+     junto (abre em qualquer celular, sem PowerPoint).
+- **Atenção, limite do WAHA:** o WAHA grátis manda imagem, mas PDF e .pptx dependem da versão. Se não mandar:
+  - Plano B: transformar os slides em imagens (uma por slide) e mandar como álbum.
+  - Plano C: "manda pro celular" (aparece com o botão Baixar).
+  - Plano D: com o Google conectado, subir no Drive e mandar o link por texto.
+- **Habilidade:** vira a receita `slides-da-faculdade` em `windows/skills`, com o passo a passo para a IA.
+- **Teste de pronto:** "faz um slide sobre a Revolução Francesa com 8 slides e manda pra mim no zap": o .pptx e
+  o PDF chegam no WhatsApp do João e abrem certos no celular.
+
 ---
 
 ## Ordem sugerida
@@ -179,4 +203,5 @@ nada pesado para o i3.
 4. Item 7 (despertador dentro do Bolha).
 5. Item 6 (música descrita).
 6. Item 9 (IA local sem internet).
-7. Item 3 (voz), depois do microfone novo.
+7. Item 10 (slides da faculdade pelo WhatsApp).
+8. Item 3 (voz), depois do microfone novo.
