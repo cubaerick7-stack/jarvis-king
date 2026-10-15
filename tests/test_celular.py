@@ -240,3 +240,34 @@ def test_yes_from_the_phone_without_opening_the_pc_microphone(jarvis, monkeypatc
     jarvis.commands.put(("celular", "sim"))
     assert jarvis.confirm('Mando "oi" para Ana?') is True
     assert Listener.asked == 0
+
+
+# ------------------------- arquivos entre o celular e o PC (102) -------------------------
+
+def test_arquivo_do_celular_chega_no_pc(phone, tmp_path):
+    chegou = []
+    phone.inbox, phone.on_file = tmp_path / "Bolha do celular", chegou.append
+    cookie = login(phone).split(";")[0]
+    status, _, body = call(phone, "POST", "/arquivo", b"foto", {"X-Nome": "..%2F..%2Fpraia.jpg"}, cookie=cookie)
+    assert status == 200 and json.loads(body)["nome"] == "praia.jpg"
+    assert (tmp_path / "Bolha do celular" / "praia.jpg").read_bytes() == b"foto"  # nada de sair da pasta
+    assert chegou and chegou[0].name == "praia.jpg"
+    assert call(phone, "POST", "/arquivo", b"x", {"X-Nome": "a.txt"})[0] == 401  # sem senha não entra
+
+
+def test_arquivo_do_pc_vai_para_o_celular(phone, tmp_path):
+    f = tmp_path / "contrato.pdf"
+    f.write_bytes(b"%PDF")
+    token = phone.offer(f)
+    cookie = login(phone).split(";")[0]
+    assert any(e["tipo"] == "arquivo" and e["nome"] == "contrato.pdf" for e in phone.events.items)
+    assert call(phone, "GET", f"/baixar/{token}")[0] == 401
+    status, headers, body = call(phone, "GET", f"/baixar/{token}", cookie=cookie)
+    assert status == 200 and body == b"%PDF" and "contrato.pdf" in headers["Content-Disposition"]
+    assert call(phone, "GET", "/baixar/chute", cookie=cookie)[0] == 404
+
+
+def test_nome_seguro():
+    assert C.safe_name("../../win.ini") == "win.ini"
+    assert C.safe_name('a<b>:"c".txt') == "a_b___c_.txt"
+    assert C.safe_name("") .startswith("arquivo-")
