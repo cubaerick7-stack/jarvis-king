@@ -298,7 +298,7 @@ def test_news_query_keeps_only_what_matters():
 
 
 def test_big_cards_take_turns_in_the_center_and_minimize_to_the_side():
-    for marker in ("const PALCO = new Set(['pesquisa', 'lista', 'texto', 'clima', 'zap'])", "function minimiza(j)",
+    for marker in ("const PALCO = new Set(['pesquisa', 'lista', 'texto', 'clima', 'zap'", "function minimiza(j)",
                    "function restaura(chave)", "doca.id = 'doca'", "'Minimizar para a lateral'"):
         assert marker in HTML, marker
 

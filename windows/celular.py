@@ -37,6 +37,8 @@ MAX_TRIES, LOCK_SECONDS = 5, 600
 WAIT = 25  # o celular pergunta "tem novidade?" e espera até 25 s pela resposta
 KEEP_EVENTS, KEEP_AUDIO = 200, 4
 MAX_JSON, MAX_AUDIO, MAX_TEXT = 64 * 1024, 8 * 1024 * 1024, 2000
+MAX_UPLOAD = 300 * 1024 * 1024  # arquivo do celular para o PC (102)
+OFFER_HOURS = 12  # o link de um arquivo do PC para o celular vale por 12 horas
 COOKIE = "bolha"
 COOKIE_DAYS = 30
 # Formatos que o microfone do celular grava (Chrome: webm; iPhone: mp4) -> nome do arquivo para o Whisper
@@ -230,6 +232,8 @@ class Handler(BaseHTTPRequestHandler):
                 after = 0
             last, items = self.phone.events.since(after)
             return self._send(200, {"ultimo": last, "eventos": items})
+        if path.startswith("/baixar/"):
+            return self._download(path[len("/baixar/"):])
         if path.startswith("/fala/") and path.endswith(".mp3"):
             try:
                 mp3 = self.phone.events.audio.get(int(path[len("/fala/"):-len(".mp3")]))
@@ -241,6 +245,27 @@ class Handler(BaseHTTPRequestHandler):
         return self._error(404, "não achei")
 
     do_HEAD = do_GET
+
+    def _download(self, token):
+        """Arquivo que o PC ofereceu ao celular ("manda esse arquivo pro celular")."""
+        file = self.phone.offered(token)
+        if file is None:
+            return self._error(404, "esse link já venceu")
+        try:
+            size = file.stat().st_size
+            from urllib.parse import quote
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(size))
+            self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(file.name)}")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            if self.command != "HEAD":
+                with file.open("rb") as f:
+                    shutil.copyfileobj(f, self.wfile, 256 * 1024)
+        except OSError:
+            return self._error(404, "o arquivo sumiu do PC")
 
     def _page(self):
         html = PAGE.read_text(encoding="utf-8")
@@ -285,6 +310,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._request()
             if path == "/ouvir":
                 return self._hear()
+            if path == "/arquivo":
+                return self._upload()
             return self._error(404, "não achei")
         except PhoneError as e:
             code = int(str(e)) if str(e).isdigit() else 400
@@ -312,6 +339,24 @@ class Handler(BaseHTTPRequestHandler):
         self.phone.on_text(text)
         return self._send(200, {"ok": True})
 
+    def _upload(self):
+        """Arquivo do celular para o PC: cai na pasta "Bolha do celular" dentro dos Downloads."""
+        try:
+            size = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            raise PhoneError("411") from None
+        if size <= 0 or size > MAX_UPLOAD:
+            raise PhoneError("413")
+        if self.phone.inbox is None:
+            return self._error(503, "o PC não está recebendo arquivos agora")
+        target = _upload_into(self, size)
+        if self.phone.on_file:
+            try:
+                self.phone.on_file(target)
+            except Exception:
+                pass
+        return self._send(200, {"ok": True, "nome": target.name})
+
     def _hear(self):
         kind = audio_name(self.headers.get("Content-Type", ""))
         if kind is None:
@@ -330,6 +375,41 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(200, {"texto": text})
 
 
+def safe_name(name):
+    """Nome de arquivo sem pastas nem caracteres proibidos no Windows."""
+    import re
+    from urllib.parse import unquote
+    name = Path(unquote(str(name or ""))).name
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip(" .")
+    return name[:120] or f"arquivo-{time.strftime('%Y%m%d-%H%M%S')}"
+
+
+def _upload_into(handler, size):
+    phone = handler.phone
+    if phone.inbox is None:
+        raise PhoneError("503")
+    folder = Path(phone.inbox)
+    folder.mkdir(parents=True, exist_ok=True)
+    name = safe_name(handler.headers.get("X-Nome", ""))
+    target = folder / name
+    n = 1
+    while target.exists():
+        target = folder / f"{Path(name).stem} ({n}){Path(name).suffix}"
+        n += 1
+    left = size
+    with target.open("wb") as f:
+        while left > 0:
+            chunk = handler.rfile.read(min(left, 256 * 1024))
+            if not chunk:
+                break
+            f.write(chunk)
+            left -= len(chunk)
+    if left:
+        target.unlink(missing_ok=True)
+        raise PhoneError("400")
+    return target
+
+
 def _cookie(value, seconds):
     return f"{COOKIE}={value}; Max-Age={seconds}; Path=/; HttpOnly; Secure; SameSite=Strict"
 
@@ -346,8 +426,11 @@ class Server(ThreadingHTTPServer):
 class Phone:
     """O servidor do celular: pedidos (texto e áudio) entram por on_text; o que o reator mostra sai por events."""
 
-    def __init__(self, on_text, name="Bolha", hear=None, synth=None):
+    def __init__(self, on_text, name="Bolha", hear=None, synth=None, inbox=None, on_file=None):
         self.on_text = on_text
+        self.inbox = inbox  # pasta onde chegam os arquivos do celular
+        self.on_file = on_file  # avisa o Bolha quando um arquivo chega
+        self.files = {}  # token -> (caminho, vale até)
         self.name = name
         self.hear = hear  # (áudio, nome do arquivo, mime) -> texto
         self.synth = synth  # texto -> mp3
@@ -371,6 +454,24 @@ class Phone:
         mp3 = self.synth(text) if self.synth else b""
         if mp3:
             self.events.add_audio(mp3)
+
+    def offer(self, path):
+        """Oferece um arquivo do PC ao celular: aparece lá um card com o botão de baixar."""
+        import secrets
+        path = Path(path)
+        token = secrets.token_urlsafe(18)
+        now = time.time()
+        self.files = {k: v for k, v in self.files.items() if v[1] > now}
+        self.files[token] = (path, now + OFFER_HOURS * 3600)
+        size = path.stat().st_size
+        self.events.publish("arquivo", {"nome": path.name, "tamanho": size, "url": f"/baixar/{token}"})
+        return token
+
+    def offered(self, token):
+        item = self.files.get(str(token))
+        if not item or item[1] < time.time() or not item[0].is_file():
+            return None
+        return item[0]
 
 
 # ------------------------- ngrok -------------------------
@@ -469,14 +570,14 @@ _phone = None
 _ngrok = None
 
 
-def start(on_text, name="Bolha", hear=None, synth=None):
+def start(on_text, name="Bolha", hear=None, synth=None, inbox=None, on_file=None):
     """Liga o celular. Volta a linha para o console (ou None se nem foi configurado)."""
     global _phone, _ngrok
     if not password():
         return None
     if not configured():
         return f"Celular desligado: a BOLHA_SENHA precisa de {MIN_PASSWORD} ou mais caracteres."
-    phone = Phone(on_text, name, hear, synth)
+    phone = Phone(on_text, name, hear, synth, inbox, on_file)
     try:
         used = phone.start(port_=port())
     except OSError as e:
@@ -500,6 +601,20 @@ def publish(kind, data):
 
 def running():
     return _phone is not None
+
+
+def offer_file(path):
+    """ "manda esse arquivo pro celular": um card com o botão de baixar aparece no celular."""
+    path = Path(path)
+    if _phone is None:
+        print("Jarvis > O celular não está ligado (veja CELULAR no LEIA-ME).")
+        return False
+    if not path.is_file():
+        print(f"Jarvis > Não achei o arquivo {path}.")
+        return False
+    _phone.offer(path)
+    print(f"Jarvis > Mandei {path.name} para o celular: toque em Baixar lá.")
+    return True
 
 
 def say(text):

@@ -1146,3 +1146,14 @@ class Listener(threading.Thread):
                     self.put(("voz", command))
                 else:
                     self.on_state("parado")
+
+
+def record_seconds(seconds):
+    """Grava N segundos do microfone e devolve o WAV (para mandar áudio no WhatsApp)."""
+    import sounddevice as sd
+    seconds = max(1.0, min(120.0, float(seconds)))
+    beep()
+    data = sd.rec(int(seconds * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=1, dtype="int16")
+    sd.wait()
+    beep()
+    return wav_bytes(data.tobytes())

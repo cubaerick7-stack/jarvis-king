@@ -1820,3 +1820,92 @@ def list_startup():
     for n in sorted(items):
         print(f"  - {n}")
     return True
+
+
+# ========================= NOTIFICAÇÕES DO WINDOWS VIRAM CARD (100) =========================
+
+def watch_notifications(put, every=4.0):
+    """Lê as notificações do Windows e manda cada nova como aviso do Bolha. Precisa dos pacotes winrt
+    (veja NOTIFICAÇÕES no LEIA-ME) e da permissão "acesso às notificações" que o Windows pergunta uma vez."""
+    try:
+        import asyncio
+        from winrt.windows.ui.notifications import KnownNotificationBindings, NotificationKinds
+        from winrt.windows.ui.notifications.management import UserNotificationListener
+    except Exception:
+        return False
+
+    def run():
+        listener = UserNotificationListener.current
+        try:
+            status = asyncio.run(_await(listener.request_access_async()))
+            if int(status) != 1:  # 1 = Allowed
+                return
+        except Exception:
+            return
+        seen = set()
+        first = True
+        while True:
+            try:
+                items = asyncio.run(_await(listener.get_notifications_async(NotificationKinds.TOAST)))
+                for n in items:
+                    if n.id in seen:
+                        continue
+                    seen.add(n.id)
+                    if first:
+                        continue  # as que já estavam lá quando ele abriu não são novas
+                    try:
+                        app = n.app_info.display_info.display_name
+                    except Exception:
+                        app = "um programa"
+                    texts = []
+                    try:
+                        binding = n.notification.visual.get_binding(KnownNotificationBindings.toast_generic)
+                        texts = [t.text for t in binding.get_text_elements()]
+                    except Exception:
+                        pass
+                    if app.lower() not in ("bolha", "python", "jarvis"):
+                        put(("aviso", f"Notificação do {app}: " + " — ".join(t for t in texts if t)[:160]))
+                first = False
+            except Exception:
+                pass
+            time.sleep(every)
+
+    threading.Thread(target=run, daemon=True).start()
+    return True
+
+
+async def _await(op):
+    return await op
+
+
+# ========================= DOWNLOAD TERMINOU (103) =========================
+
+PARTIAL = (".crdownload", ".part", ".tmp", ".download", ".opdownload")
+
+
+def watch_downloads(folder, put, every=5.0):
+    """Avisa quando um download termina (o arquivo novo aparece sem o .crdownload)."""
+    folder = Path(folder)
+
+    def snapshot():
+        try:
+            return {p.name for p in folder.iterdir() if p.is_file() and not p.name.lower().endswith(PARTIAL)}
+        except OSError:
+            return set()
+
+    def run():
+        known = snapshot()
+        while True:
+            time.sleep(every)
+            now = snapshot()
+            for name in sorted(now - known):
+                try:
+                    size = (folder / name).stat().st_size
+                except OSError:
+                    continue
+                if size > 0 and not name.startswith("~"):
+                    put(("aviso", f"Download concluído, senhor: {name} ({_size(size)})."))
+            known = now
+
+    threading.Thread(target=run, daemon=True).start()
+    return True

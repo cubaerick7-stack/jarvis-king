@@ -977,7 +977,7 @@ def fast_local_router(user_text):
         return False
 
     if (learning_router(text, clean) or skills_router(text, clean) or routine_router(text, clean)
-            or docs_router(text, clean) or hands_router(text, clean)):
+            or screen_router(text, clean) or docs_router(text, clean) or hands_router(text, clean)):
         return True
 
     # memória
@@ -1192,6 +1192,7 @@ def fast_local_router(user_text):
         if target in {"janela", "essa janela", "esta janela", "isso", "isto"}:
             act("window_control", window_control, "fechar")
         elif target in {"youtube", "video", "aba", "essa aba", "esta aba", "musica", "navegador do jarvis"} and B.is_open():
+            remember_video()  # 92: guarda onde o vídeo parou
             act("close_tab", B.close_tab)  # o YouTube toca numa aba do Jarvis, não num programa
         else:
             tool("close_app", name=target)
@@ -1557,6 +1558,68 @@ def brain_router(text, clean):
     return False
 
 
+def screen_router(text, clean):
+    """WhatsApp (responder, resumo, áudios), navegador (abas, página, favoritos, retomar), celular e tela."""
+    m = re.match(r"^(?:responde|responda|responder)(?: (?:pra|para|a|o) (?:ultima|ultima mensagem|ele|ela))?"
+                 r"(?: (?:que|dizendo|com))? (.+)$", clean)
+    if m and not re.search(r"\b(?:e-?mail|comentario|instagram)\b", clean) and \
+            not re.match(r"^responde (?:a |o |pra |para )(?!ultima|ele\b|ela\b)\w+ (?:que|dizendo)", clean):
+        tool("whatsapp_reply", message=_original(text, m.group(1)) or m.group(1))
+        return True
+    if re.search(r"\b(?:resumo|resume|resuma)\b.*\b(?:zap|whats ?app|mensagens|nao lidas)\b|\bmensagens nao lidas\b", clean):
+        tool("whatsapp_summary")
+        return True
+    m = re.search(r"\b(?:ouve|ouca|escuta|transcreve|transcreva|le|leia)\s+(?:os |o )?audios?\b(?:\s+d[aoe]\s+(.+?))?(?:\s+no (?:zap|whats ?app))?$", clean)
+    if m:
+        tool("whatsapp_audios", contact=(m.group(1) or "").strip())
+        return True
+    m = re.match(r"^(?:grava|grave|manda|mande) (?:um )?audio(?: de (\d+) segundos?)? (?:pra|para|pro) (?:o |a )?(.+?)(?: no (?:zap|whats ?app))?$", clean)
+    if m:
+        tool("whatsapp_send_audio", contact=m.group(2), seconds=int(m.group(1) or 10))
+        return True
+    m = re.match(r"^(?:fecha|feche) (?:as |a )?abas? d[oae] (.+)$", clean)
+    if m:
+        tool("close_tabs", word=m.group(1))
+        return True
+    m = re.match(r"^(?:volta|vai|muda) (?:para|pra|pro) (?:a )?aba d[oae] (.+)$", clean)
+    if m:
+        tool("switch_tab", word=m.group(1))
+        return True
+    if re.search(r"\b(?:quais|lista as|mostra as) abas\b", clean):
+        tool("list_tabs")
+        return True
+    if re.search(r"\b(?:resume|resuma|faz um resumo d)[ae]? (?:essa |esta |a )?pagina\b", clean):
+        tool("summarize_page")
+        return True
+    if re.search(r"\b(?:le|leia) (?:essa |esta |a )?pagina em voz alta\b", clean):
+        tool("read_page_aloud")
+        return True
+    m = re.match(r"^(?:salva|salve|adiciona|coloca) (?:essa |esta |a )?pagina (?:nos|no|aos) favoritos(?: como (.+))?$", clean)
+    if m:
+        tool("favorite_add", name=m.group(1) or "")
+        return True
+    m = re.match(r"^(?:abre|abra) o favorito (.+)$", clean)
+    if m:
+        tool("favorite_open", name=m.group(1))
+        return True
+    if re.search(r"\b(?:quais|meus|lista os|mostra os) favoritos\b", clean):
+        tool("favorite_list")
+        return True
+    if re.search(r"\b(?:continua|retoma|volta)\b.*\b(?:video|musica)\b.*\bde onde (?:parei|parou)\b", clean):
+        tool("resume_video")
+        return True
+    m = re.match(r"^(?:manda|mande|envia|envie|passa) (?:o |a |esse |essa |este )?(?:arquivo |foto |pdf )?(.+?) (?:pro|para o|pra o|pra|para) (?:meu )?celular$", clean)
+    if m:
+        tool("send_to_phone", path=number_ref(m.group(1)))
+        return True
+    m = re.search(r"\b(?:tema|cor do reator|reator)\s+(?:para |em |no |de )?(azul|vermelho|dourado|ouro|homem de ferro)\b"
+                  r"|\b(?:muda|troca) (?:o tema|a cor)(?: do reator)? (?:para|pro|pra) (azul|vermelho|dourado|ouro|homem de ferro)\b", clean)
+    if m:
+        tool("set_theme", name=m.group(1) or m.group(2))
+        return True
+    return False
+
+
 def routine_router(text, clean):
     """Modos, não perturbe, VIP, Pomodoro, listas, água, contas, chuva, humor, contagem, integrações e autoteste."""
     if re.fullmatch(r"(?:sai|sair|saia|desliga|desativa|termina|encerra) (?:d[oe]sse |do |o )?modo(?: \w+)?|fim do modo|acabou a aula", clean):
@@ -1874,6 +1937,8 @@ def _show_playing(result):
 
 
 def youtube_control(action):
+    if normalize(action) in ("pausar", "pause", "parar") and not youtube_outside():
+        remember_video()  # 92: guarda onde parou
     if not youtube_outside() and B.on_youtube():
         try:
             return B.youtube_control(action, normalize)
@@ -2661,6 +2726,46 @@ TOOLS = [
     {"name": "add_vocabulary", "args": '{"words":"nomes separados por vírgula"}', "group": "memória",
      "desc": "ensinar palavras para ele entender por voz (nomes, jogos)", "examples": ["aprende a palavra Omori"],
      "run": lambda a: add_vocabulary(a.get("words", ""))},
+    # ---- WhatsApp, navegador, celular e tela
+    {"name": "whatsapp_reply", "args": '{"message":"texto"}', "group": "whatsapp",
+     "desc": "responder a última mensagem recebida (pede confirmação)", "examples": ["responde que já vou"],
+     "run": lambda a: whatsapp_reply(a.get("message", ""))},
+    {"name": "whatsapp_summary", "args": "{}", "group": "whatsapp",
+     "desc": "resumo das mensagens não lidas, por pessoa", "examples": ["resumo do zap"],
+     "run": lambda a: whatsapp_summary()},
+    {"name": "whatsapp_audios", "args": '{"contact":"nome (vazio = a última conversa)"}', "group": "whatsapp",
+     "desc": "transcrever e ler os áudios recebidos no WhatsApp", "examples": ["ouve os áudios da Ana"],
+     "run": lambda a: whatsapp_audios(a.get("contact", ""))},
+    {"name": "whatsapp_send_audio", "args": '{"contact":"nome","seconds":10}', "group": "whatsapp",
+     "desc": "gravar um áudio pelo microfone e mandar no WhatsApp (pede confirmação)",
+     "examples": ["grava um áudio de 10 segundos pra mãe"],
+     "run": lambda a: whatsapp_send_audio(a.get("contact", ""), int(a.get("seconds", 10) or 10))},
+    {"name": "list_tabs", "args": "{}", "group": "navegador",
+     "desc": "listar as abas do navegador do Jarvis", "examples": ["quais abas estão abertas"], "run": lambda a: B.list_tabs()},
+    {"name": "close_tabs", "args": '{"word":"youtube"}', "group": "navegador",
+     "desc": "fechar as abas de um site", "examples": ["fecha as abas do YouTube"], "run": lambda a: B.close_tabs(a.get("word", ""))},
+    {"name": "switch_tab", "args": '{"word":"gmail"}', "group": "navegador",
+     "desc": "voltar para a aba de um site", "examples": ["volta para a aba do Gmail"], "run": lambda a: B.switch_tab(a.get("word", ""))},
+    {"name": "summarize_page", "args": "{}", "group": "navegador",
+     "desc": "resumir a página aberta", "examples": ["resume essa página"], "run": lambda a: summarize_page()},
+    {"name": "read_page_aloud", "args": "{}", "group": "navegador",
+     "desc": "ler a página aberta em voz alta (continua, volta, para)", "examples": ["lê essa página em voz alta"],
+     "run": lambda a: read_page_aloud()},
+    {"name": "favorite_add", "args": '{"name":"nome (opcional)"}', "group": "navegador",
+     "desc": "salvar a página aberta nos favoritos", "examples": ["salva essa página nos favoritos"],
+     "run": lambda a: favorite_add(a.get("name", ""))},
+    {"name": "favorite_open", "args": '{"name":"nome"}', "group": "navegador",
+     "desc": "abrir um favorito", "examples": ["abre o favorito receitas"], "run": lambda a: favorite_open(a.get("name", ""))},
+    {"name": "favorite_list", "args": "{}", "group": "navegador",
+     "desc": "listar os favoritos", "examples": ["quais meus favoritos"], "run": lambda a: favorite_list()},
+    {"name": "resume_video", "args": "{}", "group": "mídia",
+     "desc": "retomar o vídeo ou a música de onde parou", "examples": ["continua o vídeo de onde parei"],
+     "run": lambda a: resume_video()},
+    {"name": "send_to_phone", "args": '{"path":"caminho ou número"}', "group": "programas e sites",
+     "desc": "mandar um arquivo do PC para o celular", "examples": ["manda esse pdf pro celular"],
+     "run": lambda a: C.offer_file(_path_or_folder(a.get("path", "1")))},
+    {"name": "set_theme", "args": '{"name":"azul|vermelho|dourado"}', "group": "sistema",
+     "desc": "trocar o tema (as cores) do reator", "examples": ["tema vermelho"], "run": lambda a: set_theme(a.get("name", ""))},
     {"name": "show_help", "args": "{}", "group": "sistema",
      "desc": "mostrar tudo o que eu sei fazer", "examples": ["o que você sabe fazer"],
      "run": lambda a: show_help()},
@@ -3805,6 +3910,274 @@ def calibrate_mic():
     return True
 
 
+# ------------------------- WhatsApp (69 a 72) -------------------------
+
+def whatsapp_reply(message):
+    """ "responde que já vou": responde a última mensagem recebida (pergunta antes)."""
+    message = str(message or "").strip()
+    if not W.configured():
+        print("Jarvis > Para responder eu preciso do WAHA (veja WHATSAPP no LEIA-ME).")
+        return False
+    try:
+        last = W.last_incoming()
+    except W.WahaError as e:
+        print(f"Jarvis > O WhatsApp não respondeu: {e}.")
+        return False
+    if not last:
+        print("Jarvis > Não achei mensagem recebida para responder.")
+        return False
+    chat_id, name, text, _ = last
+    if not message:
+        print(f"Jarvis > O que respondo para {name}?")
+        return False
+    message = message[0].upper() + message[1:]
+    if not confirm(f'Mando "{message}" para {name}?'):
+        print("Jarvis > Cancelado, não enviei.")
+        return False
+    try:
+        W.send_text(chat_id, message)
+    except W.WahaError as e:
+        print(f"Jarvis > Não consegui enviar: {e}.")
+        return False
+    print(f"Jarvis > Respondi {name}.")
+    return _sent(f"Enviado para {name}: {message}")
+
+
+SUMMARY_PROMPT = ("Resuma as mensagens não lidas do WhatsApp do João, POR PESSOA, em português do Brasil: uma frase curta "
+                  "para cada pessoa dizendo o que ela quer e se pede resposta. Comece por quem parece mais urgente. "
+                  "Sem markdown.")
+
+
+def whatsapp_summary():
+    if not W.configured():
+        print("Jarvis > Para o resumo eu preciso do WAHA (veja WHATSAPP no LEIA-ME).")
+        return False
+    try:
+        chats = W.unread_chats()
+        if not chats:
+            print("Jarvis > Nenhuma mensagem não lida, senhor.")
+            return True
+        blocks = []
+        for cid, name, count in chats[:8]:
+            msgs = W.received(cid, min(10, max(3, count)))
+            blocks.append(f"{name} ({count} não lidas): " + " | ".join(t for t, _ in msgs[-count:])[:600])
+    except W.WahaError as e:
+        print(f"Jarvis > O WhatsApp não respondeu: {e}.")
+        return False
+    try:
+        text = think(SUMMARY_PROMPT, "\n".join(blocks), json_mode=False, temperature=0.3, prefer="Groq")
+    except Exception:
+        text = "\n".join(blocks)
+    print(f"Jarvis > Não lidas de {len(chats)} pessoa{'s' if len(chats) > 1 else ''}:")
+    print(re.sub(r"[*_#`]", "", str(text)).strip())
+    return True
+
+
+def whatsapp_audios(contact=""):
+    """Transcreve e lê os áudios recebidos (do contato ou da última conversa)."""
+    if not W.configured():
+        print("Jarvis > Para ouvir os áudios eu preciso do WAHA (veja WHATSAPP no LEIA-ME).")
+        return False
+    try:
+        if contact:
+            chat_id, name = W.find_contact(contact, B.same_person)
+        else:
+            last = W.last_incoming()
+            chat_id, name = (last[0], last[1]) if last else (None, None)
+        if not chat_id:
+            print(f"Jarvis > Não achei {contact or 'conversa recente'} no WhatsApp.")
+            return False
+        audios = W.audio_messages(chat_id)[-3:]
+        if not audios:
+            print(f"Jarvis > {name} não mandou áudio recente.")
+            return True
+        print(f"Jarvis > Áudios de {name}:")
+        for when, url, mime in audios:
+            data = W.download(url)
+            ext = "ogg" if "ogg" in mime else "m4a" if "mp4" in mime or "m4a" in mime else "mp3"
+            text = N.transcribe(data, f"audio.{ext}", mime.split(";")[0])
+            print(f"  {when}: {text or '(não deu para entender)'}")
+    except (W.WahaError, N.CloudError) as e:
+        print(f"Jarvis > Não consegui ouvir os áudios: {e}.")
+        return False
+    return True
+
+
+def whatsapp_send_audio(contact, seconds=10):
+    """Grava um áudio pelo microfone e manda pelo WhatsApp (pergunta antes de mandar)."""
+    if not W.configured():
+        print("Jarvis > Para mandar áudio eu preciso do WAHA (veja WHATSAPP no LEIA-ME).")
+        return False
+    try:
+        chat_id, name = W.find_contact(contact, B.same_person)
+    except W.WahaError as e:
+        print(f"Jarvis > O WhatsApp não respondeu: {e}.")
+        return False
+    if not chat_id:
+        print(f"Jarvis > Não achei {contact} nos contatos do WhatsApp.")
+        return False
+    U.speech(f"Gravando {seconds} segundos para {name}. Fale depois do bipe.")
+    try:
+        audio = V.record_seconds(seconds)
+    except Exception as e:
+        print(f"Jarvis > Não consegui gravar: {e}.")
+        return False
+    if not confirm(f"Mando o áudio de {seconds} segundos para {name}?"):
+        print("Jarvis > Cancelado, não enviei.")
+        return False
+    try:
+        W.send_voice(chat_id, audio, "audio/wav")
+    except W.WahaError as e:
+        print(f"Jarvis > Não consegui enviar: {e}.")
+        return False
+    print(f"Jarvis > Áudio enviado para {name}.")
+    return True
+
+
+# ------------------------- navegador: página, favoritos, retomar (62, 67, 92) -------------------------
+FAVORITES = Path(r"G:\Jarvis\config\favoritos.json")
+
+
+def summarize_page():
+    try:
+        text = B.read_page() if B.is_open() else False
+    except Exception as e:
+        print(f"Jarvis > Não consegui ler a página: {e}.")
+        return False
+    if not text:
+        print("Jarvis > Não tem página aberta no meu navegador.")
+        return False
+    try:
+        out = think("Resuma a página em português do Brasil, em até 5 tópicos curtos.", str(text)[:12000],
+                    json_mode=False, temperature=0.2)
+    except Exception as e:
+        print(f"Jarvis > Não consegui resumir: {e}.")
+        return False
+    print("Jarvis > Resumindo a página...")
+    print(re.sub(r"[*_#`]", "", str(out)).strip())
+    return True
+
+
+def read_page_aloud():
+    try:
+        text = B.read_page() if B.is_open() else False
+    except Exception:
+        text = False
+    if not text:
+        print("Jarvis > Não tem página aberta no meu navegador.")
+        return False
+    DOC.reader.update(arquivo="página", partes=DOC.split_parts(str(text)), i=0, ativo=True)
+    return DOC.reading_control("repete")
+
+
+def _favorites():
+    try:
+        return json.loads(FAVORITES.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def favorite_add(name=""):
+    url, title = B.current_url()
+    if not url or url.startswith("about:"):
+        print("Jarvis > Não tem página aberta no meu navegador para guardar.")
+        return False
+    favs = _favorites()
+    key = normalize(name or title or url)[:60]
+    favs[key] = {"nome": name or title or url, "url": url}
+    FAVORITES.parent.mkdir(parents=True, exist_ok=True)
+    FAVORITES.write_text(json.dumps(favs, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"Jarvis > Guardei nos favoritos: {favs[key]['nome']}.")
+    return True
+
+
+def favorite_open(name):
+    favs = _favorites()
+    key = normalize(name)
+    hit = favs.get(key) or next((v for k, v in favs.items() if key and key in k), None)
+    if not hit:
+        print(f"Jarvis > Não tenho o favorito {name}.")
+        return False
+    return open_url(hit["url"])
+
+
+def favorite_list():
+    favs = _favorites()
+    if not favs:
+        print("Jarvis > Ainda não tenho favoritos. Diga \"salva essa página nos favoritos\".")
+        return True
+    print("Jarvis > Favoritos:")
+    for i, v in enumerate(favs.values(), 1):
+        print(f"{i}. {v['nome']}")
+    return True
+
+
+def remember_video():
+    """Guarda onde o vídeo do YouTube parou (para "continua de onde parei")."""
+    try:
+        pos = B.youtube_position()
+    except Exception:
+        pos = None
+    if pos:
+        A.set_pref("retomar_video", {"url": pos[0], "t": pos[1]})
+    return pos
+
+
+def resume_video():
+    saved = A.pref("retomar_video")
+    if not saved:
+        media_control("play")
+        return True
+    url = saved["url"] + ("&" if "?" in saved["url"] else "?") + f"t={int(saved['t'])}s"
+    print(f"Jarvis > Voltando ao vídeo onde parou ({int(saved['t']) // 60} min {int(saved['t']) % 60} s).")
+    return open_url(url)
+
+
+# ------------------------- tela: tema (101) e HUD (99) -------------------------
+THEMES = {"azul": "azul", "vermelho": "vermelho", "dourado": "dourado", "ouro": "dourado", "homem de ferro": "vermelho"}
+
+
+def set_theme(name):
+    theme = THEMES.get(normalize(name), "")
+    if not theme:
+        print("Jarvis > Tenho os temas azul, vermelho e dourado.")
+        return False
+    A.set_pref("tema", theme)
+    U.theme(theme)
+    print(f"Jarvis > Tema {theme} no reator, senhor.")
+    return True
+
+
+def hud_loop(every=15):
+    """O HUD fixo: CPU, RAM, clima, hora e a próxima tarefa, atualizado sozinho."""
+    import psutil
+    weather_line, weather_at = "", 0.0
+    while True:
+        try:
+            if time.time() - weather_at > 1800:
+                weather_at = time.time()
+                tee = io.StringIO()
+                with contextlib.redirect_stdout(tee):
+                    F.weather(M.load()["perfil"].get("cidade", ""))
+                m = CLIMA.match(tee.getvalue().replace("Jarvis > ", "").strip())
+                weather_line = f"{int(m.group(3))}° {m.group(2).strip()}" if m else weather_line
+            now = datetime.now()
+            pending = sorted((r for r in M.load()["lembretes"] if not r.get("avisado") and not r.get("despertador")),
+                             key=lambda r: (r.get("data", ""), r.get("hora") or "99:99"))
+            nxt = next((r for r in pending if r.get("data", "") >= now.date().isoformat()), None)
+            U.hud({"cpu": round(psutil.cpu_percent(interval=None)), "ram": round(psutil.virtual_memory().percent),
+                   "clima": weather_line, "hora": now.strftime("%H:%M"),
+                   "proxima": (f"{nxt.get('hora') or ''} {nxt['texto']}".strip()[:60] if nxt else ""),
+                   "modo": R.state.get("modo", ""), "naoPerturbe": R.dnd_active()})
+        except Exception:
+            pass
+        time.sleep(every)
+
+
+def on_phone_file(path):
+    commands.put(("aviso", f"Chegou do celular: {Path(path).name}. Está em Downloads, na pasta Bolha do celular."))
+
+
 def alert(text):
     """Aviso do próprio Bolha (Pomodoro): nunca é segurado pelo não perturbe."""
     commands.put(("alerta", text))
@@ -4315,7 +4688,7 @@ def start_phone():
     """O Bolha no celular (veja CELULAR no LEIA-ME): liga se tiver a BOLHA_SENHA."""
     try:
         line = C.start(lambda text: incoming("celular", text), NAME, hear_phone,
-                       V.synth_mp3 if voice_out else None)
+                       V.synth_mp3 if voice_out else None, DOWNLOADS / "Bolha do celular", on_phone_file)
     except Exception as e:
         line = f"Celular desligado: {e}"
     if line:
@@ -4352,6 +4725,13 @@ def run():
                                       "Pronto, senhor.", "Por nada, senhor."])  # 16: frases prontas
     I.watcher(commands.put)  # preços e encomendas vigiados
     U.card_filter = R.hide_card  # modo visita: os cards pessoais não aparecem
+    threading.Thread(target=hud_loop, daemon=True).start()  # 99: HUD fixo
+    theme = A.pref("tema")
+    if theme:
+        threading.Timer(3, U.theme, args=(theme,)).start()  # 101: o tema escolhido
+    MA.watch_downloads(DOWNLOADS, commands.put)  # 103: avisa (no PC e no celular) quando um download termina
+    if os.environ.get("BOLHA_NOTIFICACOES", "").strip() != "0":
+        MA.watch_notifications(commands.put)  # 100: notificações do Windows viram card (com os pacotes winrt)
     threading.Thread(target=_startup_check, daemon=True).start()  # 105: autoteste ao abrir
     if os.environ.get("BOLHA_AREA_TRANSFERENCIA", "").strip() != "0":
         MA.watch_clipboard()  # histórico do que o senhor copia (só na memória, nunca em disco)

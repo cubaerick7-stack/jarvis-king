@@ -507,3 +507,94 @@ def whatsapp_send(contact, message, confirm):
     p.keyboard.press("Enter")
     _say(f"Mensagem enviada para {title or contact}.")
     return f"Enviado para {title or contact}: {message}"
+
+
+# ------------------------- abas, favoritos e retomar vídeo (61, 67, 92) -------------------------
+
+def _all_pages():
+    if _ctx is None:
+        return []
+    try:
+        return [p for p in _ctx.pages if _alive(p)]
+    except Exception:
+        return []
+
+
+def _title_of(p):
+    try:
+        return (p.title() or p.url or "").strip()
+    except Exception:
+        return ""
+
+
+def list_tabs():
+    pages = _all_pages()
+    if not pages:
+        _say("O navegador do Jarvis não está aberto.")
+        return False
+    _say(f"Abas abertas ({len(pages)}):")
+    for i, p in enumerate(pages, 1):
+        print(f"{i}. {_title_of(p)[:80]}")
+    return True
+
+
+def _match(p, word):
+    w = _plain(word)
+    return bool(w) and (w in _plain(_title_of(p)) or w in _plain(getattr(p, "url", "")))
+
+
+def _plain(text):
+    text = unicodedata.normalize("NFKD", str(text or "").lower())
+    return "".join(c for c in text if not unicodedata.combining(c))
+
+
+def close_tabs(word):
+    """ "fecha as abas do YouTube": fecha as abas do navegador do Jarvis com essa palavra."""
+    hits = [p for p in _all_pages() if _match(p, word)]
+    if not hits:
+        _say(f"Não achei aba de {word}.")
+        return False
+    for p in hits:
+        try:
+            p.close()
+        except Exception:
+            pass
+    for k, t in list(_tabs.items()):
+        if t in hits:
+            _tabs.pop(k, None)
+    _say(f"Fechei {len(hits)} aba{'s' if len(hits) > 1 else ''} de {word}.")
+    return True
+
+
+def switch_tab(word):
+    """ "volta para a aba do Gmail"."""
+    global _page
+    for p in _all_pages():
+        if _match(p, word):
+            p.bring_to_front()
+            _page = p
+            _say(f"Na aba: {_title_of(p)[:60]}.")
+            return True
+    _say(f"Não achei aba de {word}.")
+    return False
+
+
+def current_url():
+    p = _page if _alive(_page) else None
+    try:
+        return (p.url, _title_of(p)) if p else ("", "")
+    except Exception:
+        return "", ""
+
+
+def youtube_position():
+    """(url do vídeo, segundos) da aba do YouTube do Jarvis, para retomar de onde parou."""
+    p = _tabs.get("midia")
+    if not _alive(p) or "youtube.com/watch" not in (p.url or ""):
+        return None
+    try:
+        t = p.evaluate("() => { const v = document.querySelector('video'); return v ? v.currentTime : 0 }")
+    except Exception:
+        return None
+    url = re.sub(r"[&?]t=\d+s?", "", p.url)
+    return url, int(t or 0)

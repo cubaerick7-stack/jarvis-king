@@ -183,3 +183,85 @@ def messages(chat_id, limit=6):
                  {"limit": limit, "downloadMedia": "false"})
     msgs = sorted((m for m in msgs if isinstance(m, dict)), key=lambda m: m.get("timestamp") or 0)
     return [(bool(m.get("fromMe")), _text(m), _when(m.get("timestamp"))) for m in msgs]
+
+
+# ------------------------- responder, não lidos, áudios (69, 70, 71, 72) -------------------------
+
+def last_incoming():
+    """A última mensagem recebida (de pessoa): (chat_id, nome, texto, timestamp) ou None."""
+    items = incoming(20)
+    return max(items, key=lambda x: x[3]) if items else None
+
+
+def unread_chats(limit=30):
+    """Conversas com mensagem não lida: [(chat_id, nome, quantas)]. Se o WAHA não informar o número de não lidas,
+    usa as conversas em que a última mensagem é dele (não sua) nas últimas 12 horas."""
+    chats = _call(f"/api/{session()}/chats/overview", {"limit": limit}, timeout=15)
+    out, now = [], time.time()
+    for c in chats if isinstance(chats, list) else []:
+        cid, last = _chat_id(c), c.get("lastMessage") or {}
+        if not cid.endswith("@c.us"):
+            continue
+        count = c.get("unreadCount")
+        if count is None:
+            count = (c.get("_chat") or {}).get("unreadCount")
+        if count is None:
+            count = 1 if last and not last.get("fromMe") and now - int(last.get("timestamp") or 0) < 12 * 3600 else 0
+        if int(count or 0) > 0:
+            out.append((cid, _name(c) or _digits(cid), int(count)))
+    return out
+
+
+def received(chat_id, limit=10):
+    """As mensagens recebidas mais recentes de uma conversa (texto), da mais antiga para a mais nova."""
+    return [(t, w) for mine, t, w in messages(chat_id, limit) if not mine]
+
+
+def _media_messages(chat_id, limit=15):
+    msgs = _call(f"/api/{session()}/chats/{urllib.parse.quote(chat_id)}/messages",
+                 {"limit": limit, "downloadMedia": "true"}, timeout=60)
+    return sorted((m for m in msgs if isinstance(m, dict)), key=lambda m: m.get("timestamp") or 0)
+
+
+def audio_messages(chat_id, limit=15):
+    """Áudios recebidos (mensagem de voz) da conversa: [(hora, url, mimetype)]."""
+    out = []
+    for m in _media_messages(chat_id, limit):
+        media = m.get("media") or {}
+        mime = str(media.get("mimetype") or "")
+        if m.get("fromMe") or not m.get("hasMedia") or not mime.startswith("audio"):
+            continue
+        if media.get("url"):
+            out.append((_when(m.get("timestamp")), media["url"], mime))
+    return out
+
+
+def download(url, timeout=60):
+    """Baixa uma mídia do WAHA (com a senha da API)."""
+    headers = {}
+    key = os.environ.get("WAHA_API_KEY", "").strip()
+    if key:
+        headers["X-Api-Key"] = key
+    if url.startswith("/"):
+        url = base() + url
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read()
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise WahaError(f"não consegui baixar o áudio ({e})") from e
+
+
+def send_voice(chat_id, audio, mime="audio/ogg; codecs=opus"):
+    """Manda um áudio gravado como mensagem de voz (o WAHA converte para o formato do WhatsApp)."""
+    import base64
+    body = {"session": session(), "chatId": chat_id, "convert": True,
+            "file": {"mimetype": mime, "filename": "audio.ogg" if "ogg" in mime else "audio.wav",
+                     "data": base64.b64encode(audio).decode("ascii")}}
+    try:
+        return _call("/api/sendVoice", body=body, timeout=90)
+    except WahaError as e:
+        if re.search(r"HTTP (?:403|404|422|501)", str(e)):
+            body["file"]["filename"] = "audio.wav" if "wav" in mime else body["file"]["filename"]
+            return _call("/api/sendFile", body={k: v for k, v in body.items() if k != "convert"}, timeout=90)
+        raise
