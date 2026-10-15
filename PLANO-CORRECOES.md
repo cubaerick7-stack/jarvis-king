@@ -196,7 +196,11 @@ nada pesado para o i3.
   - Plano B: transformar os slides em imagens (uma por slide) e mandar como álbum.
   - Plano C: "manda pro celular" (aparece com o botão Baixar).
   - Plano D: com o Google conectado, subir no Drive e mandar o link por texto.
-- **Sem habilidade (skill):** é uma ferramenta direta do Bolha ("faz um slide"), ligada ao app por API.
+- **Com habilidade (skill), como o João pediu:** a ferramenta "faz um slide" mais a receita
+  `windows/skills/slides-da-faculdade/SKILL.md`, com o passo a passo para a IA: entender o pedido (tema,
+  matéria, nº de slides, nível), pesquisar com fontes, montar o roteiro, escolher o layout de cada slide, gerar,
+  conferir e mandar. Isso deixa a qualidade sempre igual e fácil de ajustar no texto da receita, sem mexer no
+  código.
 - **Teste de pronto:** "faz um slide sobre a Revolução Francesa com 8 slides e manda pra mim no zap": o .pptx e
   o PDF chegam no WhatsApp do João e abrem certos no celular.
 
@@ -215,6 +219,8 @@ nada pesado para o i3.
     Notas, abre para o João ver e manda pelo WhatsApp (confirmando o contato, item 2; com o mesmo limite do
     WAHA do item 10).
   - Hoje o `write_document` já cria o .docx, mas a IA escreve pouco: o prompt e o modo em partes resolvem isso.
+- **Habilidade (skill):** a receita `windows/skills/resumo-de-livro/SKILL.md` com o roteiro do texto completo
+  (seções, tamanho e tom), do mesmo jeito do item 10.
 - **Teste de pronto:** "faz um resumo completo de Dom Casmurro no Word e me manda no zap" gera um documento de
   pelo menos 2 páginas, bem dividido, que chega no WhatsApp.
 
