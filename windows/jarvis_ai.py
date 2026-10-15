@@ -41,6 +41,7 @@ import documentos as DOC  # noqa: E402
 import rotina as R  # noqa: E402
 import integracoes as I  # noqa: E402
 import autoteste as AT  # noqa: E402
+import slides as SL  # noqa: E402
 
 try:
     import pyautogui
@@ -1573,8 +1574,31 @@ def brain_router(text, clean):
     return False
 
 
+SLIDES_RE = re.compile(
+    r"^(?:faz|faca|fazer|cria|crie|monta|monte|prepara|prepare)\s+(?:um |uns |uma |o |os )?(?:slides?|apresentac\w+)"
+    r"(?:\s+(?:sobre|de|do|da|dos|das)\s+(?P<tema>.+?))?"
+    r"(?:\s*,?\s+com\s+(?P<n>\d{1,2})\s+slides?)?"
+    r"(?:\s+(?:no|pelo|em)\s+(?P<onde>google slides|google|powerpoint|power point))?"
+    r"(?:\s*,?\s+e\s+(?:manda|mande|envia|envie)\s+(?:pra|para|pro)\s+(?P<quem>.+?)(?:\s+no\s+(?:zap|whats ?app))?)?$")
+
+
 def screen_router(text, clean):
     """WhatsApp (responder, resumo, áudios), navegador (abas, página, favoritos, retomar), celular e tela."""
+    m = re.match(r"^(?:o )?meu (?:whats ?app|zap|numero(?: do (?:zap|whats ?app))?) (?:e|eh) (.+)$", clean)
+    if m and len(re.sub(r"\D", "", m.group(1))) >= 10:
+        tool("set_profile", key="meu_whatsapp", value=re.sub(r"\D", "", m.group(1)))
+        return True
+    m = SLIDES_RE.match(clean)
+    if m and m.group("tema"):
+        tema = m.group("tema")
+        n = m.group("n")
+        if not n:  # "sobre X com 8 slides" já foi; "8 slides sobre X" não
+            n2 = re.search(r"\b(\d{1,2})\s+slides?\b", clean)
+            n = n2.group(1) if n2 else 8
+        tool("make_slides", topic=_original(text, tema) or tema, slides=int(n),
+             where="google" if (m.group("onde") or "").startswith("google") else "",
+             contact=(m.group("quem") or "").strip())
+        return True
     m = re.search(r"\b(?:resume|resuma|faz um resumo d)[oe]? (?:esse |este |o )?video\b(?:.*?(https?://\S+))?", text, re.I) \
         if re.search(r"\bvideo\b", clean) else None
     if m:
@@ -2800,6 +2824,12 @@ TOOLS = [
     {"name": "summarize_video", "args": '{"url":"link do YouTube (vazio = o vídeo aberto)"}', "group": "mídia",
      "desc": "resumir um vídeo do YouTube pela legenda", "examples": ["resume esse vídeo"],
      "run": lambda a: I.summarize_video(a.get("url") or (B.current_url()[0] if B.is_open() else ""), think)},
+    {"name": "make_slides", "args": '{"topic":"tema","slides":8,"level":"faculdade","style":"escuro|claro|vermelho|dourado","where":"pptx|google","contact":"mandar no WhatsApp para (vazio = não manda; eu = o senhor)","extra":"pedidos do aluno"}',
+     "group": "ler e resumir", "desc": "fazer uma apresentação de slides bonita sobre um tema (PowerPoint ou Google Slides), "
+                                      "salvar, abrir e mandar no WhatsApp se pedir",
+     "examples": ["faz um slide sobre a Revolução Francesa com 8 slides e manda pra mim no zap"],
+     "run": lambda a: make_slides(a.get("topic", ""), a.get("slides", 8), a.get("level", "faculdade"),
+                                  a.get("style", "escuro"), a.get("where", ""), a.get("contact", ""), a.get("extra", ""))},
     {"name": "show_help", "args": "{}", "group": "sistema",
      "desc": "mostrar tudo o que eu sei fazer", "examples": ["o que você sabe fazer"],
      "run": lambda a: show_help()},
@@ -4311,6 +4341,37 @@ def write_document(name, text):
     except (OSError, AttributeError):
         pass
     return str(path)
+
+
+def make_slides(topic, count=8, level="faculdade", style="escuro", where="", contact="", extra=""):
+    """Slides: no Google Slides se pedir (ou se o senhor preferir: setx BOLHA_SLIDES google), senão o .pptx."""
+    where = where or os.environ.get("BOLHA_SLIDES", "").strip() or "pptx"
+    out = SL.make_slides(topic, count, level, style, where, DOCUMENTS / "Slides", think, F.web_snippets,
+                         I._google, I.google_bytes, I.google_ready(), extra)
+    if not out:
+        return False
+    try:
+        if out["link"]:
+            webbrowser.open(out["link"])
+        elif out["pptx"]:
+            os.startfile(out["pptx"])
+    except (OSError, AttributeError):
+        pass
+    contact = str(contact or "").strip()
+    if contact:
+        if normalize(contact) in ("eu", "mim", "pra mim", "para mim", "me", "meu numero", "meu zap"):
+            contact = M.load()["perfil"].get("meu_whatsapp", "") or contact
+            if normalize(contact) in ("eu", "mim", "pra mim", "para mim", "me", "meu numero", "meu zap"):
+                print("Jarvis > Para mandar para o senhor, preciso do seu número: diga \"meu whatsapp é 41 9...\".")
+                return True
+        file = out["pdf"] or out["pptx"]
+        if file:
+            whatsapp_send_file(contact, file, out["titulo"])
+            if out["pdf"] and out["pptx"]:
+                whatsapp_send_file(contact, out["pptx"], "")
+        elif out["link"]:
+            print(f"Jarvis > O link do Google Slides é {out['link']} (só abre para quem tem acesso).")
+    return True
 
 
 def _set_personality(style):

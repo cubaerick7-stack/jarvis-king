@@ -132,6 +132,7 @@ COMUNICACAO
 - Gmail e Agenda (uma vez): crie um acesso OAuth "App para computador" em console.cloud.google.com,
   ative a Gmail API e a Google Calendar API, e faca
      setx GOOGLE_CLIENT_ID "..."   e   setx GOOGLE_CLIENT_SECRET "..."
+  (para os slides, ative tambem a Google Slides API e a Google Drive API)
   Reabra e diga "conecta o Google": o navegador abre, voce aceita e ele guarda a chave sozinho
   (GOOGLE_REFRESH_TOKEN, por setx). Depois: "tenho e-mail novo?", "le o e-mail 2",
   "responde o e-mail 1 dizendo que confirmo", "o que tenho hoje na agenda?", "marca dentista sexta as 15h".
@@ -150,6 +151,17 @@ ROTINA E CASA
 - Lembretes que repetem: "todo dia 5 me lembra do aluguel", "todo dia as 20h faz backup da pasta documentos"
 - Casa inteligente (Home Assistant): setx HA_URL "http://homeassistant.local:8123" e setx HA_TOKEN "...";
   depois "apaga a luz do quarto".
+
+SLIDES (faculdade)
+- "faz um slide sobre a Revolucao Francesa com 8 slides" monta um PowerPoint bonito (capa, topicos, duas colunas,
+  destaques, citacao, notas do apresentador e referencias), salva em Documentos\Slides e abre. Com o PowerPoint
+  ou o LibreOffice instalado, sai tambem o PDF.
+- "... e manda pra mim no zap" (antes diga uma vez "meu whatsapp e 41 9...") ou "... e manda pro Erick".
+- Estilos: escuro (padrao), claro, vermelho, dourado ("faz um slide claro sobre ...").
+- Google Slides: "faz uma apresentacao sobre X no google slides". Precisa do Google conectado (secao
+  COMUNICACAO: ative tambem a Google Slides API e a Google Drive API no console.cloud.google.com e diga
+  "conecta o Google" de novo, se ja tinha conectado antes). Ele cria no seu Google Slides, abre e baixa o PDF.
+  Para usar sempre o Google: setx BOLHA_SLIDES google
 
 TELA E CELULAR
 - HUD na direita: processador, memoria, clima, proxima tarefa (clique pergunta) e temperatura.

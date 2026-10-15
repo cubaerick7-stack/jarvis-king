@@ -62,9 +62,10 @@ INTEGRATIONS = [
      "como": "gere o token no Meta for Developers e: setx INSTAGRAM_TOKEN \"token\""},
     {"nome": "Celular (o reator no celular)", "vars": ["BOLHA_SENHA"],
      "como": "setx BOLHA_SENHA \"uma senha de 8+ letras\" (e o ngrok: veja CELULAR no LEIA-ME)"},
-    {"nome": "Google: Gmail e Agenda", "vars": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"],
-     "como": "crie o acesso OAuth (app de computador) no console.cloud.google.com, ative a Gmail API e a Calendar "
-             "API, faça setx GOOGLE_CLIENT_ID e setx GOOGLE_CLIENT_SECRET, reabra e diga \"conecta o Google\""},
+    {"nome": "Google: Gmail, Agenda e Slides", "vars": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"],
+     "como": "crie o acesso OAuth (app de computador) no console.cloud.google.com, ative a Gmail API, a Calendar "
+             "API, a Google Slides API e a Google Drive API, faça setx GOOGLE_CLIENT_ID e setx GOOGLE_CLIENT_SECRET, "
+             "reabra e diga \"conecta o Google\""},
     {"nome": "Casa inteligente (Home Assistant)", "vars": ["HA_URL", "HA_TOKEN"],
      "como": "setx HA_URL \"http://homeassistant.local:8123\" e setx HA_TOKEN \"token de longa duração\""},
     {"nome": "Rastreio dos Correios (Linketrack)", "vars": ["LINKETRACK_USER", "LINKETRACK_TOKEN"], "opcional": True,
@@ -110,7 +111,9 @@ def _http(url, data=None, headers=None, method=None, timeout=15):
 
 # ========================= GOOGLE: GMAIL E AGENDA (73, 74) =========================
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.modify", "https://www.googleapis.com/auth/calendar.events"]
+# Gmail, Agenda e Slides; o drive.file só enxerga os arquivos que o próprio Bolha criou (para exportar o PDF)
+SCOPES = ["https://www.googleapis.com/auth/gmail.modify", "https://www.googleapis.com/auth/calendar.events",
+          "https://www.googleapis.com/auth/presentations", "https://www.googleapis.com/auth/drive.file"]
 _token = {"valor": "", "ate": 0.0}
 
 
@@ -198,10 +201,17 @@ def _google(url, data=None, method=None):
     return _http(url, data, {"Authorization": f"Bearer {_access_token()}", "Content-Type": "application/json"}, method)
 
 
+def google_bytes(url):
+    """Baixa um arquivo do Google (ex.: o PDF exportado de uma apresentação)."""
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {_access_token()}", "User-Agent": "Bolha/1.0"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return r.read()
+
+
 def _need_google():
     if google_ready():
         return True
-    _say("O Gmail e a Agenda ainda não estão conectados. " + INTEGRATIONS[6]["como"] + ".")
+    _say("O Google (Gmail, Agenda e Slides) ainda não está conectado. " + INTEGRATIONS[6]["como"] + ".")
     return False
 
 

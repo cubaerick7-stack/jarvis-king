@@ -171,6 +171,11 @@ nada pesado para o i3.
 
 ## 10. Slides da faculdade: "faz um slide sobre X e manda no zap"
 
+- [~] **Feito em 15/10 (falta o teste no PC):** a ferramenta `make_slides` (`windows/slides.py`) e a habilidade
+  `slides-da-faculdade`. O .pptx caprichado sai grátis, o Google Slides funciona com o Google conectado (com os
+  escopos de Slides e Drive) e o PDF sai pelo PowerPoint, pelo LibreOffice ou pelo Drive. Mandar no WhatsApp usa
+  o envio de arquivo de hoje, então depende dos itens 1 e 2 (e do limite do WAHA). Ainda faltam as imagens nos
+  slides e o Gamma (opcional, pago).
 - [ ] **O que o João quer:** "faz um slide sobre (tema) para a faculdade, com (tantos) slides, e manda pro
   (contato)" ou "...e manda pra mim no zap". O WhatsApp do Bolha (WAHA) é outro número, então mandar para o
   próprio João funciona igual a mandar para qualquer contato.
