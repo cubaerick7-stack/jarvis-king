@@ -158,9 +158,36 @@ def what_i_know():
 
 # ------------------------- lembretes -------------------------
 
-def add_reminder(text, day, hour="", pedido=False, despertador=False):
+REPEATS = {"diario": 1, "todo dia": 1, "dias uteis": "uteis", "semanal": 7, "toda semana": 7, "mensal": "mes",
+           "todo mes": "mes", "anual": "ano", "todo ano": "ano"}
+
+
+def next_date(d, repeat):
+    """O próximo dia de um lembrete que se repete (diário, dias úteis, semanal, mensal, anual)."""
+    step = REPEATS.get(_norm(repeat).replace("á", "a"), None)
+    if step is None:
+        return None
+    if step == "uteis":
+        d += timedelta(days=1)
+        while d.weekday() >= 5:
+            d += timedelta(days=1)
+        return d
+    if step == "mes":
+        y, m = (d.year + 1, 1) if d.month == 12 else (d.year, d.month + 1)
+        import calendar
+        return d.replace(year=y, month=m, day=min(d.day, calendar.monthrange(y, m)[1]))
+    if step == "ano":
+        try:
+            return d.replace(year=d.year + 1)
+        except ValueError:  # 29/02
+            return d.replace(year=d.year + 1, day=28)
+    return d + timedelta(days=step)
+
+
+def add_reminder(text, day, hour="", pedido=False, despertador=False, repetir=""):
     """day = AAAA-MM-DD; hour = HH:MM (sem hora, avisa às 9h ou ao abrir o Jarvis).
-    pedido=True: na hora ele FAZ o pedido ("toca evidências"), em vez de só avisar."""
+    pedido=True: na hora ele FAZ o pedido ("toca evidências"), em vez de só avisar.
+    repetir = diario | dias uteis | semanal | mensal | anual: depois de avisar, marca o próximo."""
     hour_in = str(hour or "").strip().lower()
     if not str(day or "").strip() and hour_in:  # sem dia: a próxima vez que der essa hora (hoje ou amanhã)
         m = re.match(r"(\d{1,2})(?:\s*(?:h|:|horas?)\s*(\d{2})?)?", hour_in)
@@ -191,6 +218,8 @@ def add_reminder(text, day, hour="", pedido=False, despertador=False):
             item["pedido"] = True
         if despertador:
             item["despertador"] = True
+        if repetir and next_date(d, repetir) is not None:
+            item["repetir"] = _norm(repetir)
         data["lembretes"].append(item)
         save(data)
     if despertador:
@@ -199,6 +228,8 @@ def add_reminder(text, day, hour="", pedido=False, despertador=False):
         _say(f"Combinado, senhor: {d:%d/%m}{' às ' + hour if hour else ''} eu faço \"{text}\".")
     else:
         _say(f"Lembrete marcado para {d:%d/%m}{' às ' + hour if hour else ''}: {text}.")
+    if item.get("repetir"):
+        _say(f"E repito {item['repetir']}.")
     return True
 
 
@@ -244,8 +275,14 @@ def _due(now=None):
             except (ValueError, KeyError, TypeError):  # um lembrete estragado não trava os outros
                 when = now
             if when <= now:
-                r["avisado"] = True
-                due.append((r, when))
+                due.append((dict(r), when))
+                nxt = next_date(when.date(), r["repetir"]) if r.get("repetir") else None
+                while nxt is not None and datetime.combine(nxt, when.time()) <= now:  # o Bolha ficou dias fechado
+                    nxt = next_date(nxt, r["repetir"])
+                if nxt is not None:
+                    r["data"] = nxt.isoformat()  # repete: fica marcado para a próxima vez
+                else:
+                    r["avisado"] = True
         if due:
             save(data)
     return due

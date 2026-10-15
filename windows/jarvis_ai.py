@@ -37,6 +37,10 @@ import diario as D  # noqa: E402
 import aprende as A  # noqa: E402
 import habilidades as H  # noqa: E402
 import maos as MA  # noqa: E402
+import documentos as DOC  # noqa: E402
+import rotina as R  # noqa: E402
+import integracoes as I  # noqa: E402
+import autoteste as AT  # noqa: E402
 
 try:
     import pyautogui
@@ -924,6 +928,11 @@ LATER = re.compile(r"\b(?:as|a|ate|para as|pras)\s+\d{1,2}(?:\s*(?:h|:|horas?)\s
                    r"|\b\d{1,2}\s*(?:h|:)\s*\d{2}\b|\b\d{1,2}h\b|\bamanha\b|\bdaqui a\b|\bme acorda\b|\bdespertador\b(?!\s*$)")
 
 
+# frases com hora que não são "faça isso mais tarde"
+NOT_LATER = re.compile(r"\b(?:volume|brilho|nao perturbe|pomodoro|conta os dias|contagem|vence|aniversario|"
+                       r"lembrete de agua|quantos dias)\b")
+
+
 def fast_local_router(user_text):
     full = clean_prefix(user_text)  # do jeito que veio (para "digita ...")
     # por voz chega "abre o Chrome, por favor." / "abre o Spotify aí": o fim atrapalha achar o programa
@@ -935,7 +944,7 @@ def fast_local_router(user_text):
 
     # pedido com hora ("toca lofi às 7h", "amanhã abre o Spotify", "me acorda 6h30"): não é para agora,
     # a IA agenda (antes o atalho do "toca ..." tocava na hora)
-    if LATER.search(clean) and "volume" not in clean and "brilho" not in clean:
+    if LATER.search(clean) and not NOT_LATER.search(clean):
         return False
 
     if PAPAI.search(clean):
@@ -955,7 +964,8 @@ def fast_local_router(user_text):
         print("Jarvis > Não há nada esperando confirmação, senhor.")
         return True
 
-    if learning_router(text, clean) or skills_router(text, clean) or hands_router(text, clean):
+    if (learning_router(text, clean) or skills_router(text, clean) or routine_router(text, clean)
+            or docs_router(text, clean) or hands_router(text, clean)):
         return True
 
     # memória
@@ -1222,7 +1232,7 @@ def fast_local_router(user_text):
         return True
     m = re.match(r"^(?:modo|rotina|ativa o modo|ativar modo|ativa a rotina)\s+(.+)$", clean)
     if m:
-        tool("run_routine", name=m.group(1).strip())
+        tool("enter_mode" if R.find_mode(m.group(1)) else "run_routine", name=m.group(1).strip())
         return True
     if re.search(r"\b(quais|lista as|mostra as) rotinas\b", clean):
         tool("list_routines")
@@ -1492,6 +1502,197 @@ def hands_router(text, clean):
         key = {"desfaca": "desfaz", "refaca": "refaz", "abre uma nova aba": "nova aba", "salve": "salva",
                "atualiza a pagina": "atualiza", "recarrega a pagina": "atualiza", "localiza": "localizar"}.get(clean, clean)
         tool("app_shortcut", action=key)
+        return True
+    return False
+
+
+def routine_router(text, clean):
+    """Modos, não perturbe, VIP, Pomodoro, listas, água, contas, chuva, humor, contagem, integrações e autoteste."""
+    if re.fullmatch(r"(?:sai|sair|saia|desliga|desativa|termina|encerra) (?:d[oe]sse |do |o )?modo(?: \w+)?|fim do modo|acabou a aula", clean):
+        tool("exit_mode")
+        return True
+    m = re.match(r"^(?:ativa |ativar |liga |entra n[oa] |entrar n[oa] |coloca n[oa] )?(?:o )?modo (\w+)$", clean)
+    if m and R.find_mode(m.group(1)):
+        tool("enter_mode", name=m.group(1))
+        return True
+    if re.fullmatch(r"(?:vou dormir|vou deitar|indo dormir|hora de dormir|boa noite,? vou dormir)", clean) or \
+            (clean in ("boa noite", f"boa noite {normalize(NAME)}") and (datetime.now().hour >= 21 or datetime.now().hour < 4)):
+        tool("good_night")
+        return True
+    m = re.search(r"\bnao perturbe\b(.*)$", clean)
+    if m and re.search(r"\b(?:desliga|desativa|tira|sai|sair|chega|acabou|fim)\b", clean):
+        tool("dnd_off")
+        return True
+    if m:
+        tool("dnd_on", until=m.group(1).strip())
+        return True
+    if re.fullmatch(r"(?:pode (?:me )?perturbar|pode avisar|volta (?:a|os) avisos?)", clean):
+        tool("dnd_off")
+        return True
+    m = re.match(r"^(?:coloca |poe |marca )?(?:o |a )?(.+?) (?:e|como|nos|nas|na lista de) vips?$", clean) \
+        or re.match(r"^(?:coloca|poe|marca) (?:o |a )?(.+?) como vip$", clean)
+    if m and not m.group(1).startswith(("tira", "remove")):
+        tool("set_vip", name=_original(text, m.group(1)), on=True)
+        return True
+    m = re.match(r"^(?:tira|remove) (?:o |a )?(.+?) d[oa]s? vips?$", clean)
+    if m:
+        tool("set_vip", name=m.group(1), on=False)
+        return True
+    m = re.search(r"\b(?:comeca|começa|inicia|liga|faz|faca|ativa)\s+(?:um )?pomodoro(?: de (\d+)(?: minutos?)?)?|^pomodoro(?: de (\d+))?$", clean)
+    if m:
+        tool("start_pomodoro", minutes=int(m.group(1) or m.group(2) or 25))
+        return True
+    if re.search(r"\b(?:para|parar|cancela|desliga|termina) (?:o )?pomodoro\b", clean):
+        tool("stop_pomodoro")
+        return True
+    if re.search(r"\bquanto falta (?:do|no|pro) pomodoro\b|\bcomo (?:ta|esta) o pomodoro\b", clean):
+        tool("pomodoro_status")
+        return True
+    m = re.match(r"^(?:anota|anote|coloca|coloque|poe|bota|adiciona|adicione|inclui|acrescenta)\s+(.+?)\s+na lista(?: de| do| da)?\s*(\w*)$", clean)
+    if m:
+        tool("list_add", list=m.group(2) or "compras", items=_original(text, m.group(1)))
+        return True
+    m = re.match(r"^(?:tarefa|nova tarefa|adiciona a tarefa|anota a tarefa)\s*:?\s+(.+?)(?:,? prioridade (alta|media|baixa|urgente))?$", clean)
+    if m:
+        tool("list_add", list="tarefas", items=_original(text, m.group(1)), priority=m.group(2) or "")
+        return True
+    m = re.match(r"^(?:risca|marca como feito|ja comprei|ja fiz|terminei|conclui)\s+(?:o |a |os |as )?(.+?)(?: da lista(?: de| do| da)? ?(\w*))?$", clean)
+    if m and (" lista" in clean or clean.startswith(("ja comprei", "risca"))):
+        tool("list_check", list=m.group(2) or ("compras" if "comprei" in clean else "tarefas" if "fiz" in clean or "terminei" in clean else "compras"), items=m.group(1))
+        return True
+    m = re.match(r"^(?:tira|remove|apaga)\s+(?:o |a |os |as )?(.+?) da lista(?: de| do| da)? ?(\w*)$", clean)
+    if m:
+        tool("list_remove", list=m.group(2) or "compras", items=m.group(1))
+        return True
+    m = re.match(r"^(?:limpa|apaga|zera|esvazia) a lista(?: de| do| da)? ?(\w*)$", clean)
+    if m:
+        tool("list_clear", list=m.group(1) or "compras")
+        return True
+    m = re.search(r"\b(?:mostra|le|leia|ver|ve|qual|o que tem na|como ta|como esta)\s+(?:a |minha )?lista(?: de| do| da)? ?(\w*)", clean) \
+        or re.fullmatch(r"(?:minha )?lista(?: de| do| da)? ?(\w*)", clean) or re.search(r"\bminhas tarefas\b()", clean)
+    if m:
+        tool("list_show", list=(m.group(1) if m.groups() else "") or ("tarefas" if "tarefa" in clean else "compras"))
+        return True
+    m = re.search(r"\b(?:liga|ativa|comeca|quero)\s+(?:o |os )?lembretes? de (agua|postura|agua e postura)(?: a cada (\d+) (?:minutos?|min|horas?|h))?", clean)
+    if m:
+        every = int(m.group(2)) * (60 if m.group(2) and re.search(r"\d+ (?:horas?|h)\b", clean) else 1) if m.group(2) else 60
+        tool("wellness_on", kind="ambos" if "e" in m.group(1).split() else m.group(1), minutes=every)
+        return True
+    if re.search(r"\b(?:desliga|para|tira)\s+(?:o |os )?lembretes? de (?:agua|postura)", clean):
+        tool("wellness_off")
+        return True
+    m = re.match(r"^(?:a |o )?(?:conta|boleto|fatura) d[aoe]s? (.+?) vence (?:todo )?(?:dia )?(\d{1,2})(?:.*?(?:custa|de|valor|e)\s*(?:r\$ ?)?(\d+(?:[.,]\d{1,2})?))?", clean)
+    if m:
+        tool("add_bill", name=m.group(1), day=int(m.group(2)), value=m.group(3) or "")
+        return True
+    if re.search(r"\b(?:quais|minhas|as) contas\b|\bcontas (?:do mes|a pagar|que vencem)\b", clean):
+        tool("list_bills")
+        return True
+    if re.search(r"\b(?:levo|preciso de|preciso levar|levar) (?:o )?guarda[- ]chuva\b|\bvai chover (?:mais tarde|daqui a pouco|hoje a tarde|hoje a noite)\b", clean):
+        tool("rain_warning")
+        return True
+    m = re.search(r"\b(?:toca|coloca|poe|bota|quero|me ve)\s+(?:algo|alguma coisa|uma musica|umas musicas|musica|som)\s+(?:pra|para|de)\s+(\w+(?: \w+)?)", clean) \
+        or re.search(r"\b(?:to|estou|tô) (triste|animado|cansado|estressado|feliz)\b.*\b(?:toca|coloca|musica)", clean)
+    if m:
+        tool("play_mood", mood=m.group(1))
+        return True
+    m = re.search(r"\bquantos dias (?:faltam |falta )?(?:para|pra|ate) (?:a |o |as |os |minha |meu )?(.+?)\??$", clean)
+    if m:
+        tool("days_until", name=m.group(1))
+        return True
+    m = re.match(r"^(?:conta os dias|contagem regressiva|faz uma contagem) (?:para|pra|ate) (?:a |o )?(.+?) (?:dia|em|no dia|que e dia) (.+)$", clean)
+    if m:
+        when = A.birthday_of(m.group(2))
+        if when:
+            d = datetime(datetime.now().year, when[1], when[0]).date()
+            if d < datetime.now().date():
+                d = d.replace(year=d.year + 1)
+            tool("add_countdown", name=_original(text, m.group(1)), day=d.isoformat())
+            return True
+    # integrações
+    if re.search(r"\bquais integracoes\b|\bintegracoes (?:eu tenho|ligadas)\b|\bo que (?:falta|ta faltando) (?:ligar|configurar)\b", clean):
+        tool("integrations")
+        return True
+    if re.search(r"\b(?:conecta|liga|conectar) (?:o )?(?:google|gmail|agenda do google)\b", clean):
+        tool("google_connect")
+        return True
+    if re.search(r"\b(?:tem |tenho |quais |le |leia |mostra |ver )?(?:os )?(?:meus )?e-?mails?(?: novos?| importantes?)?\??$|\bresumo do e-?mail\b|\bcaixa de entrada\b", clean) \
+            and not re.search(r"\b(?:manda|envia|escreve|responde)\b", clean):
+        tool("gmail_list")
+        return True
+    m = re.match(r"^(?:le|leia|abre) o e-?mail (?:numero )?(\d+|" + ORDINAL + r")$", clean)
+    if m:
+        tool("gmail_read", index=ordinal_to_number(m.group(1)) or 1)
+        return True
+    m = re.search(r"\b(?:o que (?:tenho|tem)|minha agenda|meus compromissos|meus eventos)\b.*?\b(hoje|amanha)\b|\b(?:minha|a) agenda(?: de hoje)?\??$", clean)
+    if m and ("agenda" in clean or "compromisso" in clean or "evento" in clean):
+        tool("calendar_events", day=(m.group(1) if m.groups() and m.group(1) else "hoje"))
+        return True
+    m = re.match(r"^(liga|desliga|acende|apaga|abre|fecha) (?:a |o |as |os )?((?:luz|luzes|lampada|tomada|ventilador|ar condicionado|abajur|cortina|persiana)\b.*)$", clean)
+    if m and I.home_ready():
+        tool("home_control", device=m.group(2), action="ligar" if m.group(1) in ("liga", "acende", "abre") else "desligar")
+        return True
+    m = re.search(r"\b(?:vigia|acompanha|monitora|fica de olho n)o? (?:o )?preco (?:d[eoa] )?(?:(.+?) )?(https?://\S+)", text, re.I)
+    if m:
+        tool("watch_price", url=m.group(2), name=(m.group(1) or "").strip())
+        return True
+    if re.search(r"\bquais precos\b|\bprecos? (?:que (?:voce|vc) (?:ta|esta) vigiando|vigiados)\b", clean):
+        tool("list_prices")
+        return True
+    m = I.TRACK_CODE.search(text)
+    if m and re.search(r"\b(?:rastreia|rastrear|rastreio|encomenda|pacote|correios|cade)\b", clean):
+        tool("track_parcel", code=m.group(1))
+        return True
+    # o Bolha se cuidando
+    if re.search(r"\b(?:autoteste|auto teste|diagnostico|testa (?:os|seus) sistemas|como (?:estao|tao) (?:os|seus) sistemas)\b", clean):
+        tool("self_test")
+        return True
+    if re.search(r"\b(?:se atualiza|atualiza (?:o )?(?:bolha|jarvis|voce)|tem atualizacao (?:do bolha|sua|pra voce)|atualiza seu codigo)\b", clean):
+        tool("update_bolha")
+        return True
+    return False
+
+
+def docs_router(text, clean):
+    """Busca dentro dos arquivos, ler em voz alta, ditado, planilhas, fotos e downloads."""
+    if DOC.reader["partes"]:
+        m = re.fullmatch(r"(?:continua|continue|continuar|proxima parte|segue|pode continuar)(?: lendo| a leitura)?|"
+                         r"(volta|volte) (?:uma parte|um pouco|a parte anterior)|(repete|repita)(?: essa parte)?|"
+                         r"(?:le|leia|vai para) a parte (\d+)|(para|pare|chega) de ler", clean)
+        if m and (DOC.reader.get("ativo") or "lendo" in clean or "leitura" in clean or "parte" in clean):
+            tool("reading_control", action=clean)
+            if re.search(r"\b(?:para|pare|chega) de ler\b", clean):
+                DOC.reader["ativo"] = False
+            return True
+    m = re.match(r"^(?:le|leia|ler)\s+(?:o |a )?(?:arquivo |pdf |documento )?(.+?)\s+em voz alta$", clean) \
+        or re.match(r"^(?:le|leia) em voz alta (?:o |a )?(?:arquivo |pdf |documento )?(.+)$", clean)
+    if m:
+        tool("read_aloud", path=number_ref(m.group(1)))
+        return True
+    m = re.match(r"^(?:procura|procure|busca|acha|ache|encontra)\s+(?:um |o |a |os |as )?(?:arquivos?|documentos?|pdfs?)\s+"
+                 r"(?:que (?:fala|falam|tem|tenha|tenham|menciona|mencionam) (?:de |sobre |em )?|sobre |com (?:o texto |a palavra )?)(.+)$", clean) \
+        or re.match(r"^(?:procura|busca)\s+dentro dos arquivos\s+(?:por |o texto )?(.+)$", clean)
+    if m:
+        tool("search_content", query=m.group(1).strip(" ?."))
+        return True
+    m = re.match(r"^(?:dita|ditar|quero ditar|vou ditar|comeca um ditado|abre um ditado|faz um ditado)(?: uma| um)?(?: documento| texto| carta| arquivo)?(?: chamad[oa]| com o nome)? ?(.*)$", clean)
+    if m:
+        tool("start_dictation", name=_original(text, m.group(1)) if m.group(1) else "")
+        return True
+    m = re.search(r"\bsoma (?:a coluna|os valores da coluna|a coluna de) (.+?)(?: d[aoe] (?:planilha |arquivo )?(.+))?$", clean)
+    if m:
+        tool("sum_column", path=number_ref(m.group(2) or "1"), column=m.group(1))
+        return True
+    m = re.search(r"\bfotos (?:de|do|da) ((?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro|mes passado|este mes|esse mes|20\d\d)(?: de 20\d\d)?)\b", clean)
+    if m:
+        tool("photos_from", when=m.group(1))
+        return True
+    if re.search(r"\b(?:ultimo|ultima) (?:arquivo |coisa |download )?(?:que (?:eu )?)?baixad[oa]\b|\bo que (?:eu )?baixei por ultimo\b|\bultimo download\b", clean):
+        tool("last_download", open=bool(re.search(r"\b(?:abre|abra|abrir)\b", clean)))
+        return True
+    m = re.match(r"^(?:faz|faca|fazer) (?:o |um )?backup da pasta (.+?)(?: (?:no|na|para o|para a|pro|pra) (.+))?$", clean)
+    if m:
+        tool("backup_folder", src=m.group(1), dest=m.group(2) or "")
         return True
     return False
 
@@ -1826,7 +2027,7 @@ def show_help():
     return True
 
 
-TOOL_GROUPS = ["mãos", "jogos", "som", "programas e sites", "arquivos e pastas", "ler e resumir", "mídia", "navegador", "memória", "janelas e teclado",
+TOOL_GROUPS = ["mãos", "jogos", "integrações", "som", "programas e sites", "arquivos e pastas", "ler e resumir", "mídia", "navegador", "memória", "janelas e teclado",
                "sistema", "energia", "informação", "rotinas", "whatsapp", "instagram", "aprendizado", "habilidades"]
 
 TOOLS = [
@@ -2029,13 +2230,15 @@ TOOLS = [
      "group": "memória", "desc": "DESPERTADOR: acordar o senhor num horário com música; depois do ACORDEI dá bom dia "
                                   "com clima, roupa e notícias", "examples": ["me acorda às 7h", "me acorda amanhã 6h30 com Evidências"],
      "run": lambda a: set_alarm(a.get("hour", ""), a.get("day", ""), a.get("music", ""))},
-    {"name": "schedule_request", "args": '{"request":"o pedido como o senhor falaria (ex.: toca evidências)","day":"AAAA-MM-DD","hour":"HH:MM"}',
-     "group": "memória", "desc": "FAZER um pedido mais tarde, numa data e hora (tocar música, abrir programa, mandar mensagem)",
-     "examples": ["coloca evidências às 7h", "amanhã às 8h abre o Spotify", "às 22h manda boa noite pra mãe"],
-     "run": lambda a: M.add_reminder(a.get("request", ""), a.get("day", ""), a.get("hour", ""), pedido=True)},
-    {"name": "add_reminder", "args": '{"text":"o que lembrar","day":"AAAA-MM-DD","hour":"HH:MM ou vazio"}', "group": "memória",
-     "desc": "marcar um lembrete para um dia (e hora)", "examples": ["me lembra da prova na sexta"],
-     "run": lambda a: M.add_reminder(a.get("text", ""), a.get("day", ""), a.get("hour", ""))},
+    {"name": "schedule_request", "args": '{"request":"o pedido como o senhor falaria (ex.: toca evidências)","day":"AAAA-MM-DD","hour":"HH:MM","repeat":"vazio|diario|dias uteis|semanal|mensal"}',
+     "group": "memória", "desc": "FAZER um pedido mais tarde, numa data e hora, uma vez ou repetindo (rotina)",
+     "examples": ["coloca evidências às 7h", "amanhã às 8h abre o Spotify", "todo dia às 20h faz backup da pasta documentos"],
+     "run": lambda a: M.add_reminder(a.get("request", ""), a.get("day", ""), a.get("hour", ""), pedido=True,
+                                     repetir=a.get("repeat", ""))},
+    {"name": "add_reminder", "args": '{"text":"o que lembrar","day":"AAAA-MM-DD","hour":"HH:MM ou vazio","repeat":"vazio|diario|semanal|mensal|anual"}',
+     "group": "memória", "desc": "marcar um lembrete para um dia (e hora), uma vez ou repetindo",
+     "examples": ["me lembra da prova na sexta", "todo dia 5 me lembra do aluguel"],
+     "run": lambda a: M.add_reminder(a.get("text", ""), a.get("day", ""), a.get("hour", ""), repetir=a.get("repeat", ""))},
     {"name": "forget", "args": '{"text":"assunto"}', "group": "memória",
      "desc": "apagar da memória o que tiver esse assunto", "examples": ["esquece a prova"],
      "run": lambda a: M.forget(a.get("text", ""))},
@@ -2249,6 +2452,142 @@ TOOLS = [
      "desc": "perguntar ao senhor com opções num card quando estiver em dúvida (use continue:true)",
      "examples": ["(dúvida entre dois arquivos ou contatos)"],
      "run": lambda a: ask_choice(a.get("question", ""), a.get("options", []))},
+    # ---- modos e rotina
+    {"name": "enter_mode", "args": '{"name":"aula|estudo|trabalho|jogo|dormir|filme|visita"}', "group": "rotinas",
+     "desc": "ligar um modo pronto (faz tudo de uma vez; \"sai do modo\" desfaz)", "examples": ["modo aula", "modo jogo"],
+     "run": lambda a: _enter_mode(a.get("name", ""))},
+    {"name": "exit_mode", "args": "{}", "group": "rotinas",
+     "desc": "sair do modo e voltar tudo como estava", "examples": ["sai do modo"],
+     "run": lambda a: R.exit_mode(execute_ai_action, set_windows_dnd=MA.windows_notifications, on_screen=_screen)},
+    {"name": "good_night", "args": "{}", "group": "rotinas",
+     "desc": "boa noite: resumo do dia, lembretes de amanhã e apaga a tela", "examples": ["vou dormir"],
+     "run": lambda a: good_night()},
+    {"name": "dnd_on", "args": '{"until":"até as 18h | por 2 horas | vazio = até eu desligar"}', "group": "rotinas",
+     "desc": "não perturbe: segura os avisos e conta depois (VIP passa)", "examples": ["não perturbe até as 18h"],
+     "run": lambda a: dnd_on(a.get("until", ""))},
+    {"name": "dnd_off", "args": "{}", "group": "rotinas",
+     "desc": "desligar o não perturbe e contar o que chegou", "examples": ["desliga o não perturbe"],
+     "run": lambda a: dnd_off()},
+    {"name": "set_vip", "args": '{"name":"contato","on":true}', "group": "whatsapp",
+     "desc": "contato VIP: mensagem dele avisa na hora, até no não perturbe", "examples": ["a mãe é VIP"],
+     "run": lambda a: R.set_vip(a.get("name", ""), bool(a.get("on", True)))},
+    {"name": "start_pomodoro", "args": '{"minutes":25,"pause":5,"cycles":4}', "group": "rotinas",
+     "desc": "Pomodoro com foco (avisa a pausa e tira distrações da frente)", "examples": ["começa um pomodoro"],
+     "run": lambda a: R.start_pomodoro(a.get("minutes", 25), alert, a.get("pause", 5), a.get("cycles", 4),
+                                       F.user_window_title, lambda: MA.window_state("minimizar"))},
+    {"name": "stop_pomodoro", "args": "{}", "group": "rotinas",
+     "desc": "parar o Pomodoro", "examples": ["para o pomodoro"], "run": lambda a: R.stop_pomodoro()},
+    {"name": "pomodoro_status", "args": "{}", "group": "rotinas",
+     "desc": "quanto falta do Pomodoro", "examples": ["quanto falta do pomodoro"], "run": lambda a: R.pomodoro_status()},
+    {"name": "list_add", "args": '{"list":"compras|tarefas|nome","items":"ovo, arroz e leite","priority":"alta|media|baixa"}',
+     "group": "rotinas", "desc": "anotar na lista de compras ou de tarefas", "examples": ["anota ovo e leite na lista de compras"],
+     "run": lambda a: R.add_items(a.get("list", "compras"), a.get("items", ""), a.get("priority", ""))},
+    {"name": "list_check", "args": '{"list":"compras|tarefas","items":"item"}', "group": "rotinas",
+     "desc": "riscar um item da lista", "examples": ["já comprei o leite"],
+     "run": lambda a: R.check_item(a.get("list", "compras"), a.get("items", ""))},
+    {"name": "list_remove", "args": '{"list":"compras|tarefas","items":"item"}', "group": "rotinas",
+     "desc": "tirar um item da lista", "examples": ["tira o arroz da lista"],
+     "run": lambda a: R.remove_items(a.get("list", "compras"), a.get("items", ""))},
+    {"name": "list_clear", "args": '{"list":"compras|tarefas"}', "group": "rotinas",
+     "desc": "apagar a lista (pede confirmação)", "examples": ["limpa a lista de compras"],
+     "run": lambda a: R.clear_list(a.get("list", "compras"), confirm)},
+    {"name": "list_show", "args": '{"list":"compras|tarefas"}', "group": "rotinas",
+     "desc": "mostrar a lista num card", "examples": ["mostra a lista de compras"],
+     "run": lambda a: R.show_list(a.get("list", "compras"), lambda t, x: U.card(t, x, 30000))},
+    {"name": "wellness_on", "args": '{"kind":"agua|postura|ambos","minutes":60}', "group": "rotinas",
+     "desc": "lembrete de água e postura (só com o PC em uso)", "examples": ["liga o lembrete de água"],
+     "run": lambda a: R.start_wellness(lambda t: commands.put(("aviso", t)), a.get("minutes", 60), a.get("kind", "ambos"))},
+    {"name": "wellness_off", "args": "{}", "group": "rotinas",
+     "desc": "desligar o lembrete de água", "examples": ["desliga o lembrete de água"], "run": lambda a: R.stop_wellness()},
+    {"name": "add_bill", "args": '{"name":"luz","day":10,"value":"150,00"}', "group": "rotinas",
+     "desc": "anotar conta a pagar com vencimento (avisa 2 dias antes, todo mês)", "examples": ["a conta de luz vence dia 10"],
+     "run": lambda a: R.add_bill(a.get("name", ""), a.get("day", ""), a.get("value", ""), M.add_reminder)},
+    {"name": "list_bills", "args": "{}", "group": "rotinas",
+     "desc": "contas do mês e quando vencem", "examples": ["quais contas vencem esse mês"], "run": lambda a: R.list_bills()},
+    {"name": "rain_warning", "args": '{"city":"cidade (vazio = a do perfil)"}', "group": "informação",
+     "desc": "avisar se vai chover nas próximas horas (levar guarda-chuva?)", "examples": ["levo guarda-chuva?"],
+     "run": lambda a: R.rain_warning(a.get("city") or M.load()["perfil"].get("cidade", ""))},
+    {"name": "play_mood", "args": '{"mood":"animar|focar|relaxar|triste|dormir|treinar|festa"}', "group": "mídia",
+     "desc": "música pelo humor", "examples": ["toca algo para animar"],
+     "run": lambda a: play_youtube(R.mood_query(a.get("mood", "")))},
+    {"name": "days_until", "args": '{"name":"evento"}', "group": "rotinas",
+     "desc": "quantos dias faltam para uma data", "examples": ["quantos dias para a prova?"],
+     "run": lambda a: R.days_until(a.get("name", ""), M.load()["lembretes"])},
+    {"name": "add_countdown", "args": '{"name":"evento","day":"AAAA-MM-DD"}', "group": "rotinas",
+     "desc": "contagem regressiva para uma data", "examples": ["conta os dias para a viagem dia 20/12"],
+     "run": lambda a: R.add_countdown(a.get("name", ""), a.get("day", ""))},
+    # ---- documentos
+    {"name": "search_content", "args": '{"query":"palavras"}', "group": "arquivos e pastas",
+     "desc": "procurar DENTRO dos arquivos (texto de PDF, Word, Excel)", "examples": ["procura o documento que fala de multa"],
+     "run": lambda a: search_content(a.get("query", ""))},
+    {"name": "ask_document", "args": '{"path":"caminho ou número","question":"pergunta"}', "group": "ler e resumir",
+     "desc": "responder uma pergunta sobre um documento", "examples": ["qual o prazo nesse contrato?"],
+     "run": lambda a: DOC.ask_document(resolve_path(a.get("path", "1")), a.get("question", ""), think)},
+    {"name": "read_aloud", "args": '{"path":"caminho ou número"}', "group": "ler e resumir",
+     "desc": "ler um PDF/documento em voz alta, em partes (continua, volta, para)", "examples": ["lê o primeiro em voz alta"],
+     "run": lambda a: _read_aloud(a.get("path", "1"))},
+    {"name": "reading_control", "args": '{"action":"continua|volta|repete|parte 3|para"}', "group": "ler e resumir",
+     "desc": "controlar a leitura em voz alta", "examples": ["continua"],
+     "run": lambda a: DOC.reading_control(a.get("action", "continua"))},
+    {"name": "start_dictation", "args": '{"name":"nome do documento (opcional, .txt para texto)"}', "group": "ler e resumir",
+     "desc": "ditar um documento (Word): cada fala vira um parágrafo; \"fim do ditado\" salva",
+     "examples": ["quero ditar uma carta"], "run": lambda a: DOC.start_dictation(a.get("name", ""), DOCUMENTS)},
+    {"name": "sum_column", "args": '{"path":"planilha (caminho ou número)","column":"letra ou nome"}', "group": "ler e resumir",
+     "desc": "somar uma coluna de planilha", "examples": ["soma a coluna valor da planilha"],
+     "run": lambda a: DOC.sum_column(resolve_path(a.get("path", "1")), a.get("column", ""))},
+    {"name": "show_sheet", "args": '{"path":"planilha"}', "group": "ler e resumir",
+     "desc": "mostrar as linhas de uma planilha", "examples": ["mostra a planilha"],
+     "run": lambda a: DOC.show_sheet(resolve_path(a.get("path", "1")))},
+    {"name": "create_sheet", "args": '{"name":"nome","headers":["Coluna"],"rows":[["valor"]]}', "group": "ler e resumir",
+     "desc": "criar uma planilha simples (.xlsx) nos Documentos", "examples": ["cria uma planilha de gastos"],
+     "run": lambda a: DOC.create_sheet(DOCUMENTS / (str(a.get("name") or "Planilha") + ".xlsx"), a.get("headers") or ["Item"], a.get("rows") or [])},
+    {"name": "photos_from", "args": '{"when":"julho | julho de 2024 | mês passado | 2025"}', "group": "arquivos e pastas",
+     "desc": "achar fotos por data", "examples": ["fotos de julho"],
+     "run": lambda a: photos_from(a.get("when", ""))},
+    {"name": "last_download", "args": '{"open":true}', "group": "arquivos e pastas",
+     "desc": "o último arquivo baixado (e abrir)", "examples": ["abre o último arquivo baixado"],
+     "run": lambda a: last_download(bool(a.get("open", True)))},
+    {"name": "backup_folder", "args": '{"src":"pasta","dest":"pendrive ou pasta (vazio = G:\\Jarvis\\backups)"}',
+     "group": "arquivos e pastas", "desc": "backup de uma pasta (para fazer todo dia, use schedule_request com repeat)",
+     "examples": ["faz backup da pasta documentos no pendrive"],
+     "run": lambda a: _backup_folder(a.get("src", ""), a.get("dest", ""))},
+    # ---- integrações e o Bolha se cuidando
+    {"name": "integrations", "args": "{}", "group": "integrações",
+     "desc": "listar as integrações ligadas e o que falta para ligar as outras", "examples": ["quais integrações eu tenho?"],
+     "run": lambda a: I.integrations()},
+    {"name": "google_connect", "args": "{}", "group": "integrações",
+     "desc": "conectar o Gmail e a Agenda (uma vez)", "examples": ["conecta o google"], "run": lambda a: I.google_connect()},
+    {"name": "gmail_list", "args": '{"query":"busca do Gmail (vazio = não lidos importantes)"}', "group": "integrações",
+     "desc": "ler a lista de e-mails (não lidos da caixa principal)", "examples": ["tenho e-mail novo?"],
+     "run": lambda a: I.gmail_list(a.get("query") or "is:unread category:primary")},
+    {"name": "gmail_read", "args": '{"index":1}', "group": "integrações",
+     "desc": "ler um e-mail da última lista", "examples": ["lê o e-mail 2"], "run": lambda a: I.gmail_read(a.get("index", 1))},
+    {"name": "gmail_send", "args": '{"to":"email","subject":"assunto","body":"texto","reply_to":"número do e-mail da lista para responder (opcional)"}',
+     "group": "integrações", "desc": "mandar ou responder e-mail (pede confirmação)", "examples": ["responde o e-mail 1 dizendo que confirmo"],
+     "run": lambda a: I.gmail_send(a.get("to", ""), a.get("subject", ""), a.get("body", ""), confirm, a.get("reply_to"))},
+    {"name": "calendar_events", "args": '{"day":"hoje|amanha|AAAA-MM-DD"}', "group": "integrações",
+     "desc": "eventos da Agenda do Google", "examples": ["o que tenho hoje na agenda"],
+     "run": lambda a: I.calendar_events(a.get("day", "hoje"))},
+    {"name": "calendar_add", "args": '{"title":"evento","day":"AAAA-MM-DD","hour":"HH:MM","minutes":60}', "group": "integrações",
+     "desc": "criar evento na Agenda do Google", "examples": ["marca dentista sexta às 15h na agenda"],
+     "run": lambda a: I.calendar_add(a.get("title", ""), a.get("day", ""), a.get("hour", ""), a.get("minutes", 60))},
+    {"name": "home_control", "args": '{"device":"luz da sala","action":"ligar|desligar"}', "group": "integrações",
+     "desc": "lâmpadas e tomadas inteligentes (Home Assistant)", "examples": ["apaga a luz do quarto"],
+     "run": lambda a: I.home_control(a.get("device", ""), a.get("action", "ligar"))},
+    {"name": "watch_price", "args": '{"url":"link do produto","name":"nome","target":0}', "group": "integrações",
+     "desc": "vigiar o preço de um produto e avisar quando baixar", "examples": ["vigia o preço de https://..."],
+     "run": lambda a: I.watch_price(a.get("url", ""), a.get("name", ""), a.get("target"))},
+    {"name": "list_prices", "args": "{}", "group": "integrações",
+     "desc": "preços que estou vigiando", "examples": ["quais preços você está vigiando"], "run": lambda a: I.list_prices()},
+    {"name": "track_parcel", "args": '{"code":"AB123456789BR","name":"apelido"}', "group": "integrações",
+     "desc": "rastrear encomenda dos Correios e avisar quando mudar", "examples": ["rastreia a encomenda AB123456789BR"],
+     "run": lambda a: I.track_parcel(a.get("code", ""), a.get("name", ""))},
+    {"name": "self_test", "args": "{}", "group": "sistema",
+     "desc": "autoteste: microfone, voz, IA, WhatsApp, internet", "examples": ["faz um autoteste"],
+     "run": lambda a: self_test()},
+    {"name": "update_bolha", "args": "{}", "group": "sistema",
+     "desc": "atualizar o próprio Bolha pelo GitHub (pede confirmação)", "examples": ["se atualiza"],
+     "run": lambda a: AT.update(confirm)},
     {"name": "show_help", "args": "{}", "group": "sistema",
      "desc": "mostrar tudo o que eu sei fazer", "examples": ["o que você sabe fazer"],
      "run": lambda a: show_help()},
@@ -2561,7 +2900,10 @@ def ask_ai_router(user_text):
             if not isinstance(data, dict):
                 data = parse_json(data)
         except Exception as e:
-            print(f"Jarvis > Não consegui falar com a IA: {e}")
+            if ai_backends() and not AT.internet():
+                print(f"Jarvis > {AT.OFFLINE_MSG}")  # 108: sem internet só os comandos locais
+            else:
+                print(f"Jarvis > Não consegui falar com a IA: {e}")
             return False
 
         actions = data["actions"]
@@ -2680,6 +3022,7 @@ def speak(text):
 MUSICA_DESPERTAR = os.environ.get("BOLHA_MUSICA_DESPERTAR", "").strip()
 MUSICA_BOM_DIA = os.environ.get("BOLHA_MUSICA_BOM_DIA", "").strip() or "Arctic Monkeys - Do I Wanna Know?"
 WAIT_AWAKE = 30 * 60  # meia hora tocando sem ninguém apertar ACORDEI: para a música
+SNOOZE = re.compile(r"\bmais (\d{1,2}) ?(?:min|minutos?)\b|\bsoneca(?: de (\d{1,2}))?\b|\bso mais um pouco\b|\bdeixa eu dormir mais\b")
 AWAKE = re.compile(r"\b(?:acordei|acordad[oa]|levantei|desliga|desligar|para|pare|chega|ja to de pe)\b")
 MORNING_PROMPT = (
     "Você é {name}, o mordomo do João, que o chama de senhor. Ele acabou de acordar. Fale em voz alta, em português "
@@ -2739,8 +3082,13 @@ def _wait_awake(seconds=WAIT_AWAKE):
                 source, text = commands.get(timeout=left)
             except queue.Empty:
                 break
-            if source not in ("lembrete", "agendado", "despertador", "aviso") and AWAKE.search(normalize(text or "")):
-                return True
+            said = normalize(text or "")
+            if source not in ("lembrete", "agendado", "despertador", "aviso", "alerta"):
+                m = SNOOZE.search(said)
+                if m:  # "mais 10 minutos": soneca (86)
+                    return int(m.group(1) or m.group(2) or 10)
+                if AWAKE.search(said):
+                    return True
             later.append((source, text))
         return False
     finally:
@@ -2770,6 +3118,12 @@ def wake_up(music=""):
     except Exception:
         pass
     youtube_control("pausar")
+    if awake is not True and awake:  # soneca
+        when = datetime.now() + timedelta(minutes=awake)
+        M.add_reminder(music or "padrão", when.date().isoformat(), when.strftime("%H:%M"), despertador=True)
+        print(f"Jarvis > Mais {awake} minutos, senhor. Toco de novo às {when:%H:%M}.")
+        set_state("parado")
+        return False
     if not awake:
         print("Jarvis > (despertador: ninguém apertou ACORDEI em 30 minutos; parei a música)")
         set_state("parado")
@@ -2929,6 +3283,8 @@ def watch_world(every=60):
                     elif ts > seen.get(cid, 0):
                         seen[cid] = ts
                         _novas.append(name)
+                        if R.vips() and not R.is_vip(name):
+                            continue  # há VIPs: os outros só entram no resumo (75)
                         commands.put(("aviso", f"Senhor, mensagem nova de {name}: {text[:90]}"))
         except Exception:
             pass
@@ -2940,6 +3296,12 @@ def watch_world(every=60):
                 commands.put(("aviso", f"Senhor, a bateria está em {bat.percent:.0f} por cento. Melhor ligar na tomada."))
             elif bat and bat.power_plugged:
                 warned_battery = False
+        except Exception:
+            pass
+        try:
+            said = AT.connection_changed(AT.internet())
+            if said:
+                commands.put(("alerta", said))
         except Exception:
             pass
         first = False
@@ -2955,6 +3317,9 @@ def announce(text, title):
 
 
 def handle(text):
+    if DOC.dictation["ativo"]:  # ditando: tudo o que o senhor fala vai para o documento
+        D.route("ditado")
+        return DOC.dictate(clean_prefix(text) or text)
     feedback = A.is_feedback(text)
     if feedback is not None and D.last is not None:
         D.route("nota")
@@ -3011,6 +3376,105 @@ CONTEXT_WORDS = re.compile(r"\b(?:isso|isto|esse|essa|esses|essas|ele|ela|eles|e
 
 
 stop_event = threading.Event()  # o PARAR: interrompe macro, modo agente e leitura em voz alta
+
+
+def alert(text):
+    """Aviso do próprio Bolha (Pomodoro): nunca é segurado pelo não perturbe."""
+    commands.put(("alerta", text))
+
+
+def _screen(kind, on):
+    if kind == "hud":
+        U.hud_show(on)
+
+
+def _enter_mode(name):
+    result = R.enter_mode(name, execute_ai_action, get_volume, F.close_app, MA.windows_notifications, _screen)
+    if result is None:
+        return F.run_routine(name, execute_ai_action)  # as rotinas do senhor (rotinas.json)
+    return result
+
+
+def dnd_on(until=""):
+    when = R.dnd_until_text(until) if until else None
+    R.start_dnd(when, "pedido do senhor", MA.windows_notifications)
+    vip = R.vips()
+    print(f"Jarvis > Não perturbe ligado{' até as ' + when.strftime('%H:%M') if when else ''}. Seguro os avisos e conto "
+          "depois" + (f"; {', '.join(vip)} passa{'m' if len(vip) > 1 else ''} direto." if vip else "."))
+    return True
+
+
+def dnd_off():
+    held = R.stop_dnd(MA.windows_notifications)
+    print("Jarvis > Não perturbe desligado." + (R.held_summary(held) or " Nada chegou enquanto isso."))
+    return True
+
+
+def good_night():
+    """Boa noite (24): resumo do dia, lembretes de amanhã, e a tela apaga depois que ele termina de falar."""
+    tomorrow = (datetime.now() + timedelta(days=1)).date().isoformat()
+    try:
+        items = [r for r in M.load()["lembretes"] if r.get("data") == tomorrow and not r.get("avisado")]
+    except Exception:
+        items = []
+    alarm = next((r for r in items if r.get("despertador")), None)
+    todo = [f"{r.get('hora') + ' ' if r.get('hora') else ''}{r['texto']}" for r in items if not r.get("despertador")]
+    parts = ["Boa noite, senhor."]
+    summary = D.summary_of("hoje")
+    if summary:
+        parts.append(summary)
+    parts.append(("Amanhã: " + "; ".join(todo[:4]) + ".") if todo else "Nada marcado para amanhã.")
+    parts.append(f"O despertador está para as {alarm['hora']}." if alarm else "Sem despertador marcado; se quiser, diga me acorda às sete.")
+    parts.append("Apago a tela em instantes. Durma bem.")
+    threading.Timer(20, MA.screen_off).start()
+    print("Jarvis > " + " ".join(parts))
+    return True
+
+
+def search_content(query):
+    global last_results, last_kind
+    found = DOC.search_content(query, [DESKTOP, DOCUMENTS, DOWNLOADS])
+    paths = DOC.show_content_results(query, found)
+    if paths:
+        last_results, last_kind = paths, "arquivos"
+    return paths or False
+
+
+def photos_from(when):
+    global last_results, last_kind
+    found = DOC.photos_from(when, [PICTURES, DESKTOP, DOWNLOADS])
+    if found:
+        last_results, last_kind = found[:MAX_RESULTS], "arquivos"
+    return found or False
+
+
+def last_download(open_it=True):
+    global last_results, last_kind
+    path = DOC.last_download(DOWNLOADS)
+    if path is None:
+        print("Jarvis > Não achei nada na pasta Downloads.")
+        return False
+    last_results, last_kind = [str(path)], "arquivos"
+    print(f"Jarvis > O último baixado é {path.name} ({datetime.fromtimestamp(path.stat().st_mtime):%d/%m %H:%M}).")
+    return launch(path) if open_it else True
+
+
+def _read_aloud(ref):
+    ok = DOC.read_aloud(_path_or_folder(ref))
+    DOC.reader["ativo"] = bool(ok)
+    return ok
+
+
+def _backup_folder(src, dest):
+    if normalize(dest) in ("", "pendrive", "no pendrive", "pen drive"):
+        drives = A.removable_drives()
+        dest = (Path(drives[0]) / "Bolha-backup") if drives and normalize(dest) else Path(r"G:\Jarvis\backups")
+    return DOC.backup_folder(folder_of(src), dest)
+
+
+def self_test(show=True):
+    rows = AT.check_all(V, W, lambda: bool(F.find_es()))
+    return AT.report(rows, (lambda t, x: U.card(t, x, 20000)) if show else None)
 
 
 def _record_macro(name):
@@ -3413,6 +3877,9 @@ def run():
     F.on_alarm = lambda message: commands.put(("lembrete", message))  # timers também falam
     M.reminder_watcher(commands.put)
     D.weekly_watcher()  # M4: todo domingo sai o relatorio.md
+    I.watcher(commands.put)  # preços e encomendas vigiados
+    U.card_filter = R.hide_card  # modo visita: os cards pessoais não aparecem
+    threading.Thread(target=_startup_check, daemon=True).start()  # 105: autoteste ao abrir
     if os.environ.get("BOLHA_AREA_TRANSFERENCIA", "").strip() != "0":
         MA.watch_clipboard()  # histórico do que o senhor copia (só na memória, nunca em disco)
     if os.environ.get("BOLHA_AVISOS", "").strip() != "0":
@@ -3426,6 +3893,9 @@ def run():
             pass
 
     while True:
+        expired, held = R.dnd_expired(set_windows_dnd=MA.windows_notifications)
+        if expired:
+            announce("O não perturbe acabou, senhor." + (R.held_summary(held) or " Não chegou nada."), "Aviso")
         try:
             origin, user_text = commands.get(timeout=0.5)  # com timeout o Ctrl+C funciona no Windows
         except queue.Empty:
@@ -3439,6 +3909,12 @@ def run():
             announce(f"Senhor, lembrete: {user_text}", "Lembrete")
             continue
         if origin == "aviso":  # o Bolha percebeu algo sozinho (mensagem nova, bateria fraca)
+            who = re.search(r"mensagem nova de (.+?):", user_text)
+            if R.should_hold(user_text, who.group(1) if who else ""):
+                continue  # não perturbe: conta depois
+            announce(user_text, "Aviso")
+            continue
+        if origin == "alerta":  # aviso do próprio Bolha (Pomodoro, autoteste, internet): nunca é segurado
             announce(user_text, "Aviso")
             continue
         if origin == "despertador":
@@ -3459,6 +3935,19 @@ def run():
             print(f"Jarvis > Erro: {e}")
             set_state("parado")
     U.close()
+
+
+def _startup_check():
+    time.sleep(4)
+    try:
+        rows = AT.check_all(V, W, lambda: bool(F.find_es()))
+    except Exception:
+        return
+    U.card("Autoteste", json.dumps({"itens": [{"nome": n, "ok": ok, "detalhe": d, "como": c} for n, ok, d, c in rows]},
+                                   ensure_ascii=False), 12000)
+    bad = [n for n, ok, *_ in rows if not ok and n not in ("WhatsApp (WAHA)", "Busca rápida (Everything)")]
+    if bad:
+        commands.put(("alerta", f"Senhor, no autoteste ficou fora: {', '.join(bad)}. Diga autoteste para ver como arrumar."))
 
 
 def disable_quick_edit():

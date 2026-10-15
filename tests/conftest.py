@@ -68,7 +68,7 @@ def memoria_temporaria(tmp_path, monkeypatch):
 
 
 # Módulos novos do plano 3.0: tudo o que eles guardam em G:\Jarvis vai para a pasta do teste.
-MODULOS_COM_ARQUIVO = ["diario", "aprende", "habilidades", "maos"]
+MODULOS_COM_ARQUIVO = ["diario", "aprende", "habilidades", "maos", "documentos", "rotina", "integracoes"]
 
 
 @pytest.fixture(autouse=True)
@@ -82,3 +82,14 @@ def arquivos_temporarios(tmp_path, monkeypatch):
     import diario
     monkeypatch.setattr(diario, "current", None)
     monkeypatch.setattr(diario, "last", None)
+
+
+@pytest.fixture(autouse=True)
+def sem_rede_no_autoteste(monkeypatch):
+    """O autoteste e o "sem internet" nunca abrem conexão de verdade nos testes."""
+    import autoteste
+    monkeypatch.setattr(autoteste, "internet", lambda timeout=2.0: True)
+    monkeypatch.setitem(autoteste.online_state, "online", True)
+    import rotina
+    monkeypatch.setattr(rotina, "state", {"modo": "", "volume_antes": None, "visita": False, "foco": False})
+    monkeypatch.setattr(rotina, "dnd", {"ate": None, "segurados": [], "motivo": ""})

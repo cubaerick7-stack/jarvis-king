@@ -53,7 +53,7 @@ def route(jarvis, text):
     ("resume o segundo", [("summarize_file", {"path": "2"})]),
     ("apaga o terceiro", [("delete_item", {"path": "3"})]),
     ("digita Olá, tudo bem?", [("type_text", {"text": "Olá, tudo bem?"})]),
-    ("modo estudo", [("run_routine", {"name": "estudo"})]),
+    ("modo estudo", [("enter_mode", {"name": "estudo"})]),
     ("quais rotinas tem", [("list_routines", {})]),
     ("tô com internet?", [("network_info", {})]),
     ("o pc tá lento", [("why_slow", {})]),

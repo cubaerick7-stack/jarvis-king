@@ -21,6 +21,7 @@ MARGIN = 16
 
 _window = None
 _watchers = []  # quem mais acompanha o reator (o celular): fn(tipo, dados)
+card_filter = None  # fn(título) -> True esconde o card (modo visita)
 
 
 def mode():
@@ -215,5 +216,28 @@ def camera(on=True, text="IDENTIDADE CONFIRMADA"):
 
 
 def card(title, text, ms=7000):
+    if card_filter is not None:
+        try:
+            if card_filter(title):
+                return
+        except Exception:
+            pass
     _tell("cartao", titulo=title, texto=text, ms=int(ms))
     _js(f"cartao({json.dumps(title)}, {json.dumps(text)}, {int(ms)})")
+
+
+def hud_show(on=True):
+    """Mostra ou esconde o HUD (CPU, RAM, clima, hora): no modo filme ele apaga."""
+    _js(f"hudMostra({json.dumps(bool(on))})")
+
+
+def hud(data):
+    """Atualiza o HUD fixo (99) com {cpu, ram, clima, hora, proxima}."""
+    _tell("hud", **data)
+    _js(f"hudDados({json.dumps(data, ensure_ascii=False)})")
+
+
+def theme(name):
+    """Tema do reator (101): azul, vermelho ou dourado."""
+    _tell("tema", valor=name)
+    _js(f"tema({json.dumps(name)})")
