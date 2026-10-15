@@ -108,9 +108,36 @@ nada pesado para o i3.
   - Se ficar em dúvida entre duas, pergunta com opções no card.
 - **Teste de pronto:** três descrições diferentes tocam a música certa.
 
+## 7. Despertador dentro do Bolha (sem abrir o navegador)
+
+- [ ] **O que aconteceu:** na hora do alarme ele pesquisa a música, abre a página do YouTube e ela fica na frente.
+  O PC é fraco, o navegador demora, e a página cobre o Bolha.
+- **O que o João quer:**
+  1. Na hora do alarme, o Bolha vem para a frente e abre um **card grande dentro dele** (pop-up do reator) com a
+     hora, o botão **ACORDEI** e o nome da música. A música toca **dentro do Bolha**: nada de abrir o navegador.
+  2. Ao clicar em ACORDEI (ou dizer "acordei"), a música para e começa o bom dia, falado e mostrado em cards:
+     - "Bom dia, senhor. O mundo não parou enquanto o senhor dormia."
+     - **Principais notícias**, cada uma num card **com imagem** (a foto da notícia, quando houver).
+     - **Previsão do tempo** do dia (agora, máxima e mínima, chance de chuva) e a **roupa recomendada**.
+     - **Lembretes e compromissos de hoje** (os lembretes do Bolha e a Agenda do Google, se estiver ligada).
+     - No fim: "Por hoje é isso. Tenha um bom dia, senhor." e toca a **música final**, que o senhor escolhe.
+- **Como fazer (ideia):**
+  - Tocar o áudio no próprio reator: baixar só o áudio da música uma vez (o yt-dlp, guardado em
+    `G:\Jarvis\cache\musicas`) e tocar com o player da página (`<audio>`). O despertador e a música final já
+    ficam baixados na véspera, para tocar mesmo sem internet ou com o PC lento.
+  - O card do despertador já existe (`despertador` no `reator.html`): ganha o player, a capa da música e o
+    botão ACORDEI grande.
+  - O bom dia vira uma sequência de cards (notícias com imagem, clima com ícone, roupa, lembretes) que trocam
+    sozinhos enquanto ele fala. As imagens vêm do RSS das notícias, com o texto sempre por `textContent`.
+  - Configurar: "a música do despertador é X" e "a música do bom dia é Y" (hoje é por setx
+    `BOLHA_MUSICA_DESPERTAR` e `BOLHA_MUSICA_BOM_DIA`).
+- **Teste de pronto:** "me acorda daqui a 2 minutos": na hora, o card abre dentro do Bolha com a música tocando
+  e nenhum navegador abre. No ACORDEI, ele fala o bom dia com notícias (com imagem), clima, roupa e lembretes, e
+  termina com "Tenha um bom dia" e a música final.
+
 ---
 
 ## Ordem sugerida
 
-1, 2 (WhatsApp: é o que mais irrita e a correção é pequena) -> 4 e 5 (abrir programas e jogos) -> 6 (música) -> 3 (voz,
+1, 2 (WhatsApp: é o que mais irrita e a correção é pequena) -> 7 (despertador) -> 4 e 5 (abrir programas e jogos) -> 6 (música) -> 3 (voz,
 depois do microfone novo).
