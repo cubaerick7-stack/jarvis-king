@@ -60,6 +60,7 @@ DUCK_LEVEL = 0.15  # volume do PC enquanto você fala (música alta atrapalha ou
 DEBUG = os.environ.get("JARVIS_VOZ_DEBUG", "").strip() == "1"
 
 speaking = threading.Event()  # enquanto ele fala, não se escuta (para não ativar sozinho)
+heard_seconds = 0.0  # quanto levou para ouvir (gravar + transcrever) o último pedido falado: vai para o cronômetro
 
 
 def missing():
@@ -644,7 +645,9 @@ class Listener(threading.Thread):
     def _hear(self, read_block, noise, before=(), no_speech=NO_SPEECH, quiet=False):
         """Grava (com o som do PC baixinho) e transcreve. None = ninguém falou.
         quiet = se ninguém falar, não reclama (era só uma espera para você continuar a frase)."""
+        global heard_seconds
         self.on_state("ouvindo")
+        started = time.perf_counter()
         restore = duck()
         try:
             # com o som abaixado, o barulho aprendido com a música não vale mais: mede de novo
@@ -662,7 +665,9 @@ class Listener(threading.Thread):
             return None
         self.on_state("pensando")
         try:
-            return N.transcribe(wav_bytes(pcm))
+            text = N.transcribe(wav_bytes(pcm))
+            heard_seconds = round(time.perf_counter() - started, 2)
+            return text
         except Exception as e:
             print(f"\nJarvis > {e}")
             self.on_state("parado")

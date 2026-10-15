@@ -33,6 +33,8 @@ import nuvem as N  # noqa: E402
 import instagram as IG  # noqa: E402
 import waha as W  # noqa: E402
 import celular as C  # noqa: E402
+import diario as D  # noqa: E402
+import aprende as A  # noqa: E402
 
 try:
     import pyautogui
@@ -830,13 +832,30 @@ def tool(tool_name, /, **args):
     """Roda uma ferramenta do catálogo pelo nome (usado pelo roteador rápido)."""
     log_action(tool_name, json.dumps(args, ensure_ascii=False))
     opening(tool_name)
-    return TOOLS_BY_NAME[tool_name]["run"](args)
+    with D.timing("fazer"):
+        result = TOOLS_BY_NAME[tool_name]["run"](args)
+    D.action(tool_name, args, result is not False)
+    return result
 
 
 def act(name, fn, *args):
     log_action(name, " ".join(str(a) for a in args))
     opening(name)
-    return fn(*args)
+    with D.timing("fazer"):
+        result = fn(*args)
+    D.action(name, named_args(name, args), result is not False)
+    return result
+
+
+def named_args(name, args):
+    """("open_target", ("edge",)) -> {"target": "edge"}: o diário guarda igual à IA, para dar para repetir."""
+    if not args:
+        return {}
+    spec = TOOLS_BY_NAME.get(name)
+    keys = re.findall(r'"(\w+)":', spec["args"]) if spec else []
+    if len(keys) >= len(args):
+        return dict(zip(keys, args))
+    return {"args": " ".join(str(a) for a in args)}
 
 
 # Ações que abrem ou mostram algo fora do Jarvis (programa, pasta, navegador)
@@ -926,6 +945,9 @@ def fast_local_router(user_text):
     if lonely and lonely <= (YES_WORDS | NO_WORDS | {"senhor", "pode", "mandar", "manda", "obrigado"}) \
             and not lonely & {"cancela", "cancelar", "para", "pare"}:
         print("Jarvis > Não há nada esperando confirmação, senhor.")
+        return True
+
+    if learning_router(text, clean):
         return True
 
     # memória
@@ -1256,6 +1278,79 @@ def fast_local_router(user_text):
     return False
 
 
+def learning_router(text, clean):
+    """Diário, aprendizado, apelidos e pessoas: o motor que faz ele melhorar."""
+    m = re.search(r"\bo que (?:deu|foi|saiu|ficou) errado\b(?:.*?\b(hoje|ontem)\b)?", clean)
+    if m:
+        tool("what_went_wrong", day=m.group(1) or "hoje")
+        return True
+    if re.search(r"\bpor ?que (?:voce|vc|tu) (?:fez|abriu|tocou|mandou|escolheu|fechou)\b", clean):
+        tool("explain_last")
+        return True
+    if re.search(r"\brelatorio de erros?\b", clean):
+        tool("error_report")
+        return True
+    if re.search(r"\brelatorio da semana\b|\b(?:gera|faz|faca|cria|monta) o relatorio\b", clean):
+        tool("weekly_report")
+        return True
+    if re.search(r"\bcronometro (?:de hoje|do dia)\b|\bquanto tempo (?:voce|vc) (?:demora|leva|levou|demorou)\b", clean):
+        tool("stopwatch_today")
+        return True
+    if re.search(r"\bo que (?:voce|vc) aprendeu\b", clean):
+        tool("learned_week")
+        return True
+    m = re.match(r"^(?:esquece|esqueca|apaga)\s+(?:o |a )?(apelido|pessoa|correcao)\s+(?:d[oae]s?\s+)?(.+)$", clean)
+    if m:
+        tool("forget_learned", kind=m.group(1), what=m.group(2).strip(" .!?"))
+        return True
+    alias = A.parse_alias(text)
+    if alias:
+        tool("set_alias", alias=alias[0], value=alias[1])
+        return True
+    m = (re.match(r"^(?:o |a )?aniversario d[oae]s? (.+?) (?:e|eh) (?:dia |no dia |em )?(.+?)[.!]?$", clean)
+         or re.match(r"^(?:o |a )?(.+?) faz aniversario (?:dia |no dia |em )?(.+?)[.!]?$", clean))
+    if m and A.birthday_of(m.group(2)):
+        tool("remember_person", name=_original(text, m.group(1)), field="aniversario", value=m.group(2))
+        return True
+    m = re.match(r"^o que (?:voce|vc) sabe (?:sobre|d)\s*(?:o |a )?(?!mim\b)(.+?)\??$", clean)
+    if m and m.group(1) not in ("mim", "eu"):
+        tool("about_person", name=m.group(1))
+        return True
+    m = re.search(r"\b(?:faz|faca|fazer|faça) (?:um )?backup da (?:minha |sua )?memoria(?:\s+n[oa]\s+(.+))?", clean)
+    if m:
+        tool("memory_backup", dest=(m.group(1) or "").strip())
+        return True
+    if re.search(r"\b(?:mostra|abre|abra)\s+(?:o )?painel da memoria\b|\bmostra (?:a )?(?:sua )?memoria\b", clean):
+        tool("memory_panel")
+        return True
+    return False
+
+
+def _original(text, plain):
+    """O pedaço do texto original (com maiúsculas e acentos) que corresponde a um trecho normalizado."""
+    words = str(text).split()
+    want = plain.split()
+    for i in range(len(words) - len(want) + 1):
+        if normalize(" ".join(words[i:i + len(want)])).strip(" ,.!?") == plain:
+            return " ".join(words[i:i + len(want)]).strip(" ,.!?")
+    return plain.title()
+
+
+def memory_panel():
+    """Painel da memória (34): tudo o que ele sabe, com um botão para apagar cada coisa."""
+    try:
+        items = A.panel_items(M.load())
+    except Exception as e:
+        print(f"Jarvis > Não consegui ler a memória: {e}")
+        return False
+    if not items:
+        print("Jarvis > Ainda não sei nada sobre o senhor.")
+        return True
+    U.card("Memória", json.dumps({"itens": items[:60]}, ensure_ascii=False), 60000)
+    print(f"Jarvis > Sei {len(items)} coisas. Estão na tela; toque no × para eu esquecer.")
+    return True
+
+
 # ========================= IA COMO FALLBACK JSON =========================
 
 # ========================= CATÁLOGO DE FERRAMENTAS =========================
@@ -1475,7 +1570,7 @@ def show_help():
 
 
 TOOL_GROUPS = ["som", "programas e sites", "arquivos e pastas", "ler e resumir", "mídia", "navegador", "memória", "janelas e teclado",
-               "sistema", "energia", "informação", "rotinas", "whatsapp", "instagram"]
+               "sistema", "energia", "informação", "rotinas", "whatsapp", "instagram", "aprendizado"]
 
 TOOLS = [
     {"name": "set_volume", "args": '{"percent":0-100}', "group": "som",
@@ -1700,6 +1795,45 @@ TOOLS = [
     {"name": "list_routines", "args": "{}", "group": "rotinas",
      "desc": "listar as rotinas", "examples": ["quais rotinas tem"],
      "run": lambda a: F.list_routines()},
+    # ---- aprendizado (o motor que faz ele melhorar)
+    {"name": "what_went_wrong", "args": '{"day":"hoje|ontem|AAAA-MM-DD"}', "group": "aprendizado",
+     "desc": "listar os pedidos que deram errado", "examples": ["o que deu errado hoje?"],
+     "run": lambda a: D.what_went_wrong(a.get("day", "hoje"))},
+    {"name": "explain_last", "args": "{}", "group": "aprendizado",
+     "desc": "explicar o que fez no último pedido e por quê", "examples": ["por que você fez isso?"],
+     "run": lambda a: D.explain_last()},
+    {"name": "weekly_report", "args": "{}", "group": "aprendizado",
+     "desc": "gerar o relatório da semana (falhas e lentidão) para o Claude e o Codex", "examples": ["gera o relatório da semana"],
+     "run": lambda a: D.write_report()},
+    {"name": "error_report", "args": "{}", "group": "aprendizado",
+     "desc": "gerar o relatório de erro para mandar ao Claude ou ao Codex", "examples": ["gera o relatório de erro"],
+     "run": lambda a: D.error_report(ACTION_LOG)},
+    {"name": "stopwatch_today", "args": "{}", "group": "aprendizado",
+     "desc": "dizer quanto tempo leva para ouvir, pensar, fazer e falar", "examples": ["quanto tempo você demora?"],
+     "run": lambda a: D.stopwatch_today()},
+    {"name": "learned_week", "args": "{}", "group": "aprendizado",
+     "desc": "contar o que aprendeu na semana", "examples": ["o que você aprendeu essa semana?"],
+     "run": lambda a: A.learned_since(7)},
+    {"name": "set_alias", "args": '{"alias":"apelido","value":"o que quer dizer"}', "group": "aprendizado",
+     "desc": "guardar um apelido (\"o patrão\" = Erick Cuba, \"meu jogo\" = Omori)",
+     "examples": ["quando eu falar meu jogo é o Omori", "o patrão é apelido do Erick Cuba"],
+     "run": lambda a: A.set_alias(a.get("alias", ""), a.get("value", ""))},
+    {"name": "remember_person", "args": '{"name":"nome","field":"aniversario|quem_e|gosta|...","value":"valor"}',
+     "group": "aprendizado", "desc": "guardar algo sobre uma pessoa (aniversário, quem é, do que gosta)",
+     "examples": ["o aniversário do Erick é 3 de maio", "a Ana gosta de chocolate"],
+     "run": lambda a: A.set_person(a.get("name", ""), a.get("field", "nota"), a.get("value", ""))},
+    {"name": "about_person", "args": '{"name":"nome"}', "group": "aprendizado",
+     "desc": "dizer o que sabe sobre uma pessoa", "examples": ["o que você sabe sobre a Ana"],
+     "run": lambda a: A.person(a.get("name", ""))},
+    {"name": "forget_learned", "args": '{"kind":"apelido|pessoa|correcao","what":"nome"}', "group": "aprendizado",
+     "desc": "esquecer um apelido, uma pessoa ou uma correção", "examples": ["esquece o apelido patrão"],
+     "run": lambda a: A.forget_learned(normalize(a.get("kind", "")), a.get("what", ""))},
+    {"name": "memory_panel", "args": "{}", "group": "aprendizado",
+     "desc": "mostrar na tela tudo o que sabe, com botão para apagar", "examples": ["mostra o painel da memória"],
+     "run": lambda a: memory_panel()},
+    {"name": "memory_backup", "args": '{"dest":"pendrive | pasta (vazio = G:\\Jarvis\\backups)"}', "group": "aprendizado",
+     "desc": "fazer backup da memória", "examples": ["faz backup da memória no pendrive"],
+     "run": lambda a: A.backup(a.get("dest", ""))},
     {"name": "show_help", "args": "{}", "group": "sistema",
      "desc": "mostrar tudo o que eu sei fazer", "examples": ["o que você sabe fazer"],
      "run": lambda a: show_help()},
@@ -1798,10 +1932,14 @@ def execute_ai_action(name, args):
     log_action(f"ia:{name}", json.dumps(args, ensure_ascii=False))
     opening(name)
     try:
-        return tool["run"](args)
+        with D.timing("fazer"):
+            result = tool["run"](args)
     except Exception as e:
         print(f"Jarvis > Erro em {name}: {e}")
+        D.action(name, args, False)
         return False
+    D.action(name, args, result is not False)
+    return result
 
 
 def active_window_title():
@@ -1815,7 +1953,7 @@ def active_window_title():
         return ""
 
 
-def ai_context():
+def ai_context(request=""):
     dias = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
     now = datetime.now()
     parts = [f"Agora: {now:%Y-%m-%d %H:%M} ({dias[now.weekday()]})"]
@@ -1828,6 +1966,13 @@ def ai_context():
     if last_results:
         lines = "\n".join(f"{i}. {Path(p).name}" for i, p in enumerate(last_results[:10], 1))
         parts.append(f"Resultados da última busca:\n{lines}")
+    if request:
+        try:
+            learned = A.examples_prompt(request)
+        except Exception:
+            learned = ""
+        if learned:
+            parts.append(learned)
     return "\n".join(parts) + "\n\nPedido: "
 
 
@@ -1890,7 +2035,8 @@ def think(system, user, parse=None, skip=(), **kw):
         if name in skip:
             continue
         try:
-            text = fn(system, user, **kw)
+            with D.timing("pensar"):
+                text = fn(system, user, **kw)
             if text:
                 result = parse(text) if parse else text
                 if errors:
@@ -1982,9 +2128,10 @@ def _failure_reason(entry):
 
 def ask_ai_router(user_text):
     """Modo ciclo: a IA age, vê o resultado e decide o próximo passo, até terminar."""
-    history = []
+    history, done = [], []
+    D.route("ia")
     for step in range(MAX_STEPS):
-        prompt = ai_context() + user_text
+        prompt = ai_context(user_text) + user_text
         if history:
             prompt += ("\n\nO que você já fez neste pedido e o resultado de cada ação:\n"
                        + "\n".join(history) + "\n\nDecida o próximo passo ou termine.")
@@ -1999,6 +2146,7 @@ def ask_ai_router(user_text):
         actions = data["actions"]
         failed, seen = run_actions(actions)
         history += seen
+        done += actions
         if any(str(a.get("name", "")) in ANSWER_TOOLS and str(a.get("name", "")) not in failed for a in actions):
             # a pesquisa já disse o que achou: a frase da IA ("Buscando informações...") foi escrita antes
             # de ver o resultado e não pode ficar por cima da resposta, nem gastar outra volta da IA
@@ -2016,10 +2164,21 @@ def ask_ai_router(user_text):
             # a ferramenta que falhou já disse o motivo ("Não consegui pesquisar agora..."): ele fica na legenda
             if not any(_failure_reason(entry) for entry in seen):
                 print(f"Jarvis > Não deu certo: {', '.join(failed)}.")
-        elif reply:
-            print(f"Jarvis > {reply}")
+        else:
+            if reply:
+                print(f"Jarvis > {reply}")
+            if step == 0 and done and not any(str(a.get("name")) in NO_EXAMPLE for a in done):
+                try:  # M3: acerto de primeira vira exemplo para os pedidos parecidos
+                    A.learn_example(user_text, done)
+                except Exception:
+                    pass
         return True
     return True
+
+
+# ações que não viram exemplo (dependem do momento ou mandam algo para alguém)
+NO_EXAMPLE = {"whatsapp_send", "whatsapp_send_file", "delete_item", "instagram_reply", "instagram_post",
+              "web_click", "web_fill", "web_key", "open_search_result", "show_search_result", "type_text"}
 
 
 def warm_up_ai():
@@ -2357,9 +2516,72 @@ def announce(text, title):
 
 
 def handle(text):
+    feedback = A.is_feedback(text)
+    if feedback is not None and D.last is not None:
+        D.route("nota")
+        return handle_feedback(*feedback)
+    text = expand_aliases(text)
+    learned = A.shortcut(text)
+    if learned:  # o senhor já corrigiu ou aprovou este pedido: faz igual, sem IA
+        D.route("aprendido")
+        failed, _ = run_actions(learned)
+        if not failed:
+            return
     if fast_local_router(text):
+        D.route("atalho")
         return
     ask_ai_router(text)
+
+
+def expand_aliases(text):
+    try:
+        return A.expand(text)
+    except Exception:
+        return text
+
+
+THANKS = ["Obrigado, senhor. Anotado.", "Fico feliz, senhor. Vou repetir assim.", "Anotado, senhor.",
+          "Às suas ordens, senhor."]
+
+
+def handle_feedback(ok, right=""):
+    """M2: "boa" aprova o último pedido; "errou" tira dos exemplos; "errou, era o Chrome" já faz o certo
+    e guarda a correção (da próxima vez o mesmo pedido acerta sem IA)."""
+    last = D.last
+    if ok:
+        A.rate(last, True)
+        D.mark_last(True)
+        print(f"Jarvis > {vary(THANKS)}")
+        return True
+    D.mark_last(False, right)
+    if not right:
+        A.rate(last, False)
+        print("Jarvis > Anotado que errei, senhor. O que era?")
+        return True
+    fixed = A.correct(last, right)
+    if not fixed:
+        A.rate(last, False)
+        print(f"Jarvis > Anotado, senhor. Vou fazer: {right}.")
+        return handle(f"{right}")
+    failed, _ = run_actions(fixed)
+    if failed:
+        print("Jarvis > Guardei a correção, mas não consegui fazer agora.")
+    else:
+        print("Jarvis > Corrigido, senhor. Da próxima vez já faço assim.")
+    return True
+
+
+_said_last = {}
+
+
+def vary(options, key=None):
+    """Uma frase da lista, sem repetir a última dita desse tipo (item 19)."""
+    import random
+    key = key or options[0]
+    choices = [o for o in options if o != _said_last.get(key)] or list(options)
+    pick = random.choice(choices)
+    _said_last[key] = pick
+    return pick
 
 
 def last_said(out):
@@ -2577,6 +2799,8 @@ def respond(text):
     global _pedido
     _ran.clear()
     _pedido = text
+    D.start(text, origin, V.heard_seconds if origin == "voz" else 0.0)  # M1/M5: diário e cronômetro
+    V.heard_seconds = 0.0
     U.heard(text)  # ele vem para a frente com o seu pedido na legenda
     set_state("pensando")
     tee = _Tee(sys.stdout)
@@ -2585,6 +2809,7 @@ def respond(text):
             handle(text)
         except Exception as e:  # o erro também é falado e aparece no reator
             log_action("erro", f"{text}: {e}")
+            D.error(e)
             print(f"Jarvis > Desculpe, senhor, não consegui: {e}")
     out = tee.getvalue()
     head, rest = last_said(out)
@@ -2602,9 +2827,13 @@ def respond(text):
     except Exception:
         pass
     if say and voice_out:
-        speak(say)  # volta para "parado" sozinho, até se a fala falhar
+        with D.timing("falar"):
+            speak(say)  # volta para "parado" sozinho, até se a fala falhar
     else:
         set_state("parado")
+    line = D.finish(say)
+    if line and origin != "teste":
+        print(line)  # M5: o cronômetro do pedido aparece no console
     if say.rstrip().endswith("?") and listener is not None and origin != "celular":
         listener.follow_up()  # ele perguntou algo: a resposta vem sem precisar dizer "Bolha"
 
@@ -2689,6 +2918,7 @@ def run():
     F.track_focus()
     F.on_alarm = lambda message: commands.put(("lembrete", message))  # timers também falam
     M.reminder_watcher(commands.put)
+    D.weekly_watcher()  # M4: todo domingo sai o relatorio.md
     if os.environ.get("BOLHA_AVISOS", "").strip() != "0":
         threading.Thread(target=watch_world, daemon=True).start()
     hint = M.habit_hint()

@@ -65,3 +65,20 @@ def memoria_temporaria(tmp_path, monkeypatch):
     monkeypatch.setattr(memoria, "FILE", tmp_path / "memoria.json")
     monkeypatch.setattr(memoria, "ACTION_LOG", tmp_path / "acoes.log")
     monkeypatch.setenv("JARVIS_LOG", str(tmp_path / "acoes.log"))
+
+
+# Módulos novos do plano 3.0: tudo o que eles guardam em G:\Jarvis vai para a pasta do teste.
+MODULOS_COM_ARQUIVO = ["diario", "aprende"]
+
+
+@pytest.fixture(autouse=True)
+def arquivos_temporarios(tmp_path, monkeypatch):
+    import importlib
+    for name in MODULOS_COM_ARQUIVO:
+        mod = importlib.import_module(name)
+        for attr, value in list(vars(mod).items()):
+            if isinstance(value, Path) and str(value).lower().startswith("g:\\"):
+                monkeypatch.setattr(mod, attr, tmp_path / "G" / str(value)[3:].replace("\\", "_"))
+    import diario
+    monkeypatch.setattr(diario, "current", None)
+    monkeypatch.setattr(diario, "last", None)
