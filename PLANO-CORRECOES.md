@@ -178,12 +178,16 @@ nada pesado para o i3.
   1. **Conteúdo:** o Gemini pesquisa o tema (research, com as fontes) e monta o roteiro em JSON: título,
      de 6 a 12 slides com título e 3 a 5 tópicos curtos cada, notas do apresentador e um slide final de
      referências. O tom e o nível seguem o pedido (ex.: "para a aula de Direito Civil", "nível de faculdade").
-  2. **Visual de verdade, nível profissional:** o slide tem que ficar bonito e bem feito, não um modelo simples.
-     O jeito é usar o **app de slides que o João liga por API** (ex.: Gamma, Canva ou Google Slides; a chave fica
-     só no `setx`, nunca em arquivo). O Bolha manda o roteiro, o tema e o estilo, e o app devolve a apresentação
-     pronta, com design, imagens e layout.
-     Sem o app ligado, a reserva é o `python-pptx` com um modelo caprichado (capa, títulos, ícones, imagens e
-     cores), mas a meta é o app.
+  2. **Visual de verdade, nível profissional** (o João ainda não ligou nenhum app; decidido assim, pela regra do
+     "grátis"):
+     - **Padrão, grátis:** o Bolha monta o .pptx com o `python-pptx` num modelo caprichado (capa forte, ícones,
+       uma imagem de fonte livre por slide, cores combinando, layouts variados). Não precisa de conta.
+     - **Com o Google conectado** (o mesmo "conecta o Google" do Gmail e da Agenda), grátis: cria direto no
+       Google Slides a partir de um modelo bonito e manda o **link** pelo WhatsApp. Isso também resolve o limite
+       do WAHA para mandar arquivo.
+     - **Gamma (opcional, pago):** é o que fica mais bonito, mas a API é dos planos pagos (confirmar o preço
+       antes). Só se o João quiser pagar; a chave fica no `setx GAMMA_API_KEY` e o Bolha pergunta antes de gastar.
+     - **Canva:** descartado. A API não gera slides sozinha.
   3. **Salvar e mostrar:** salva em `Documentos\Slides\<tema>.pptx`, abre para o João ver e diz quantos slides
      fez. O "muda o slide 3" ou "acrescenta um slide sobre Y" edita o mesmo arquivo.
   4. **Mandar:** pergunta "É esse contato: Fulano?" (item 2) e envia pelo WhatsApp. Também manda um **PDF**
@@ -193,7 +197,6 @@ nada pesado para o i3.
   - Plano C: "manda pro celular" (aparece com o botão Baixar).
   - Plano D: com o Google conectado, subir no Drive e mandar o link por texto.
 - **Sem habilidade (skill):** é uma ferramenta direta do Bolha ("faz um slide"), ligada ao app por API.
-- **Falta saber:** qual app o João ligou por API, para usar o dele.
 - **Teste de pronto:** "faz um slide sobre a Revolução Francesa com 8 slides e manda pra mim no zap": o .pptx e
   o PDF chegam no WhatsApp do João e abrem certos no celular.
 
