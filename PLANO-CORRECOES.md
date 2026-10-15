@@ -197,15 +197,52 @@ nada pesado para o i3.
 - **Teste de pronto:** "faz um slide sobre a Revolução Francesa com 8 slides e manda pra mim no zap": o .pptx e
   o PDF chegam no WhatsApp do João e abrem certos no celular.
 
+## 11. Textos de verdade: "faz um resumo do livro X no Word e me manda"
+
+- [ ] **O que aconteceu:** os textos dele saem curtos e rasos: ele "só resume", sem escrever bastante.
+- **O que o João quer:** "faz um resumo do livro (X) no Word e me manda" (ou "no Bloco de Notas") gera um
+  texto **completo e bem escrito**, que é salvo e mandado.
+  - O resumo tem introdução, os capítulos ou partes principais, personagens ou conceitos, temas e conclusão.
+  - O tamanho segue o pedido ("resumo completo", "2 páginas", "bem detalhado", "só o principal"); o padrão é
+    completo, não um parágrafo.
+- **Como fazer:**
+  - Pesquisa do livro com fontes (research), depois escrever em partes (uma chamada da IA por seção) para não
+    sair cortado. O texto é escrito com o Gemini, que aceita textos longos.
+  - Salva em `Documentos\Resumos\<título>.docx` (com títulos e parágrafos formatados) ou `.txt` no Bloco de
+    Notas, abre para o João ver e manda pelo WhatsApp (confirmando o contato, item 2; com o mesmo limite do
+    WAHA do item 10).
+  - Hoje o `write_document` já cria o .docx, mas a IA escreve pouco: o prompt e o modo em partes resolvem isso.
+- **Teste de pronto:** "faz um resumo completo de Dom Casmurro no Word e me manda no zap" gera um documento de
+  pelo menos 2 páginas, bem dividido, que chega no WhatsApp.
+
+## 12. Pesquisar e RESPONDER, não abrir o navegador
+
+- [ ] **O que aconteceu:** "pesquisa tal coisa" abre o navegador do João com a busca. O João quer que o Bolha
+  **saiba e fale a resposta**, não que mostre onde procurar.
+- **Causa (no código de hoje):** o atalho rápido manda "pesquisa X" direto para o `search_web` (busca no Google
+  no navegador), na regra `^(?:pesquisa|pesquise)\\s+(.+)$` do `fast_local_router`.
+- **Como corrigir:**
+  - "pesquisa X", "procura na internet X", "o que é X", "quem foi X", "como funciona X": vão para o
+    **research** (o Gemini pesquisa na internet e responde falando, com o card de resumo e as fontes).
+  - Pergunta de conhecimento que não muda com o tempo ("o que é fotossíntese") a IA já responde direto, sem
+    pesquisar.
+  - O navegador só abre quando o João pedir para ver: "abre no navegador", "me mostra os resultados", "pesquisa
+    no Google e abre".
+  - A resposta falada é completa (3 a 6 frases, com os números e nomes importantes); o card traz mais detalhes.
+- **Teste de pronto:** "pesquisa quem inventou o avião" responde falando (e mostra o card) sem abrir o
+  navegador; "pesquisa receita de bolo e abre no navegador" abre.
+
 ---
 
 ## Ordem sugerida
 
 1. Itens 1 e 2 (WhatsApp): é o que mais irrita, e a correção é pequena.
-2. Item 8 (falar natural): é rápido.
-3. Itens 4 e 5 (abrir programas e jogos, incluindo o Minecraft).
-4. Item 7 (despertador dentro do Bolha).
-5. Item 6 (música descrita).
-6. Item 9 (IA local sem internet).
-7. Item 10 (slides da faculdade pelo WhatsApp).
-8. Item 3 (voz), depois do microfone novo.
+2. Item 12 (pesquisar e responder): é pequeno e muda muito o dia a dia.
+3. Item 8 (falar natural): é rápido.
+4. Itens 4 e 5 (abrir programas e jogos, incluindo o Minecraft).
+5. Item 11 (textos completos no Word e no Bloco de Notas).
+6. Item 7 (despertador dentro do Bolha).
+7. Item 6 (música descrita).
+8. Item 10 (slides pelo app de slides).
+9. Item 9 (IA local sem internet).
+10. Item 3 (voz), depois do microfone novo.
