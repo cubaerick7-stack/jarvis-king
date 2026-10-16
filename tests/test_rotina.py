@@ -45,10 +45,11 @@ def test_nao_perturbe_ate_um_horario():
     assert R.dnd_until_text("até as 18h", now) == datetime(2026, 10, 15, 18, 0)
     assert R.dnd_until_text("por 30 minutos", now) == now + timedelta(minutes=30)
     assert R.dnd_until_text("até as 9", now) == datetime(2026, 10, 16, 9, 0)
-    R.start_dnd(now + timedelta(minutes=1))
+    agora = datetime.now()  # o "segura o aviso" olha o relógio de verdade: data fixa aqui quebrava no dia seguinte
+    R.start_dnd(agora + timedelta(minutes=1))
     R.should_hold("aviso 1")
-    assert R.dnd_expired(now) == (False, [])
-    expired, held = R.dnd_expired(now + timedelta(minutes=2))
+    assert R.dnd_expired(agora) == (False, [])
+    expired, held = R.dnd_expired(agora + timedelta(minutes=2))
     assert expired and held[0][1] == "aviso 1"
 
 

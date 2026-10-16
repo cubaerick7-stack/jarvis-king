@@ -241,3 +241,9 @@ def theme(name):
     """Tema do reator (101): azul, vermelho ou dourado."""
     _tell("tema", valor=name)
     _js(f"tema({json.dumps(name)})")
+
+
+def ai_mode(local):
+    """Acende o botão "IA local" (Qwen no PC) ou mostra "Nuvem" (Gemini/Groq)."""
+    _tell("ia", valor="local" if local else "nuvem")
+    _js(f"modoIA({json.dumps(bool(local))})")

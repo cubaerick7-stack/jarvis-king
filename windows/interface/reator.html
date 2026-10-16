@@ -439,6 +439,8 @@ body { transition: background-color .6s; }
   border: 1px solid var(--line-soft); transition: border-color .2s, transform .15s, background .2s; }
 .rapidos button:hover, .rapidos button:focus-visible { border-color: var(--line-strong); background: rgba(var(--glow), .14); outline: none; }
 .rapidos button:active { transform: scale(.95); }
+.ia-botao.ligada { border-color: var(--warn) !important; background: rgba(255, 179, 71, .16) !important; }
+.ia-botao.ligada b, .rapidos .ia-botao.ligada { color: var(--warn); }
 .rapidos button.parar { color: #fff; border-color: #e0505a; background: rgba(224, 80, 90, .25); }
 .rapidos svg { width: 14px; height: 14px; }
 @media (min-width: 600px) {
@@ -525,6 +527,7 @@ body { transition: background-color .6s; }
   <button class="hud-item" type="button" data-pedido="limpa a memória" title="Limpar a memória"><svg class="anel" id="anelRam" viewBox="0 0 38 38"><circle class="fundo" cx="19" cy="19" r="16"/><circle class="valor" cx="19" cy="19" r="16"/></svg><span><small>Memória</small><b class="num" id="hudRam">--%</b></span></button>
   <button class="hud-item" type="button" data-pedido="como está o clima?" title="Ver o clima"><span><small>Clima</small><b id="hudClima">—</b></span></button>
   <button class="hud-item" type="button" data-pedido="o que tenho para fazer?" title="Lembretes"><span><small>Próxima tarefa</small><b id="hudProx">nada marcado</b></span></button>
+  <button class="hud-item ia-botao" id="hudIA" type="button" data-pedido="usa a IA local" title="Trocar para a IA local (no PC, sem internet)"><span><small>Inteligência</small><b id="hudIAtxt">☁ Nuvem</b></span></button>
   <div class="selos" id="hudSelos"></div>
 </aside>
 <nav class="rapidos" id="rapidos" aria-label="Atalhos">
@@ -537,6 +540,7 @@ body { transition: background-color .6s; }
   <button type="button" data-pedido="aumenta o volume">🔊</button>
   <button type="button" data-pedido="muta o som">🔇</button>
   <button type="button" data-pedido="me acorda às 7h">⏰ 7h</button>
+  <button type="button" class="ia-botao" id="rapidoIA" data-pedido="usa a IA local" title="Trocar para a IA local">☁ IA: nuvem</button>
   <button type="button" class="parar" data-pedido="para">■ Parar</button>
 </nav>
 <div class="disco" id="disco"><video id="cam" autoplay muted playsinline></video><span class="canto c1"></span><span class="canto c2"></span><span class="canto c3"></span><span class="canto c4"></span><em id="discoTxt">IDENTIDADE CONFIRMADA</em></div>
@@ -1399,7 +1403,19 @@ window.hudDados = (d) => {
   const selos = document.getElementById('hudSelos'); selos.replaceChildren();
   if (d.modo) selos.append(cria('span', 'selo', `modo ${d.modo}`));
   if (d.naoPerturbe) selos.append(cria('span', 'selo dnd', 'não perturbe'));
+  if (d.ia) modoIA(d.ia === 'local');
   if (d.temp) selos.append(cria('span', `selo${d.temp >= 85 ? ' dnd' : ''}`, `CPU ${Math.round(d.temp)}°C`));
+};
+// botão IA local: aceso = o Qwen pensa aqui no PC; apagado = nuvem (Gemini/Groq). O toque troca.
+window.modoIA = (local) => {
+  const pedido = local ? 'volta para a nuvem' : 'usa a IA local';
+  const dica = local ? 'Voltar para a nuvem (Gemini/Groq)' : 'Trocar para a IA local (no PC, sem internet)';
+  for (const id of ['hudIA', 'rapidoIA']) {
+    const b = document.getElementById(id); if (!b) continue;
+    b.dataset.pedido = pedido; b.title = dica; b.classList.toggle('ligada', !!local);
+  }
+  document.getElementById('hudIAtxt').textContent = local ? '💻 Local (Qwen)' : '☁ Nuvem';
+  document.getElementById('rapidoIA').textContent = local ? '💻 IA: local' : '☁ IA: nuvem';
 };
 window.hudMostra = (sim) => document.getElementById('hud').classList.toggle('off', !sim);
 document.getElementById('hud').addEventListener('click', (e) => { const b = e.target.closest('[data-pedido]'); if (b) pede(b.dataset.pedido); });
@@ -1496,6 +1512,7 @@ function chegou(e) {
   else if (e.tipo === 'audio') toca(e.url);
   else if (e.tipo === 'hud') hudDados(e);
   else if (e.tipo === 'tema') tema(e.valor);
+  else if (e.tipo === 'ia') modoIA(e.valor === 'local');
   else if (e.tipo === 'arquivo') cartao('Arquivo', JSON.stringify({ nome: e.nome, tamanho: e.tamanho, url: e.url }), 120000);
   // celular com a tela apagada: aviso vira notificação do sistema (103)
   if (e.tipo === 'cartao' && document.hidden && window.Notification && Notification.permission === 'granted'

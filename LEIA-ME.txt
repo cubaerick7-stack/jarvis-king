@@ -391,6 +391,12 @@ Opcional:
    setx GEMINI_MODEL gemini-3.8-flash   (escolher o modelo do Gemini)
    setx GROQ_MODEL openai/gpt-oss-120b  (escolher o modelo do Groq)
    setx JARVIS_LOCAL 1                  (usar tambem o Qwen local, por ultimo)
+BOTAO IA LOCAL: no reator, o quadro "Inteligencia" (e o atalho "IA: nuvem")
+troca na hora para a IA do PC (Qwen pelo Ollama, funciona sem internet). Aceso
+em laranja = local; toque de novo para voltar a nuvem. Ou diga "usa a IA local"
+/ "volta para a nuvem". O Bolha abre o Ollama sozinho e lembra a escolha.
+A local e mais simples e mais lenta; se ela falhar, ele usa a nuvem.
+Precisa do modelo baixado uma vez:  ollama pull qwen3:1.7b
 Nao precisa trocar modelo quando o Groq aposenta um: o Jarvis pergunta ao Groq
 quais existem hoje e usa esses. Se um modelo do Gemini demorar, ele tenta o
 proximo (mais leve) em vez de desistir.
