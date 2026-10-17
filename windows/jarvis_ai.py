@@ -1660,16 +1660,6 @@ def screen_router(text, clean):
     if m:
         tool("send_to_phone", path=number_ref(m.group(1)))
         return True
-    if re.search(r"\b(?:volta|voltar|volte|troca|muda|passa|vai)\s+(?:para|pra|pro)\s+(?:a\s+)?(?:ia\s+(?:da\s+)?)?nuvem\b"
-                 r"|\b(?:desliga|desativa|tira)\s+(?:a\s+)?(?:ia|inteligencia(?: artificial)?)\s+local\b"
-                 r"|\b(?:usa|use|liga|ativa)\s+(?:a\s+)?(?:ia|inteligencia)\s+(?:da\s+)?nuvem\b", clean):
-        tool("set_ai_mode", local=False)
-        return True
-    if re.search(r"\b(?:usa|use|usar|liga|ligar|ativa|ativar|troca|muda|passa|vai)\s+(?:(?:para|pra|pro)\s+)?(?:a\s+|o\s+)?"
-                 r"(?:ia|inteligencia(?: artificial)?|modelo)\s+(?:do pc\s+|offline\s+)?(?:local|offline|do pc)\b"
-                 r"|\b(?:usa|liga|ativa)\s+(?:o\s+)?(?:qwen|ollama)\b", clean):
-        tool("set_ai_mode", local=True)
-        return True
     m = re.search(r"\b(?:tema|cor do reator|reator)\s+(?:para |em |no |de )?(azul|vermelho|dourado|ouro|homem de ferro)\b"
                   r"|\b(?:muda|troca) (?:o tema|a cor)(?: do reator)? (?:para|pro|pra) (azul|vermelho|dourado|ouro|homem de ferro)\b", clean)
     if m:
@@ -2822,9 +2812,6 @@ TOOLS = [
     {"name": "send_to_phone", "args": '{"path":"caminho ou número"}', "group": "programas e sites",
      "desc": "mandar um arquivo do PC para o celular", "examples": ["manda esse pdf pro celular"],
      "run": lambda a: C.offer_file(_path_or_folder(a.get("path", "1")))},
-    {"name": "set_ai_mode", "args": '{"local":true}', "group": "sistema",
-     "desc": "trocar quem pensa: IA local no PC (Qwen, sem internet) ou a nuvem (Gemini/Groq)",
-     "examples": ["usa a IA local", "volta para a nuvem"], "run": lambda a: set_ai_mode(a.get("local") is not False)},
     {"name": "set_theme", "args": '{"name":"azul|vermelho|dourado"}', "group": "sistema",
      "desc": "trocar o tema (as cores) do reator", "examples": ["tema vermelho"], "run": lambda a: set_theme(a.get("name", ""))},
     {"name": "write_document", "args": '{"name":"nome do arquivo","text":"texto (parágrafos separados por linha)"}',
@@ -3056,28 +3043,14 @@ def ask_groq(system, user, json_mode=True, num_predict=None, temperature=None):
                            max_tokens=num_predict or 1024)
 
 
-def local_first():
-    """O botão "IA local" do reator (ou "usa a IA local"): o Qwen pensa primeiro e a nuvem fica de reserva."""
-    return A.pref("ia_local") is True
-
-
 def local_enabled():
-    """O Jarvis é só online; o Qwen local só entra com  setx JARVIS_LOCAL 1 (ou com o botão IA local)."""
-    return local_first() or os.environ.get("JARVIS_LOCAL", "").strip() == "1"
+    """O Jarvis é só online; o Qwen local só entra com  setx JARVIS_LOCAL 1."""
+    return os.environ.get("JARVIS_LOCAL", "").strip() == "1"
 
 
 def ai_backends(prefer=None):
     """Ordem de quem pensa: Gemini, depois Groq (e o Qwen só se JARVIS_LOCAL=1). prefer="Groq" põe o Groq
-    na frente (pedido simples: ele responde mais rápido). Com o botão IA local, o Qwen vem antes de todos."""
-    if local_first():
-        return [("Qwen", ask_local)] + [b for b in _cloud_backends(prefer)]
-    order = _cloud_backends(prefer)
-    if local_enabled():
-        order.append(("Qwen", ask_local))
-    return order
-
-
-def _cloud_backends(prefer=None):
+    na frente (pedido simples: ele responde mais rápido)."""
     order = []
     if N.available():
         order.append(("Gemini", ask_cloud))
@@ -3085,74 +3058,9 @@ def _cloud_backends(prefer=None):
         order.append(("Groq", ask_groq))
     if prefer:
         order.sort(key=lambda b: b[0] != prefer)
+    if local_enabled():
+        order.append(("Qwen", ask_local))
     return order
-
-
-OLLAMA_URL = "http://127.0.0.1:11434"
-
-
-def ollama_running():
-    try:
-        import urllib.request
-        with urllib.request.urlopen(OLLAMA_URL + "/api/tags", timeout=2) as r:
-            return json.loads(r.read().decode("utf-8", "replace"))
-    except Exception:
-        return None
-
-
-def start_ollama(wait=15):
-    """Sobe o Ollama escondido (o iniciar.ps1 só sobe com JARVIS_LOCAL=1). Devolve a lista de modelos ou None."""
-    tags = ollama_running()
-    if tags is not None:
-        return tags
-    places = [r"G:\Jarvis\Ollama\ollama.exe", r"G:\Ollama\ollama.exe", r"C:\Program Files\Ollama\ollama.exe"]
-    if os.environ.get("LOCALAPPDATA"):  # os mesmos lugares do iniciar.ps1
-        places.insert(2, os.path.join(os.environ["LOCALAPPDATA"], "Programs", "Ollama", "ollama.exe"))
-    exe = next((c for c in places if os.path.exists(c)), None) or shutil.which("ollama")
-    if not exe:
-        return None
-    env = dict(os.environ)
-    if not env.get("OLLAMA_MODELS") and Path(r"G:\Jarvis\Ollama\models").exists():
-        env["OLLAMA_MODELS"] = r"G:\Jarvis\Ollama\models"  # os modelos ficam no G, não no C
-    try:
-        subprocess.Popen([exe, "serve"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    except Exception:
-        return None
-    for _ in range(wait * 2):
-        time.sleep(0.5)
-        tags = ollama_running()
-        if tags is not None:
-            return tags
-    return None
-
-
-def set_ai_mode(local):
-    """O botão do reator: IA local (Qwen, sem internet, mais simples) ou nuvem (Gemini/Groq)."""
-    if not local:
-        A.set_pref("ia_local", False)
-        U.ai_mode(False)
-        print("Jarvis > Voltei para a nuvem (Gemini e Groq)." + (
-            "" if N.available() or N.groq_available() else " Mas falta a chave: setx GEMINI_API_KEY ..."))
-        return True
-    if chat is None:
-        print("Jarvis > Falta o Ollama no Python: python -m pip install ollama")
-        return False
-    tags = start_ollama()
-    if tags is None:
-        print("Jarvis > Não achei o Ollama aberto nem instalado. Instale em ollama.com e tente de novo.")
-        return False
-    A.set_pref("ia_local", True)
-    U.ai_mode(True)
-    names = [str(m.get("name") or m.get("model") or "") for m in (tags.get("models") or [])]
-    if not any(n.split(":")[0] == MODEL.split(":")[0] and n.endswith(MODEL.split(":")[-1]) for n in names):
-        print(f"Jarvis > IA local ligada, mas o modelo {MODEL} não está baixado. Rode:  ollama pull {MODEL}"
-              " (enquanto isso sigo pela nuvem).")
-        return True
-    threading.Thread(target=warm_up_ai, daemon=True).start()
-    print("Jarvis > IA local ligada: agora quem pensa é o Qwen, aqui no PC. Ela é mais simples e um pouco mais lenta;"
-          " se falhar, uso a nuvem. Para voltar, toque no botão ou diga \"volta para a nuvem\".")
-    return True
 
 
 def think(system, user, parse=None, skip=(), prefer=None, **kw):
@@ -3457,8 +3365,6 @@ def warm_up_ai():
     Com a nuvem na frente, o Qwen fica quieto (sem gastar CPU) até ser preciso."""
     backends = ai_backends()
     if chat is None or not backends or backends[0][0] != "Qwen":
-        return
-    if local_first() and start_ollama() is None:  # botão IA local ligado: o Ollama precisa estar de pé
         return
     try:
         chat(
@@ -4342,8 +4248,7 @@ def hud_loop(every=15):
             U.hud({"cpu": round(psutil.cpu_percent(interval=None)), "ram": round(psutil.virtual_memory().percent),
                    "clima": weather_line, "hora": now.strftime("%H:%M"),
                    "proxima": (f"{nxt.get('hora') or ''} {nxt['texto']}".strip()[:60] if nxt else ""),
-                   "modo": R.state.get("modo", ""), "naoPerturbe": R.dnd_active(), "temp": temp,
-                   "ia": "local" if local_first() else "nuvem"})
+                   "modo": R.state.get("modo", ""), "naoPerturbe": R.dnd_active(), "temp": temp})
         except Exception:
             pass
         time.sleep(every)
@@ -5010,7 +4915,6 @@ def run():
     theme = A.pref("tema")
     if theme:
         threading.Timer(3, U.theme, args=(theme,)).start()  # 101: o tema escolhido
-    threading.Timer(3, U.ai_mode, args=(local_first(),)).start()  # o botão IA local já aceso, se ligado
     MA.watch_downloads(DOWNLOADS, commands.put)  # 103: avisa (no PC e no celular) quando um download termina
     if os.environ.get("BOLHA_NOTIFICACOES", "").strip() != "0":
         MA.watch_notifications(commands.put)  # 100: notificações do Windows viram card (com os pacotes winrt)

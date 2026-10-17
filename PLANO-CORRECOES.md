@@ -158,16 +158,10 @@ nada pesado para o i3.
 - **Teste de pronto:** 10 pedidos seguidos e o "senhor" aparece no máximo 2 ou 3 vezes; as respostas soam
   naturais.
 
-## 9. Sem internet, a IA local entra sozinha
+## 9. ~~Sem internet, a IA local entra sozinha~~ (cancelado)
 
-- [ ] **O que o João quer:** quando a internet cair, o Bolha usa sozinho a IA local que já está baixada (o
-  Qwen 1.7B pelo Ollama, que é leve), sem precisar do `setx JARVIS_LOCAL 1`. Quando a internet voltar, ele volta
-  para o Gemini e o Groq.
-- **Como fazer:** no `ai_backends()`, se `autoteste.internet()` for falso e o Ollama estiver aberto com o
-  modelo, colocar o Qwen na lista. Avisar uma vez: "Estou sem internet; sigo com a IA local, mais simples."
-- **Decidido:** não usar o Gemma de 7,2 GB no PC (8 GB de RAM não aguentam). Fica o Qwen leve como reserva.
-- **Teste de pronto:** com o Wi-Fi desligado, "me explica o que é fotossíntese" responde pela IA local; com o Wi-Fi
-  ligado de novo, volta para a nuvem.
+- [x] **Cancelado pelo João em 17/10:** a IA local pesa demais no PC. O Bolha fica só com a nuvem (Gemini e
+  Groq). Sem internet, só os comandos rápidos funcionam. O botão "IA local" que chegou a ser feito foi retirado.
 
 ## 10. Slides da faculdade: "faz um slide sobre X e manda no zap"
 
@@ -258,5 +252,4 @@ nada pesado para o i3.
 6. Item 7 (despertador dentro do Bolha).
 7. Item 6 (música descrita).
 8. Item 10 (slides pelo app de slides).
-9. Item 9 (IA local sem internet).
-10. Item 3 (voz), depois do microfone novo.
+9. Item 3 (voz), depois do microfone novo.

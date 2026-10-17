@@ -253,7 +253,7 @@ entao rodam em qualquer PC e tambem no GitHub a cada push.
 
 LOG
 Toda acao executada fica registrada em G:\Jarvis\logs\acoes.log
-(horario, acao e detalhe), inclusive as escolhidas pelo Qwen.
+(horario, acao e detalhe), inclusive as escolhidas pela IA.
 
 O QUE O JARVIS SABE FAZER
 Digite "o que voce sabe fazer" (ou "ajuda") com o Jarvis aberto.
@@ -279,7 +279,7 @@ COMO CRIAR UMA FERRAMENTA NOVA
    {"name": "minha_ferramenta", "args": '{"x":"..."}', "group": "sistema",
     "desc": "o que ela faz", "examples": ["como o usuario pede"],
     "run": lambda a: F.minha_ferramenta(a.get("x", ""))},
-   So isso ja coloca ela no prompt do Qwen e na ajuda.
+   So isso ja coloca ela no prompt da IA e na ajuda.
 3. (Opcional) Para responder sem IA, adicione uma regra em
    fast_local_router chamando tool("minha_ferramenta", x=...).
 4. Adicione um teste em tests\ e rode python -m pytest -q.
@@ -390,13 +390,6 @@ o Groq responde. Nao pesa a CPU. Os comandos rapidos funcionam sem internet.
 Opcional:
    setx GEMINI_MODEL gemini-3.8-flash   (escolher o modelo do Gemini)
    setx GROQ_MODEL openai/gpt-oss-120b  (escolher o modelo do Groq)
-   setx JARVIS_LOCAL 1                  (usar tambem o Qwen local, por ultimo)
-BOTAO IA LOCAL: no reator, o quadro "Inteligencia" (e o atalho "IA: nuvem")
-troca na hora para a IA do PC (Qwen pelo Ollama, funciona sem internet). Aceso
-em laranja = local; toque de novo para voltar a nuvem. Ou diga "usa a IA local"
-/ "volta para a nuvem". O Bolha abre o Ollama sozinho e lembra a escolha.
-A local e mais simples e mais lenta; se ela falhar, ele usa a nuvem.
-Precisa do modelo baixado uma vez:  ollama pull qwen3:1.7b
 Nao precisa trocar modelo quando o Groq aposenta um: o Jarvis pergunta ao Groq
 quais existem hoje e usa esses. Se um modelo do Gemini demorar, ele tenta o
 proximo (mais leve) em vez de desistir.
