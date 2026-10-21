@@ -220,6 +220,7 @@ SE ALGO NAO FUNCIONAR
   Instale uma vez:  python -m pip install piper-tts
   A voz (uns 60 MB) baixa sozinha ao abrir o Bolha, em G:\Jarvis\modelos\piper.
   Ouvir agora:  "testa a voz piper".
+  Ritmo: "fala mais devagar" ou "fala mais rapido" (o Bolha guarda a escolha).
   A voz padrao e a Razo (masculina, a mais natural; Lucasllfs/Razo-piper-voice no Hugging Face).
   Outro jeito de voz: setx JARVIS_PIPER_VOZ faber   (razo = padrao, faber, cadu, jeff, edresson)
   Voltar para a voz do Bing: "volta para a voz do Bing" (o Piper fica de reserva

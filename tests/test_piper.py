@@ -152,3 +152,19 @@ def test_so_vira_principal_com_a_voz_baixada(jarvis, monkeypatch):
     monkeypatch.setattr(V, "has_piper", lambda: True)
     assert jarvis.set_voice("piper") and V.main_voice() == "piper"
     assert jarvis.set_voice("") and V.main_voice() == "bing"
+
+
+def test_ritmo_da_voz(jarvis, monkeypatch):
+    assert V.piper_pace() == V.PIPER_PACE > 1  # já começa mais tranquilo que o modelo
+    calls = []
+    monkeypatch.setattr(jarvis, "tool", lambda _n, /, **a: calls.append((_n, a)) or True)
+    for frase, slower in [("fala mais devagar", True), ("fala um pouco mais tranquilo", True),
+                          ("fala mais rápido", False)]:
+        calls.clear()
+        assert jarvis.fast_local_router(frase), frase
+        assert calls[0] == ("voice_pace", {"slower": slower}), frase
+    jarvis.voice_pace(True)
+    assert V.piper_pace() == round(V.PIPER_PACE + 0.1, 2)
+    for _ in range(20):
+        jarvis.voice_pace(False)
+    assert V.piper_pace() == 0.8

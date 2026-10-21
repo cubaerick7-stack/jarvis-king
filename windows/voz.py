@@ -557,6 +557,7 @@ PIPER_VOICES = {
               f"{RHASSPY}{nick}/{q}/pt_BR-{nick}-{q}.onnx.json")
        for nick, q in (("faber", "medium"), ("cadu", "medium"), ("jeff", "medium"), ("edresson", "low"))},
 }
+PIPER_PACE = 1.3  # ritmo do Piper: 1 = o do modelo (rápido demais); maior = mais devagar e tranquilo
 _piper = {}  # a voz carregada (1 a 2 s na primeira vez; depois fica na memória)
 
 
@@ -588,6 +589,21 @@ def has_piper():
     return model.is_file() and Path(str(model) + ".json").is_file() and piper_installed()
 
 
+def piper_pace():
+    """Quanto mais alto, mais devagar ("fala mais devagar" sobe 0,1; "fala mais rápido" desce)."""
+    try:
+        value = float(load_settings().get("piper_ritmo") or PIPER_PACE)
+    except (TypeError, ValueError):
+        value = PIPER_PACE
+    return max(0.8, min(2.0, value))
+
+
+def change_pace(step):
+    value = round(max(0.8, min(2.0, piper_pace() + step)), 2)
+    save_settings(piper_ritmo=value)
+    return value
+
+
 def download_piper():
     """Baixa a voz do Piper (uns 60 MB, uma vez só) para a pasta PIPER_DIR (no G)."""
     name, onnx_url, json_url = piper_choice()
@@ -613,9 +629,10 @@ def _piper_wav(text, path):
         voice = _piper[name] = PiperVoice.load(str(piper_model()))
     with wave.open(str(path), "wb") as w:
         if hasattr(voice, "synthesize_wav"):
-            voice.synthesize_wav(text, w)
+            from piper import SynthesisConfig
+            voice.synthesize_wav(text, w, syn_config=SynthesisConfig(length_scale=piper_pace()))
         else:  # piper-tts antigo (1.2)
-            voice.synthesize(text, w)
+            voice.synthesize(text, w, length_scale=piper_pace())
 
 
 def main_voice():

@@ -1660,6 +1660,11 @@ def screen_router(text, clean):
     if m:
         tool("send_to_phone", path=number_ref(m.group(1)))
         return True
+    m = re.search(r"\b(?:fala|falar|fale|voz)\s+(?:um pouco\s+|bem\s+)?mais\s+(devagar|lento|lenta|calmo|calma|tranquilo|tranquila|"
+                  r"rapido|rapida|depressa|ligeiro)\b", clean)
+    if m:
+        tool("voice_pace", slower=m.group(1) not in ("rapido", "rapida", "depressa", "ligeiro"))
+        return True
     if re.search(r"\b(?:testa|teste|testar|experimenta|baixa|instala|liga|fala com|ouvir|ouve)\s+(?:a\s+|o\s+)?(?:voz\s+(?:do\s+)?)?piper\b", clean):
         tool("test_piper")
         return True
@@ -2822,6 +2827,9 @@ TOOLS = [
     {"name": "send_to_phone", "args": '{"path":"caminho ou número"}', "group": "programas e sites",
      "desc": "mandar um arquivo do PC para o celular", "examples": ["manda esse pdf pro celular"],
      "run": lambda a: C.offer_file(_path_or_folder(a.get("path", "1")))},
+    {"name": "voice_pace", "args": '{"slower":true}', "group": "sistema",
+     "desc": "a voz falar mais devagar (slower true) ou mais rápido", "examples": ["fala mais devagar"],
+     "run": lambda a: voice_pace(a.get("slower") is not False)},
     {"name": "test_piper", "args": "{}", "group": "sistema",
      "desc": "ouvir a voz do Piper (feita no PC, sem internet); baixa a voz na primeira vez",
      "examples": ["testa a voz piper"], "run": lambda a: test_piper()},
@@ -4259,6 +4267,17 @@ def test_piper():
     except Exception as e:
         print(f"Jarvis > O Piper não conseguiu falar: {e}")
         return False
+    return True
+
+
+def voice_pace(slower=True):
+    value = V.change_pace(0.1 if slower else -0.1)
+    if value >= 2.0 and slower:
+        print("Jarvis > Já estou no mais devagar que dá.")
+    elif value <= 0.8 and not slower:
+        print("Jarvis > Já estou no mais rápido que dá.")
+    else:
+        print(f"Jarvis > Pronto, falo {'mais devagar' if slower else 'mais rápido'} assim.")
     return True
 
 
