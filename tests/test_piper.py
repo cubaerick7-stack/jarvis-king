@@ -168,3 +168,23 @@ def test_ritmo_da_voz(jarvis, monkeypatch):
     for _ in range(20):
         jarvis.voice_pace(False)
     assert V.piper_pace() == 0.8
+
+
+def test_o_lh_nao_some(monkeypatch, tmp_path):
+    """O "Bolha" saía "boa": o som do lh (ʎ) vira l + j antes de a voz falar."""
+    assert V._piper_sounds([["b", "ˈ", "o", "ʎ", "ɐ"]]) == [["b", "ˈ", "o", "l", "j", "ɐ"]]
+    seen = []
+
+    class Voice:
+        def phonemize(self, text):
+            return [["b", "ˈ", "o", "ʎ", "ɐ"]]
+
+        def synthesize_wav(self, text, w, syn_config=None):
+            seen.append(self.phonemize(text))
+            w.setnchannels(1), w.setsampwidth(2), w.setframerate(22050)
+
+    monkeypatch.setitem(sys.modules, "piper", types.SimpleNamespace(
+        PiperVoice=types.SimpleNamespace(load=lambda path: Voice()), SynthesisConfig=lambda **k: None))
+    monkeypatch.setattr(V, "_piper", {})
+    V._piper_wav("Eu sou o Bolha.", tmp_path / "a.wav")
+    assert seen == [[["b", "ˈ", "o", "l", "j", "ɐ"]]]

@@ -618,6 +618,11 @@ def download_piper():
     return piper_model()
 
 
+def _piper_sounds(sentences):
+    """As vozes do Piper engolem o "lh" ("Bolha" saía "boa"): o som ʎ vira l + j, o resto fica igual."""
+    return [[x for p in sounds for x in (("l", "j") if p == "ʎ" else (p,))] for sounds in sentences]
+
+
 def _piper_wav(text, path):
     """Fala pelo Piper num WAV (o _play_mp3 reconhece e toca)."""
     name = piper_name()
@@ -627,6 +632,8 @@ def _piper_wav(text, path):
         logging.getLogger("piper").setLevel(logging.ERROR)  # o aviso de fonema que falta não suja a tela
         from piper import PiperVoice
         voice = _piper[name] = PiperVoice.load(str(piper_model()))
+        original = voice.phonemize
+        voice.phonemize = lambda t: _piper_sounds(original(t))
     with wave.open(str(path), "wb") as w:
         if hasattr(voice, "synthesize_wav"):
             from piper import SynthesisConfig
