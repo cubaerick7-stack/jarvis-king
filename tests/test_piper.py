@@ -97,6 +97,16 @@ def test_baixa_a_voz_escolhida(monkeypatch):
                         "pt_BR-cadu-medium.onnx")
 
 
+def test_razo_e_a_voz_padrao(monkeypatch):
+    monkeypatch.delenv("JARVIS_PIPER_VOZ", raising=False)
+    urls = []
+    monkeypatch.setattr(V.urllib.request, "urlopen", lambda url, timeout=0: urls.append(url) or io.BytesIO(b"x"))
+    model = V.download_piper()
+    assert model.name == "pt-BR-razo-medium.onnx" and Path(str(model) + ".json").is_file()
+    assert urls == ["https://huggingface.co/Lucasllfs/Razo-piper-voice/resolve/main/config.json",
+                    "https://huggingface.co/Lucasllfs/Razo-piper-voice/resolve/main/pt-BR-razo-medium.onnx"]
+
+
 @pytest.fixture
 def jarvis(monkeypatch):
     spec = importlib.util.spec_from_file_location("jarvis_ai", ROOT / "windows" / "jarvis_ai.py")

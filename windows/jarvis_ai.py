@@ -4237,7 +4237,7 @@ def _quiet_call(fn):
 
 
 PIPER_SAMPLE = ("Olá! Esta é a voz do Piper, feita aqui no PC, sem internet. "
-                "Para trocar o jeito da voz: setx JARVIS_PIPER_VOZ cadu, jeff, faber ou edresson.")
+                "Para trocar o jeito da voz: setx JARVIS_PIPER_VOZ faber, cadu, jeff ou edresson.")
 
 
 def test_piper():

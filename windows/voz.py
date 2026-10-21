@@ -548,16 +548,26 @@ def _eleven_mp3(text, path):
 # Piper: voz feita no próprio PC, leve (roda bem no i3) e sem internet. Fica por último, de reserva,
 # ou na frente de todas com "usa sempre a voz piper".
 PIPER_DIR = Path(os.environ.get("JARVIS_PIPER", r"G:\Jarvis\modelos\piper"))
-PIPER_VOICES = {"faber": "pt_BR-faber-medium", "cadu": "pt_BR-cadu-medium", "jeff": "pt_BR-jeff-medium",
-                "edresson": "pt_BR-edresson-low"}
-PIPER_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/{speaker}/{quality}/{name}.{ext}"
+RHASSPY = "https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/"
+# apelido -> (nome do arquivo, link do .onnx, link do .json). Razo: a mais natural (MIT, Lucasllfs no Hugging Face)
+PIPER_VOICES = {
+    "razo": ("pt-BR-razo-medium", "https://huggingface.co/Lucasllfs/Razo-piper-voice/resolve/main/pt-BR-razo-medium.onnx",
+             "https://huggingface.co/Lucasllfs/Razo-piper-voice/resolve/main/config.json"),
+    **{nick: (f"pt_BR-{nick}-{q}", f"{RHASSPY}{nick}/{q}/pt_BR-{nick}-{q}.onnx",
+              f"{RHASSPY}{nick}/{q}/pt_BR-{nick}-{q}.onnx.json")
+       for nick, q in (("faber", "medium"), ("cadu", "medium"), ("jeff", "medium"), ("edresson", "low"))},
+}
 _piper = {}  # a voz carregada (1 a 2 s na primeira vez; depois fica na memória)
 
 
+def piper_choice():
+    """A voz do Piper: setx JARVIS_PIPER_VOZ faber (razo = padrão, faber, cadu, jeff ou edresson)."""
+    wanted = os.environ.get("JARVIS_PIPER_VOZ", "").strip().lower()
+    return PIPER_VOICES.get(wanted) or PIPER_VOICES["razo"]
+
+
 def piper_name():
-    """A voz do Piper: setx JARVIS_PIPER_VOZ cadu (faber, cadu, jeff ou edresson); padrão faber."""
-    wanted = os.environ.get("JARVIS_PIPER_VOZ", "").strip().lower() or "faber"
-    return PIPER_VOICES.get(wanted, wanted)
+    return piper_choice()[0]
 
 
 def piper_model():
@@ -580,15 +590,12 @@ def has_piper():
 
 def download_piper():
     """Baixa a voz do Piper (uns 60 MB, uma vez só) para a pasta PIPER_DIR (no G)."""
-    name = piper_name()
-    _, speaker, quality = name.split("-", 2) if name.count("-") >= 2 else ("", name, "medium")
+    name, onnx_url, json_url = piper_choice()
     PIPER_DIR.mkdir(parents=True, exist_ok=True)
-    for ext in ("onnx.json", "onnx"):
-        final = PIPER_DIR / f"{name}.{ext}"
+    for final, url in ((PIPER_DIR / f"{name}.onnx.json", json_url), (PIPER_DIR / f"{name}.onnx", onnx_url)):
         if final.is_file() and final.stat().st_size > 0:
             continue
         part = final.with_name(final.name + ".baixando")
-        url = PIPER_URL.format(speaker=speaker, quality=quality, name=name, ext=ext)
         with urllib.request.urlopen(url, timeout=60) as r, open(part, "wb") as f:
             shutil.copyfileobj(r, f, 1 << 20)
         part.replace(final)
