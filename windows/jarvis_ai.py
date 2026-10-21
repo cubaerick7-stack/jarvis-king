@@ -4987,7 +4987,7 @@ def run():
     M.reminder_watcher(commands.put)
     D.weekly_watcher()  # M4: todo domingo sai o relatorio.md
     V.load_settings()  # a calibração do microfone
-    if V.piper_installed() and not V.has_piper():  # a voz do Piper (60 MB) baixa sozinha na primeira vez
+    if V.main_voice() == "piper" and V.piper_installed() and not V.has_piper():  # a voz do Piper baixa sozinha
         threading.Thread(target=lambda: _quiet_call(V.download_piper), daemon=True).start()
     threading.Thread(target=refresh_vocabulary, daemon=True).start()  # vocabulário pessoal para o Whisper
     if voice_out:

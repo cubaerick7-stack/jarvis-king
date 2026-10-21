@@ -42,8 +42,16 @@ def piper(monkeypatch):
     return used
 
 
-def test_piper_e_a_voz_padrao_e_nao_usa_o_cache_do_bing(monkeypatch, piper):
+def test_bing_e_a_voz_padrao(monkeypatch, piper):
     edge = _edge(monkeypatch, fail=False)
+    assert V.main_voice() == "bing"
+    V.say("Pronto.")
+    assert edge == ["Pronto."] and piper == []
+
+
+def test_piper_escolhido_nao_usa_o_cache_do_bing(monkeypatch, piper):
+    edge = _edge(monkeypatch, fail=False)
+    V.set_main_voice("piper")
     V.CACHE.mkdir(parents=True, exist_ok=True)
     V._cache_file("Pronto.").write_bytes(b"ID3bing antigo")  # frase que o Bing já tinha gravado
     V.say("Pronto.")
@@ -52,6 +60,7 @@ def test_piper_e_a_voz_padrao_e_nao_usa_o_cache_do_bing(monkeypatch, piper):
 
 def test_piper_falhou_fala_pelo_bing(monkeypatch, capsys):
     edge = _edge(monkeypatch, fail=False)
+    V.set_main_voice("piper")
     monkeypatch.setattr(V, "has_piper", lambda: True)
     monkeypatch.setattr(V, "_piper_wav", lambda text, path: (_ for _ in ()).throw(RuntimeError("modelo quebrado")))
     V.say("Oi.")

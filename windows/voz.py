@@ -643,9 +643,9 @@ def _piper_wav(text, path):
 
 
 def main_voice():
-    """"piper" (o padrão) = o Piper fala tudo; "bing" = Bing na frente e o Piper só de reserva."""
-    wanted = os.environ.get("BOLHA_VOZ", "").strip().lower() or str(load_settings().get("voz_principal") or "piper")
-    return "bing" if wanted == "bing" else "piper"
+    """"bing" (o padrão) = Bing na frente e o Piper só de reserva sem internet; "piper" = o Piper fala tudo."""
+    wanted = os.environ.get("BOLHA_VOZ", "").strip().lower() or str(load_settings().get("voz_principal") or "bing")
+    return "piper" if wanted == "piper" else "bing"
 
 
 def set_main_voice(name):
