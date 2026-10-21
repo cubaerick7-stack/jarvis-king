@@ -19,6 +19,7 @@ import math
 import os
 import queue
 import re
+import shutil
 import tempfile
 import threading
 import unicodedata
@@ -335,7 +336,7 @@ def can_speak():
         import edge_tts  # noqa: F401
         return True
     except ImportError:
-        return bool(eleven_key()) or _has_gtts()  # sem o edge-tts, ainda dá para falar pelas reservas
+        return bool(eleven_key()) or _has_gtts() or has_piper()  # sem o edge-tts, ainda dá pelas reservas
 
 
 def _mci(command):
@@ -348,14 +349,28 @@ def _mci(command):
         raise RuntimeError(f"o Windows não tocou o áudio ({buf.value or code})")
 
 
+def _is_wav(path):
+    try:
+        with open(path, "rb") as f:
+            return f.read(4) == b"RIFF"
+    except OSError:
+        return False
+
+
 def _play_mp3(path):
-    """Toca o MP3 pelo próprio Windows (MCI), sem instalar player."""
+    """Toca o MP3 (ou o WAV do Piper) pelo próprio Windows (MCI), sem instalar player."""
     alias = "jarvisvoz"
     try:
         _mci(f"close {alias}")  # se uma fala anterior ficou aberta
     except RuntimeError:
         pass
-    _mci(f'open "{path}" type mpegvideo alias {alias}')
+    wav = None
+    if _is_wav(path):  # o Piper faz WAV: o Windows toca pelo waveaudio, com a extensão certa
+        wav = Path(str(path) + ".wav")
+        shutil.copyfile(path, wav)
+        _mci(f'open "{wav}" type waveaudio alias {alias}')
+    else:
+        _mci(f'open "{path}" type mpegvideo alias {alias}')
     try:
         _mci(f"play {alias} wait")
     finally:
@@ -363,6 +378,11 @@ def _play_mp3(path):
             _mci(f"close {alias}")
         except RuntimeError:
             pass
+        if wav:
+            try:
+                wav.unlink()
+            except OSError:
+                pass
 
 
 EDGE_RETRY = 600  # a voz do Bing (Edge) recusou: fala pela ElevenLabs e só tenta o Bing de novo depois disso (s)
@@ -525,6 +545,83 @@ def _eleven_mp3(text, path):
         return _eleven_request(text, path, ELEVEN_BACKUP_VOICE, model)
 
 
+# Piper: voz feita no próprio PC, leve (roda bem no i3) e sem internet. Fica por último, de reserva,
+# ou na frente de todas com "usa sempre a voz piper".
+PIPER_DIR = Path(os.environ.get("JARVIS_PIPER", r"G:\Jarvis\modelos\piper"))
+PIPER_VOICES = {"faber": "pt_BR-faber-medium", "cadu": "pt_BR-cadu-medium", "jeff": "pt_BR-jeff-medium",
+                "edresson": "pt_BR-edresson-low"}
+PIPER_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/{speaker}/{quality}/{name}.{ext}"
+_piper = {}  # a voz carregada (1 a 2 s na primeira vez; depois fica na memória)
+
+
+def piper_name():
+    """A voz do Piper: setx JARVIS_PIPER_VOZ cadu (faber, cadu, jeff ou edresson); padrão faber."""
+    wanted = os.environ.get("JARVIS_PIPER_VOZ", "").strip().lower() or "faber"
+    return PIPER_VOICES.get(wanted, wanted)
+
+
+def piper_model():
+    return PIPER_DIR / f"{piper_name()}.onnx"
+
+
+def piper_installed():
+    try:
+        import piper  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def has_piper():
+    """Programa instalado (pip install piper-tts) e a voz baixada ("testa a voz piper" baixa)."""
+    model = piper_model()
+    return model.is_file() and Path(str(model) + ".json").is_file() and piper_installed()
+
+
+def download_piper():
+    """Baixa a voz do Piper (uns 60 MB, uma vez só) para a pasta PIPER_DIR (no G)."""
+    name = piper_name()
+    _, speaker, quality = name.split("-", 2) if name.count("-") >= 2 else ("", name, "medium")
+    PIPER_DIR.mkdir(parents=True, exist_ok=True)
+    for ext in ("onnx.json", "onnx"):
+        final = PIPER_DIR / f"{name}.{ext}"
+        if final.is_file() and final.stat().st_size > 0:
+            continue
+        part = final.with_name(final.name + ".baixando")
+        url = PIPER_URL.format(speaker=speaker, quality=quality, name=name, ext=ext)
+        with urllib.request.urlopen(url, timeout=60) as r, open(part, "wb") as f:
+            shutil.copyfileobj(r, f, 1 << 20)
+        part.replace(final)
+    return piper_model()
+
+
+def _piper_wav(text, path):
+    """Fala pelo Piper num WAV (o _play_mp3 reconhece e toca)."""
+    name = piper_name()
+    voice = _piper.get(name)
+    if voice is None:
+        import logging
+        logging.getLogger("piper").setLevel(logging.ERROR)  # o aviso de fonema que falta não suja a tela
+        from piper import PiperVoice
+        voice = _piper[name] = PiperVoice.load(str(piper_model()))
+    with wave.open(str(path), "wb") as w:
+        if hasattr(voice, "synthesize_wav"):
+            voice.synthesize_wav(text, w)
+        else:  # piper-tts antigo (1.2)
+            voice.synthesize(text, w)
+
+
+def main_voice():
+    """"piper" (o padrão) = o Piper fala tudo; "bing" = Bing na frente e o Piper só de reserva."""
+    wanted = os.environ.get("BOLHA_VOZ", "").strip().lower() or str(load_settings().get("voz_principal") or "piper")
+    return "bing" if wanted == "bing" else "piper"
+
+
+def set_main_voice(name):
+    save_settings(voz_principal="piper" if name == "piper" else "bing")
+    return True
+
+
 def _gtts_mp3(text, path):
     """Voz do Google Tradutor (gTTS): grátis e sem chave, a última reserva."""
     from gtts import gTTS
@@ -553,6 +650,11 @@ def voices_summary():
         order.append(f"ElevenLabs ({wanted})")
     if _has_gtts():
         order.append("Google")
+    if has_piper():
+        if main_voice() == "piper":
+            order.insert(0, "Piper (no PC)")
+        else:
+            order.append("Piper (sem internet)")
     line = "Vozes: " + (" -> ".join(order) or "nenhuma")
     key = eleven_key()
     if key and not key.startswith("sk_"):
@@ -565,35 +667,48 @@ def voices_summary():
     return line
 
 
+def _a(name):
+    return f"o {name}" if name == "Piper" else f"a {name}"
+
+
 def _synth(text, path):
     """Bing (Edge, grátis) primeiro; reservas: ElevenLabs (se tiver chave) e Google (gTTS).
     Se o Bing recusar, fica um tempo só nas reservas e depois tenta o Bing de novo."""
     global _edge_off_until
+    piper_ok = has_piper()
+    if piper_ok and main_voice() == "piper":
+        try:
+            _piper_wav(text, path)
+            return "Piper"
+        except Exception as e:
+            print(f"\nJarvis > (o Piper falhou: {_short_error(e)}; falo com o Bing)")
     backups = []
     if eleven_key():
         backups.append(("ElevenLabs", _eleven_mp3))
     if _has_gtts():
         backups.append(("Google", _gtts_mp3))
+    if piper_ok and main_voice() != "piper":
+        backups.append(("Piper", _piper_wav))  # sem internet: a voz feita no PC
     errors = []
     if not backups or time.time() >= _edge_off_until:
         try:
             _edge_mp3(text, path)
             _edge_off_until = 0.0
-            return
+            return "Bing"
         except Exception as e:
             errors.append(f"voz do Bing {_short_error(e)}")
             if backups and not _edge_off_until:
-                print(f"\nJarvis > (a voz do Bing {_short_error(e)}; falo com a {backups[0][0]} por enquanto)")
+                print(f"\nJarvis > (a voz do Bing {_short_error(e)}; falo com {_a(backups[0][0])} por enquanto)")
             _edge_off_until = time.time() + EDGE_RETRY
     for i, (name, make) in enumerate(backups):
         try:
             make(text, path)
-            return
+            return name
         except Exception as e:
             errors.append(f"{name}: {_short_error(e)}")
             if i + 1 < len(backups) and _told.get(name) != str(e):  # avisa uma vez por erro novo
                 _told[name] = str(e)
-                print(f"\nJarvis > (a {name} falhou: {_short_error(e)}; falo com a {backups[i + 1][0]})")
+                print(f"\nJarvis > ({_a(name)} falhou: {_short_error(e)}; falo com {_a(backups[i + 1][0])})")
     if not backups:
         errors.append("para ter voz de reserva: python -m pip install gTTS, ou setx ELEVENLABS_API_KEY (veja VOZ no LEIA-ME)")
     raise RuntimeError("; ".join(errors))
@@ -607,12 +722,16 @@ def _cache_file(text):
 
 def synth_cached(text, path):
     """Frases curtas ficam guardadas: na segunda vez tocam na hora, sem esperar a internet (16)."""
+    if main_voice() == "piper" and has_piper():  # o cache guarda a voz do Bing: com o Piper, nada dele toca
+        _synth(text, path)
+        return
     file = _cache_file(text)
     if file.is_file() and file.stat().st_size > 0:
         import shutil
         shutil.copyfile(file, path)
         return
-    _synth(text, path)
+    if _synth(text, path) == "Piper":
+        return  # a do Piper não entra no cache: com a internet de volta, a frase sai de novo na voz do Bing
     if len(text) <= 120:
         try:
             CACHE.mkdir(parents=True, exist_ok=True)
@@ -721,6 +840,29 @@ def say(text, on_state=None, filler=None):
                     break
         finally:
             time.sleep(0.2)  # o eco da caixa de som some antes de voltar a ouvir
+            speaking.clear()
+            if on_state:
+                on_state("parado")
+
+
+def say_piper(text, on_state=None):
+    """Fala esta frase pelo Piper, seja qual for a voz principal ("testa a voz piper")."""
+    text = clean_for_speech(text)
+    with _say_lock:
+        _stop_talk.clear()
+        path = Path(tempfile.gettempdir()) / f"jarvis_piper_{int(time.time() * 1000)}.wav"
+        speaking.set()
+        try:
+            _piper_wav(text, path)
+            if on_state:
+                on_state("falando")
+            _play_mp3(path)
+        finally:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            time.sleep(0.2)
             speaking.clear()
             if on_state:
                 on_state("parado")

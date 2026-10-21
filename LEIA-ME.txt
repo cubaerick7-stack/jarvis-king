@@ -216,6 +216,14 @@ SE ALGO NAO FUNCIONAR
      $env:JARVIS_VOZ_DEBUG=1; python windows\jarvis_ai.py
   Se aparecer "Nao ouvi o pedido (som mais alto X, precisa de Y)", fale mais
   perto do microfone ou aumente o volume dele no Windows.
+- VOZ DO PIPER (a voz padrao): feita no proprio PC, leve e SEM internet.
+  Instale uma vez:  python -m pip install piper-tts
+  A voz (uns 60 MB) baixa sozinha ao abrir o Bolha, em G:\Jarvis\modelos\piper.
+  Ouvir agora:  "testa a voz piper".
+  Outro jeito de voz: setx JARVIS_PIPER_VOZ cadu   (faber = padrao, cadu, jeff, edresson)
+  Voltar para a voz do Bing: "volta para a voz do Bing" (o Piper fica de reserva
+  sem internet). Voltar para o Piper: "usa sempre a voz piper".
+  Se o Piper falhar ou nao estiver instalado, ele fala pelas vozes abaixo.
 - Nao fala: python -m pip install -U edge-tts  (e confira o som do PC).
   Se a voz do Bing (Edge) recusar (erro 403), ele usa as reservas e tenta o Bing
   de novo depois de 10 minutos. Reservas, nesta ordem:

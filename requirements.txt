@@ -11,5 +11,6 @@ sounddevice
 edge-tts
 pywebview
 gTTS
+piper-tts
 Pillow
 python-pptx

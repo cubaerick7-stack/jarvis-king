@@ -241,7 +241,7 @@ class Handler(BaseHTTPRequestHandler):
                 mp3 = None
             if mp3 is None:
                 return self._error(404, "essa fala já passou")
-            return self._send(200, mp3, "audio/mpeg")
+            return self._send(200, mp3, "audio/wav" if mp3[:4] == b"RIFF" else "audio/mpeg")  # Piper faz WAV
         return self._error(404, "não achei")
 
     do_HEAD = do_GET

@@ -1660,6 +1660,16 @@ def screen_router(text, clean):
     if m:
         tool("send_to_phone", path=number_ref(m.group(1)))
         return True
+    if re.search(r"\b(?:testa|teste|testar|experimenta|baixa|instala|liga|fala com|ouvir|ouve)\s+(?:a\s+|o\s+)?(?:voz\s+(?:do\s+)?)?piper\b", clean):
+        tool("test_piper")
+        return True
+    if re.search(r"\b(?:volta|voltar|volte)\s+(?:para\s+|pra\s+|a\s+)?(?:a\s+)?voz\s+(?:do bing|normal|de antes|antiga)\b"
+                 r"|\b(?:tira|desliga|para de usar)\s+(?:a\s+)?voz\s+(?:do\s+)?piper\b", clean):
+        tool("set_voice", name="")
+        return True
+    if re.search(r"\b(?:usa|use|usar|deixa|coloca|troca|muda)\b.*\bvoz\b.*\bpiper\b", clean):
+        tool("set_voice", name="piper")
+        return True
     m = re.search(r"\b(?:tema|cor do reator|reator)\s+(?:para |em |no |de )?(azul|vermelho|dourado|ouro|homem de ferro)\b"
                   r"|\b(?:muda|troca) (?:o tema|a cor)(?: do reator)? (?:para|pro|pra) (azul|vermelho|dourado|ouro|homem de ferro)\b", clean)
     if m:
@@ -2812,6 +2822,12 @@ TOOLS = [
     {"name": "send_to_phone", "args": '{"path":"caminho ou número"}', "group": "programas e sites",
      "desc": "mandar um arquivo do PC para o celular", "examples": ["manda esse pdf pro celular"],
      "run": lambda a: C.offer_file(_path_or_folder(a.get("path", "1")))},
+    {"name": "test_piper", "args": "{}", "group": "sistema",
+     "desc": "ouvir a voz do Piper (feita no PC, sem internet); baixa a voz na primeira vez",
+     "examples": ["testa a voz piper"], "run": lambda a: test_piper()},
+    {"name": "set_voice", "args": '{"name":"piper ou vazio (voz do Bing)"}', "group": "sistema",
+     "desc": "trocar a voz principal: piper (no PC) ou a do Bing", "examples": ["usa sempre a voz piper", "volta para a voz do bing"],
+     "run": lambda a: set_voice(a.get("name", ""))},
     {"name": "set_theme", "args": '{"name":"azul|vermelho|dourado"}', "group": "sistema",
      "desc": "trocar o tema (as cores) do reator", "examples": ["tema vermelho"], "run": lambda a: set_theme(a.get("name", ""))},
     {"name": "write_document", "args": '{"name":"nome do arquivo","text":"texto (parágrafos separados por linha)"}',
@@ -4213,6 +4229,53 @@ def resume_video():
 THEMES = {"azul": "azul", "vermelho": "vermelho", "dourado": "dourado", "ouro": "dourado", "homem de ferro": "vermelho"}
 
 
+def _quiet_call(fn):
+    try:
+        fn()
+    except Exception:
+        pass  # sem internet agora: baixa na próxima vez que abrir
+
+
+PIPER_SAMPLE = ("Olá! Esta é a voz do Piper, feita aqui no PC, sem internet. "
+                "Para trocar o jeito da voz: setx JARVIS_PIPER_VOZ cadu, jeff, faber ou edresson.")
+
+
+def test_piper():
+    """Toca uma frase pelo Piper (baixando a voz na primeira vez) para o senhor ouvir e decidir."""
+    if not V.piper_installed():
+        print("Jarvis > Para ter a voz do PC, rode uma vez no PowerShell:  python -m pip install piper-tts"
+              "  e depois me peça de novo para testar a voz piper.")
+        return False
+    if not V.has_piper():
+        print("Jarvis > (baixando a voz do Piper, uns 60 MB, só desta vez...)")
+        try:
+            V.download_piper()
+        except Exception as e:
+            print(f"Jarvis > Não consegui baixar a voz do Piper: {e}")
+            return False
+    print(f"Jarvis > (voz do Piper: {PIPER_SAMPLE})")
+    try:
+        V.say_piper(PIPER_SAMPLE, set_state)
+    except Exception as e:
+        print(f"Jarvis > O Piper não conseguiu falar: {e}")
+        return False
+    return True
+
+
+def set_voice(name):
+    if normalize(name) == "piper":
+        if not V.has_piper():
+            print("Jarvis > Primeiro preciso da voz do Piper: diga \"testa a voz piper\".")
+            return False
+        V.set_main_voice("piper")
+        print("Jarvis > Pronto, agora falo com a voz do Piper, feita aqui no PC.")
+        return True
+    V.set_main_voice("bing")
+    print("Jarvis > Pronto, voltei para a voz do Bing. O Piper fica de reserva para quando faltar internet."
+          " Para voltar ao Piper: \"usa sempre a voz piper\".")
+    return True
+
+
 def set_theme(name):
     theme = THEMES.get(normalize(name), "")
     if not theme:
@@ -4905,6 +4968,8 @@ def run():
     M.reminder_watcher(commands.put)
     D.weekly_watcher()  # M4: todo domingo sai o relatorio.md
     V.load_settings()  # a calibração do microfone
+    if V.piper_installed() and not V.has_piper():  # a voz do Piper (60 MB) baixa sozinha na primeira vez
+        threading.Thread(target=lambda: _quiet_call(V.download_piper), daemon=True).start()
     threading.Thread(target=refresh_vocabulary, daemon=True).start()  # vocabulário pessoal para o Whisper
     if voice_out:
         V.prewarm(FILLERS + THANKS + ["Às suas ordens, senhor.", "Pois não, senhor?", "Parei, senhor.",
