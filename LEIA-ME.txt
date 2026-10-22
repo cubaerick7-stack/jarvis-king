@@ -52,6 +52,10 @@ ELE MELHORA SOZINHO (o motor)
   "sim" vira rotina. Ele tambem aprende o volume de cada programa e a musica de cada hora.
 
 OUVIR E FALAR
+- O reator mexe no ritmo da voz de verdade: o da sua enquanto ele ouve o pedido e o dele
+  enquanto fala (cada silaba pulsa o nucleo). Precisa do miniaudio, que ja esta no
+  requirements.txt (python -m pip install -U -r requirements.txt). Sem ele, a voz toca
+  pelo Windows como antes e o reator segue um ritmo simulado.
 - "calibra o microfone" e diga "Bolha" 3 vezes: acaba o "precisa de 350".
 - "Bolha, para" corta a fala na hora (tambem o botao PARAR e o "para" no celular).
 - Depois de responder ele escuta mais 8 s sem precisar do nome ("e amanha?").
@@ -316,7 +320,10 @@ INTERFACE (TELA CHEIA)
 1. python -m pip install pywebview
 2. Ao abrir, ele ocupa a tela principal inteira: o reator no meio, nome e
    relogio em cima, o que voce disse e o que ele respondeu embaixo.
-   Parado ele gira devagar; ouvindo ondula; pensando pulsa; falando pulsa com a voz.
+   Em espera ele respira devagar; ouvindo, ondas entram no nucleo e o anel de fora
+   vira a onda da sua voz; pensando, as bobinas acendem em sequencia; falando, o nucleo
+   pulsa a cada silaba, ondas saem e as barras em volta mostram a voz (graves embaixo,
+   agudos em cima).
 3. O que voce pede aparece em janelinhas por cima dele: musica tocando, arquivos
    achados, clima, PC, "Mando para Ana? Sim/Nao", mensagem enviada, lembrete.
    Elas somem sozinhas (com o mouse em cima ficam). Esc fecha a da frente.
@@ -324,8 +331,9 @@ INTERFACE (TELA CHEIA)
    SEGUNDA TELA, se voce tiver; sem segunda tela, abre por cima dele.
    Quando voce fala com ele, ele volta para a frente.
    O "–" minimiza e o "×" fecha.
-5. Visual (igual ao video): fundo azul com grade, reator de filamentos que
-   reage a voz (clique nele e abre uma onda; o mouse inclina), "FALANDO" no
+5. Visual: fundo azul com grade e o reator do Stark em holograma (aneis, 12 bobinas,
+   as 4 setas e o nucleo) saindo de um projetor, com linhas de tela e uma varredura.
+   Ele reage a voz (clique nele e abre uma onda; o mouse inclina), "FALANDO" no
    topo, legenda embaixo e o orbe azul embaixo: clique nele (ou comece a
    digitar) para escrever um pedido. As janelas arrastam pela barra.
 6. Pesquisa na internet (precisa de GEMINI_API_KEY): "como esta a eleicao",

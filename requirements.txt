@@ -14,3 +14,4 @@ gTTS
 piper-tts
 Pillow
 python-pptx
+miniaudio

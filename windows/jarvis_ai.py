@@ -5107,6 +5107,7 @@ def main():
                 print("Jarvis > Parei por causa do erro acima.")
             os._exit(0)
 
+        V.level_hook = U.level  # o reator mexe no ritmo da voz: a sua ao ouvir, a dele ao falar
         try:
             U.start(worker, lambda text: incoming("janela", text), NAME)  # o reator fica na thread principal
         except Exception as e:

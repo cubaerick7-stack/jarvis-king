@@ -172,6 +172,8 @@ def record_command(read_block, noise=300.0, before=(), recalibrate=False, no_spe
         chunks.append(bytes(block))
         elapsed += step
         level = rms(block)
+        if level_hook is not None:  # o reator mexe no ritmo de quem está falando o pedido
+            _tell_level(mic_levels(block, threshold), BLOCK / SAMPLE_RATE * 1000 / 4, sharpness(voice_shape(block)[1]))
         if len(first) <= ECHO_BLOCKS:
             first.append(level)
             if recalibrate and len(first) == ECHO_BLOCKS + 1:  # o menor bloco nunca fica abaixo do barulho real
@@ -383,6 +385,127 @@ def _play_mp3(path):
                 wav.unlink()
             except OSError:
                 pass
+
+
+# ------------------------- o reator no ritmo da voz -------------------------
+# A tela (ui.level) recebe o volume da voz para o reator mexer junto: o do microfone enquanto ele ouve o
+# pedido e o da voz dele enquanto fala. O jarvis_ai liga isto quando o reator está aberto.
+level_hook = None  # fn(valores 0 a 1, passo em ms entre eles, agudo 0 a 1)
+PLAY_RATE = 24000  # a voz do Bing já vem em 24 kHz
+PLAY_STEP = 0.04  # um volume a cada 40 ms (25 por segundo)
+
+
+def _tell_level(values, step_ms=0, sharp=0.0):
+    if level_hook is None:
+        return
+    try:
+        level_hook(values, step_ms, sharp)
+    except Exception:
+        pass  # a tela nunca atrapalha a voz
+
+
+def voice_shape(block):
+    """(volume, cruzamentos) de um pedaço de áudio int16. Cruzamentos = quantas vezes a onda passa pelo zero,
+    por amostra: "s", "x" e "f" cruzam muito (agudo), vogais cruzam pouco. Só somas, sem FFT: leve no i3."""
+    samples = array.array("h", bytes(block))
+    if not samples:
+        return 0.0, 0.0
+    total, cross, prev = 0, 0, samples[0] >= 0
+    for s in samples:
+        total += s * s
+        pos = s >= 0
+        if pos != prev:
+            cross += 1
+        prev = pos
+    return math.sqrt(total / len(samples)), cross / len(samples)
+
+
+def sharpness(cross):
+    """Cruzamentos por amostra -> 0 (grave, vogal) a 1 (agudo, chiado)."""
+    return round(min(1.0, max(0.0, (cross - 0.04) / 0.3)), 3)
+
+
+def mic_levels(block, threshold, parts=4):
+    """Os volumes de um bloco do microfone (0,1 s) em `parts` pedaços, de 0 a 1: abaixo da metade do limiar é
+    silêncio; a voz normal chega perto de 1. Pedaços menores deixam o reator seguir as sílabas."""
+    data = bytes(block)
+    size = max(2, len(data) // parts // 2 * 2)
+    out = []
+    for i in range(0, len(data) - size + 1, size):
+        level, _ = voice_shape(data[i:i + size])
+        floor = threshold * 0.5
+        out.append(round(min(1.0, max(0.0, (level - floor) / (threshold * 5))) ** 0.7, 3))
+    return out
+
+
+def _play(path):
+    """Toca a fala. Com o reator aberto, toca pelo próprio Bolha e mede o volume a cada 40 ms (o reator mexe
+    no ritmo da voz); sem o miniaudio, ou se a saída de som falhar, toca pelo Windows como antes."""
+    if level_hook is not None:
+        try:
+            if _play_measured(path):
+                return
+        except Exception:
+            pass
+    _play_mp3(path)
+
+
+def _play_measured(path):
+    """True se tocou (inteira ou cortada pelo "Bolha, para"); False se nem começou (aí toca pelo Windows)."""
+    try:
+        import miniaudio
+        import sounddevice as sd
+        sound = miniaudio.decode_file(str(path), output_format=miniaudio.SampleFormat.SIGNED16, nchannels=1,
+                                      sample_rate=PLAY_RATE)
+    except Exception:
+        return False
+    samples = sound.samples
+    step = int(PLAY_RATE * PLAY_STEP)
+    shapes = [voice_shape(samples[i:i + step]) for i in range(0, len(samples), step)]
+    if not shapes:
+        return False
+    loudest = max([level for level, _ in shapes] + [1500.0])  # cada frase usa a escala toda, sem exagerar o silêncio
+    try:
+        stream = sd.RawOutputStream(samplerate=PLAY_RATE, channels=1, dtype="int16")
+        stream.start()
+    except Exception:
+        return False
+    sent = [-1]
+
+    def tell_now(t0, latency):
+        """Manda o volume do pedaço que está saindo na caixa de som agora (o buffer vai um pouco na frente)."""
+        now = int((time.perf_counter() - t0 - latency) / PLAY_STEP)
+        if 0 <= now < len(shapes) and now != sent[0]:
+            sent[0] = now
+            level, cross = shapes[now]
+            _tell_level(round((level / loudest) ** 0.8, 3), 0, sharpness(cross))
+        return now
+
+    try:
+        latency = float(stream.latency or 0.0)
+        t0 = time.perf_counter()
+        stopped = False
+        for start in range(0, len(samples), step):
+            if _stop_talk.is_set():
+                stopped = True
+                stream.abort()
+                break
+            stream.write(samples[start:start + step].tobytes())
+            tell_now(t0, latency)
+        if not stopped:
+            while tell_now(t0, latency) < len(shapes) and not _stop_talk.is_set():
+                time.sleep(PLAY_STEP / 2)  # o fim da frase ainda está no buffer
+            if _stop_talk.is_set():
+                stream.abort()
+            else:
+                stream.stop()  # espera tocar o que sobrou
+    finally:
+        try:
+            stream.close()
+        except Exception:
+            pass
+        _tell_level(0.0)
+    return True
 
 
 EDGE_RETRY = 600  # a voz do Bing (Edge) recusou: fala pela ElevenLabs e só tenta o Bing de novo depois disso (s)
@@ -860,7 +983,7 @@ def say(text, on_state=None, filler=None):
                     if not _stop_talk.is_set():
                         if on_state and played == 0:
                             on_state("falando")
-                        _play_mp3(item)
+                        _play(item)
                         played += 1
                 finally:
                     try:
@@ -887,7 +1010,7 @@ def say_piper(text, on_state=None):
             _piper_wav(text, path)
             if on_state:
                 on_state("falando")
-            _play_mp3(path)
+            _play(path)
         finally:
             try:
                 path.unlink()

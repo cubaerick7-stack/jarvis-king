@@ -583,17 +583,56 @@ function tam() {
   else if (era) fechaTudo();
 }
 
-// Partículas do anel de onda
-// 6 membranas onduladas sobrepostas + poeira solta em volta
-const CAMADAS = 6, N = remoto ? 500 : 1500, parts = [];
-const fases = Array.from({ length: CAMADAS }, (_, k) => ({ f1: 2 + k % 3, f2: 5 + k, ph: k * 1.7, v: .6 + k * .15, r: .96 + k * .025 }));
-for (let i = 0; i < N; i++) {
-  const poeira = Math.random() < .6;
-  parts.push({ a: Math.random() * Math.PI * 2, k: i % CAMADAS, j: (Math.random() - .5) * (poeira ? .22 : .025),
-    poeira, s: poeira ? Math.random() * .9 + .4 : Math.random() * 1.1 + .5, o: Math.random() });
+// O reator do Stark em holograma: anéis, 12 bobinas, as 4 setas e o núcleo, flutuando em cima de um projetor.
+// Ele segue o volume de verdade da voz (ui.level): o do microfone ao ouvir e o da voz dele ao falar.
+// Sem esse volume (no celular, ou sem o miniaudio), uma voz simulada mantém o movimento.
+const NB = 12, PONTOS = 96;
+const bandas = new Float32Array(NB), alvoB = new Float32Array(NB), forma = new Float32Array(PONTOS);
+const ecos = [];  // ondas de som: saem do núcleo quando ele fala, entram nele quando ele ouve
+let seg = 0, nivelLento = 0, esperaEco = 0, giro1 = 0, giro2 = 0, giro3 = 0, giro4 = 0, falha = 0, proxFalha = 4;
+// Volume de verdade vindo do Python: uma fila de [hora, valor] que toca no tempo certo
+const filaNivel = [];
+let ultimoReal = -1e9, valorReal = 0, agudoReal = 0;
+window.setNivel = (valores, passo, agudo) => {
+  const agora = performance.now(), vs = Array.isArray(valores) ? valores : [valores];
+  vs.forEach((v, i) => filaNivel.push([agora + i * (passo || 0), +v || 0]));
+  if (filaNivel.length > 60) filaNivel.splice(0, filaNivel.length - 60);
+  agudoReal = +agudo || 0;
+  ultimoReal = agora + vs.length * (passo || 0);
+};
+function nivelDeVerdade(agora) {
+  while (filaNivel.length && filaNivel[0][0] <= agora) valorReal = filaNivel.shift()[1];
+  return agora - ultimoReal < 400 ? valorReal : null;  // parou de chegar: volta para a voz simulada
 }
-// Anel de filamentos: 9 fios finos que ondulam e se cruzam, mais poeira de luz em volta
-const FIL = remoto ? 6 : 9, PASSOS = remoto ? 110 : 170;
+// Voz simulada: sílabas de tamanhos diferentes, com pausas curtas e algumas longas
+const sim = { silaba: false, resta: 0, forca: 0, perfil: new Float32Array(NB) };
+function simula(dt) {
+  sim.resta -= dt;
+  if (sim.resta <= 0) {
+    if (sim.silaba) {
+      sim.silaba = false;
+      sim.resta = Math.random() < .18 ? .28 + Math.random() * .4 : .03 + Math.random() * .06;
+    } else {
+      sim.silaba = true;
+      sim.resta = (estado === 'ouvindo' ? .08 : .1) + Math.random() * .17;
+      sim.forca = .55 + Math.random() * .45;
+      const f1 = 1 + Math.random() * 3, f2 = 4 + Math.random() * 5;
+      for (let b = 0; b < NB; b++) {
+        sim.perfil[b] = Math.min(1, Math.exp(-(((b - f1) / 1.3) ** 2)) + .7 * Math.exp(-(((b - f2) / 1.8) ** 2)) + .12 * Math.random());
+      }
+    }
+  }
+  if (!sim.silaba) { alvoB.fill(0); return 0; }
+  for (let b = 0; b < NB; b++) alvoB[b] = sim.forca * sim.perfil[b];
+  return sim.forca;
+}
+// Volume de verdade -> bobinas: o "agudo" escolhe quais acendem (vogal: as graves; "s" e "x": as agudas)
+function bandasDoVolume(v, agudo) {
+  const c = 1.5 + agudo * 8.5;
+  for (let b = 0; b < NB; b++) {
+    alvoB[b] = Math.min(1, v * (Math.exp(-(((b - c) / 1.7) ** 2)) + .55 * Math.exp(-(((b - c - 4) / 2.2) ** 2)) + .08));
+  }
+}
 let mx = 0, my = 0, alvoX = 0, alvoY = 0;  // o mouse inclina o reator (paralaxe)
 const ondas = [];  // anéis que se abrem quando se clica no reator
 addEventListener('pointermove', (e) => { alvoX = (e.clientX / innerWidth - .5) * 2; alvoY = (e.clientY / innerHeight - .5) * 2; });
@@ -618,13 +657,10 @@ function mistura(alvo, k) {
 
 function rgba(a) { const [r, g, b] = atual.cor; return `rgba(${r|0},${g|0},${b|0},${a})`; }
 
-// Milhares de pontinhos com transparências diferentes: a cor é escolhida uma vez por quadro e cada
-// ponto só muda o globalAlpha (um número), em vez de montar e interpretar um texto rgba() por ponto.
-function ponto(x, y, s, alfa) { ctx.globalAlpha = alfa > 1 ? 1 : alfa < 0 ? 0 : alfa; ctx.fillRect(x, y, s, s); }
-
 // 60 quadros por segundo ouvindo, pensando ou falando; em espera, 30 (gira igual, gasta menos CPU).
 // O passo vem do tempo de verdade: a velocidade não muda com o fps nem quando um quadro atrasa.
 let ultimoQ = 0;
+function clara(a) { const [r, g, b] = atual.cor; return `rgba(${(r + 510) / 3 | 0},${(g + 510) / 3 | 0},${(b + 510) / 3 | 0},${a})`; }
 function quadro(agora) {
   requestAnimationFrame(quadro);
   if (document.hidden) { ultimoQ = 0; return; }
@@ -632,86 +668,206 @@ function quadro(agora) {
   if (ultimoQ && agora - ultimoQ < minimo - 2) return;
   const f = ultimoQ ? Math.min(3, (agora - ultimoQ) / (1000 / 30)) : 1;  // 1 = um quadro a 30 fps
   ultimoQ = agora;
+  const dt = f / 30, f60 = f * 2;  // segundos deste quadro; o mesmo passo contado a 60 fps
   t += (reduz ? 0.004 : 0.032) * f;
+  seg += dt;
   mistura(ESTADOS[estado], 1 - Math.pow(1 - .06, f));
   // com janelas abertas na tela cheia o reator fica mais apagado, para o conteúdo ficar na frente
   abafado += ((cheia && camada.querySelector('.janela:not(.j-aviso):not(.min)') ? 1 : 0) - abafado) * .05 * f;
   const brilho = atual.brilho * (1 - abafado * .35);
-  // Voz simulada: a sua (ouvindo) ou a dele (falando), em sílabas irregulares
-  const alvoVoz = estado === 'falando' ? Math.abs(Math.sin(t * 9) * Math.sin(t * 3.7 + 1))
-                : estado === 'ouvindo' ? Math.abs(Math.sin(t * 7) * Math.sin(t * 2.3 + .5)) : 0;
-  voz += (alvoVoz - voz) * (1 - Math.pow(1 - .25, f));
-  // Escala geral: respira ao pensar, pulsa com a voz ao falar
-  const escala = 1 + atual.pulso * (.5 + .5 * Math.sin(t * 5)) + atual.fala * voz * .6;
+
+  // ---- o som deste quadro: de verdade (ui.level) ou simulado ----
+  const comVoz = estado === 'ouvindo' || estado === 'falando';
+  const real = comVoz ? nivelDeVerdade(agora) : null;
+  let alvo = 0;
+  if (real !== null) { alvo = real; bandasDoVolume(real, agudoReal); }
+  else if (comVoz) alvo = simula(dt);
+  else alvoB.fill(0);
+  voz += (alvo - voz) * (1 - Math.pow(1 - (alvo > voz ? .6 : .2), f60));  // sobe com a sílaba, desce sem piscar
+  for (let b = 0; b < NB; b++) bandas[b] += (alvoB[b] - bandas[b]) * (1 - Math.pow(1 - (alvoB[b] > bandas[b] ? .55 : .15), f60));
+  for (let i = 0; i < PONTOS; i++) {
+    const a = i / PONTOS * Math.PI * 2;
+    forma[i] = voz * (.55 * Math.sin(6 * a + seg * 9) + .3 * Math.sin(11 * a - seg * 13) + .18 * Math.sin(17 * a + seg * 21));
+  }
+  // começo de sílaba: solta uma onda (para fora falando, para dentro ouvindo)
+  const subida = voz - nivelLento;
+  nivelLento += (voz - nivelLento) * (1 - Math.pow(.92, f60));
+  esperaEco -= dt;
+  if (comVoz && subida > .12 && esperaEco <= 0) { ecos.push({ v: 0, dir: estado === 'falando' ? 1 : -1, forca: Math.min(1, .4 + voz) }); esperaEco = .14; }
+
+  const pensa = estado === 'pensando', vel = reduz ? .15 : 1;
+  giro1 += dt * (pensa ? 1.6 : .15 + 1.1 * voz) * vel;
+  giro2 -= dt * (pensa ? 2.6 : .35 + 2 * voz) * vel;
+  giro3 += dt * (pensa ? .6 : .05) * vel;
+  giro4 -= dt * .08 * vel;
+  const fino = Math.max(1, tamPonto * .8);
 
   ctx.clearRect(0, 0, W, H);
+
+  // Mouse: o reator acompanha de leve
+  mx += (alvoX - mx) * .05 * f; my += (alvoY - my) * .05 * f;
+
+  // O reator flutua, segue o mouse e às vezes "falha" como holograma
+  proxFalha -= dt;
+  if (!reduz && proxFalha <= 0) { falha = .09; proxFalha = 3 + Math.random() * 4; }
+  falha = Math.max(0, falha - dt);
+  const rx = cx + mx * 9 + (falha > 0 ? (Math.random() - .5) * R * .06 : 0);
+  const ry = cy + my * 6 + (reduz ? 0 : Math.sin(seg * 1.25) * R * .03);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = reduz ? 1 : .9 + .1 * Math.sin(seg * 23) * Math.sin(seg * 7.3);
+
+  // Ondas de som: saem do núcleo (falando) ou entram nele (ouvindo)
+  for (let i = ecos.length - 1; i >= 0; i--) {
+    const o = ecos[i];
+    o.v += dt / (o.dir > 0 ? 1.1 : .9);
+    if (o.v >= 1) { ecos.splice(i, 1); continue; }
+    const r = o.dir > 0 ? R * (.42 + o.v * 1.15) : R * (1.55 - o.v * 1.1);
+    ctx.strokeStyle = rgba(o.forca * (o.dir > 0 ? 1 - o.v : Math.sin(Math.PI * o.v)) * .55 * brilho);
+    ctx.lineWidth = (2 + 3 * (1 - o.v)) * fino;
+    ctx.beginPath(); ctx.arc(rx, ry, r, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // Régua de HUD com marcas
+  ctx.save(); ctx.translate(rx, ry); ctx.rotate(giro4);
+  ctx.strokeStyle = rgba(.4 * brilho); ctx.lineWidth = fino;
+  ctx.beginPath();
+  for (let i = 0; i < 72; i++) {
+    const a = i / 72 * Math.PI * 2, r0 = R * 1.02, r1 = R * (i % 6 === 0 ? 1.1 : 1.06);
+    ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0); ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // Anel de fora: vira a forma da onda da sua voz quando ele ouve
+  const ouve = estado === 'ouvindo';
+  const amp = ouve ? R * .09 : R * .02 * voz;
+  ctx.strokeStyle = rgba((ouve ? .85 : .35) * brilho); ctx.lineWidth = (ouve ? 2 : 1.2) * fino;
+  ctx.beginPath();
+  for (let i = 0; i <= PONTOS; i++) {
+    const a = i / PONTOS * Math.PI * 2, r = R * .93 + forma[i % PONTOS] * amp;
+    const x = rx + Math.cos(a) * r, y = ry + Math.sin(a) * r;
+    if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+  }
+  ctx.stroke();
+
+  // Barras em volta quando ele fala: graves embaixo, agudos em cima
+  if (estado === 'falando') {
+    ctx.save(); ctx.translate(rx, ry);
+    ctx.lineWidth = Math.max(2, R * .025); ctx.lineCap = 'round';
+    const N = 48;
+    for (let i = 0; i < N; i++) {
+      const lado = i < N / 2 ? i : N - 1 - i, pos = lado / (N / 2 - 1) * (NB - 1);
+      const b0 = Math.floor(pos), b1 = Math.min(NB - 1, b0 + 1), fr = pos - b0;
+      const v = bandas[b0] * (1 - fr) + bandas[b1] * fr;
+      const a = Math.PI / 2 + i / N * Math.PI * 2, r0 = R * 1.16, r1 = r0 + R * .04 + R * .22 * v;
+      ctx.strokeStyle = rgba((.35 + .6 * v) * brilho);
+      ctx.beginPath(); ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0); ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Anel tracejado
+  ctx.save(); ctx.translate(rx, ry); ctx.rotate(giro1);
+  ctx.strokeStyle = rgba(.75 * brilho); ctx.lineWidth = 2 * fino;
+  ctx.setLineDash([R * .3, R * .11, R * .05, R * .11]);
+  ctx.beginPath(); ctx.arc(0, 0, R * .78, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // As 12 bobinas: falando e ouvindo acendem com a voz; pensando, uma atrás da outra; em espera, bem fraco
+  ctx.save(); ctx.translate(rx, ry); ctx.rotate(giro2);
+  const fatia = Math.PI * 2 / NB;
+  for (let b = 0; b < NB; b++) {
+    let v;
+    if (pensa) v = Math.pow(Math.max(0, Math.cos(b * fatia - seg * 7)), 4);
+    else if (estado === 'parado') v = .15 + .12 * Math.sin(seg * 1.4 + b * .5);
+    else v = bandas[b] * (ouve ? .8 : 1);
+    ctx.beginPath(); ctx.arc(0, 0, R * .62, b * fatia, b * fatia + fatia * .72);
+    ctx.strokeStyle = rgba(.18 * v * brilho); ctx.lineWidth = R * .2 * (.6 + .6 * v); ctx.stroke();  // brilho em volta
+    ctx.strokeStyle = rgba((.25 + .75 * v) * brilho); ctx.lineWidth = R * .08 * (.8 + .5 * v); ctx.stroke();
+  }
+  ctx.restore();
+
+  // Anel interno fino
+  ctx.strokeStyle = rgba(.5 * brilho); ctx.lineWidth = fino;
+  ctx.beginPath(); ctx.arc(rx, ry, R * .5, 0, Math.PI * 2); ctx.stroke();
+
+  // As 4 setas do Stark
+  ctx.save(); ctx.translate(rx, ry); ctx.rotate(giro3);
+  ctx.strokeStyle = clara(.9 * brilho); ctx.lineWidth = 1.6 * fino;
+  ctx.beginPath();
+  for (let q = 0; q < 4; q++) {
+    ctx.rotate(Math.PI / 2);
+    ctx.moveTo(0, -R * .46); ctx.lineTo(R * .11, -R * .145); ctx.lineTo(0, -R * .2); ctx.lineTo(-R * .11, -R * .145); ctx.closePath();
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // Núcleo: respira em espera, pulsa pensando, cresce com cada sílaba (menos quando é você falando)
+  const pulso = estado === 'parado' ? .06 * Math.sin(seg * 1.6) : pensa ? .12 * (.5 + .5 * Math.sin(seg * 5)) : 0;
+  const ganho = ouve ? .25 : .5;
+  const rn = R * .36 * (1 + pulso + ganho * voz);
+  const nucleo = ctx.createRadialGradient(rx, ry, 0, rx, ry, rn);
+  nucleo.addColorStop(0, `rgba(255,255,255,${brilho})`);
+  nucleo.addColorStop(.4, clara((.75 + .25 * voz) * brilho));
+  nucleo.addColorStop(1, rgba(0));
+  ctx.fillStyle = nucleo;
+  ctx.beginPath(); ctx.arc(rx, ry, rn, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = `rgba(255,255,255,${brilho})`;
+  ctx.beginPath(); ctx.arc(rx, ry, R * .11 * (1 + pulso + .7 * ganho * voz), 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  // Linhas de holograma e uma faixa de varredura descendo: só em cima do reator (o fundo ainda não foi desenhado)
+  const topo = ry - R * 1.6, baixo = ry + R * 1.6, esq = rx - R * 1.7, larg = R * 3.4;
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.fillStyle = 'rgba(0,0,0,.3)';
+  for (let y = Math.floor(topo) + ((seg * 20) % 3); y < baixo; y += 3) ctx.fillRect(esq, y, larg, 1);
+  if (!reduz) {
+    ctx.globalCompositeOperation = 'source-atop';
+    const sy = topo + ((seg * .35) % 1) * (baixo - topo);
+    const faixa = ctx.createLinearGradient(0, sy - R * .12, 0, sy + R * .12);
+    faixa.addColorStop(0, clara(0)); faixa.addColorStop(.5, clara(.25 * brilho)); faixa.addColorStop(1, clara(0));
+    ctx.fillStyle = faixa; ctx.fillRect(esq, sy - R * .12, larg, R * .24);
+  }
+
+  // Por baixo do reator, de cima para baixo: arcos de HUD, projetor e o brilho de fundo
+  ctx.globalCompositeOperation = 'destination-over';
+  // Arcos de HUD em volta (só na tela cheia), girando ao contrário do reator
+  if (cheia) {
+    ctx.strokeStyle = rgba(.5 * (1 - abafado * .5)); ctx.lineWidth = 2;
+    for (let k = 0; k < 3; k++) {
+      const a0 = -t * .19 * atual.giro + k * Math.PI * 2 / 3; ctx.beginPath(); ctx.arc(cx, cy, R * 1.62, a0, a0 + .5); ctx.stroke();
+    }
+  }
+
+  // Projetor: cone de luz e base (o holograma sai dele)
+  const baseY = cy + R * 1.5;
+  const forca = ((pensa ? .2 + .08 * Math.sin(seg * 5) : .13) + .3 * voz) * brilho;
+  const cone = ctx.createLinearGradient(0, baseY, 0, cy - R * 1.3);
+  cone.addColorStop(0, rgba(forca)); cone.addColorStop(1, rgba(0));
+  ctx.fillStyle = cone;
+  ctx.beginPath();
+  ctx.moveTo(cx - R * .4, baseY); ctx.lineTo(cx + R * .4, baseY);
+  ctx.lineTo(cx + R * 1.25, cy - R * 1.3); ctx.lineTo(cx - R * 1.25, cy - R * 1.3);
+  ctx.closePath(); ctx.fill();
+  const base = ctx.createRadialGradient(cx, baseY, 0, cx, baseY, R * .75);
+  base.addColorStop(0, clara((.6 + .3 * voz) * brilho)); base.addColorStop(1, rgba(0));
+  ctx.fillStyle = base;
+  ctx.beginPath(); ctx.ellipse(cx, baseY, R * .75, R * .1, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.lineWidth = 1.5; ctx.strokeStyle = rgba(.45 * brilho);
+  ctx.beginPath(); ctx.ellipse(cx, baseY, R * .92, R * .14, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = 1; ctx.strokeStyle = rgba(.18 * brilho); ctx.setLineDash([4, 6]);
+  ctx.beginPath(); ctx.ellipse(cx, baseY, R * 1.18, R * .19, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
 
   // Brilho de fundo
   const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * (cheia ? 1.8 : 1.6));
   g.addColorStop(0, rgba(.10 * brilho)); g.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
 
-  // Mouse: o reator acompanha de leve (cada fio com uma profundidade)
-  mx += (alvoX - mx) * .05 * f; my += (alvoY - my) * .05 * f;
+  ctx.globalCompositeOperation = 'source-over';
 
-  // Réguas de HUD em volta (só na tela cheia): marcas finas girando em sentidos opostos
-  if (cheia) {
-    const rot = t * .12 * atual.giro;
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = rgba(.3 * (1 - abafado * .5));
-    for (let i = 0; i < 90; i++) {
-      const a = rot + i * Math.PI * 2 / 90, longa = i % 5 === 0, r0 = R * 1.42, r1 = r0 + (longa ? 9 : 4);
-      ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); ctx.stroke();
-    }
-    ctx.strokeStyle = rgba(.5 * (1 - abafado * .5)); ctx.lineWidth = 2;
-    for (let k = 0; k < 3; k++) {
-      const a0 = -rot * 1.6 + k * Math.PI * 2 / 3; ctx.beginPath(); ctx.arc(cx, cy, R * 1.58, a0, a0 + .5); ctx.stroke();
-    }
-  }
-
-  // Filamentos
-  ctx.globalCompositeOperation = 'lighter';
-  const nos = [], ampFio = atual.amp * 3.2 + voz * .09 * atual.esf;
-  const raioFio = (k, a) => {
-    const F = fases[k % CAMADAS];
-    const onda = Math.sin(a * F.f1 + t * F.v + F.ph + k) * .6 + Math.sin(a * (F.f2 - 2) - t * F.v * 1.3 + F.ph) * .3
-               + Math.sin(a * 7 + t * 3 + F.ph) * voz * .35;
-    return R * escala * (.93 + k * .016 + ampFio * onda);
-  };
-  for (let k = 0; k < FIL; k++) {
-    const prof = 1 + k * .05, ox = mx * 9 * prof, oy = my * 6 * prof;
-    const giro = t * .05 * atual.giro * (k % 2 ? 1 : -1), pth = new Path2D();
-    for (let i = 0; i <= PASSOS; i++) {
-      const a = i / PASSOS * Math.PI * 2, r = raioFio(k, a);
-      const x = cx + ox + Math.cos(a + giro) * r, y = cy + oy + Math.sin(a + giro) * r;
-      if (i) pth.lineTo(x, y); else pth.moveTo(x, y);
-    }
-    if (k % 3 === 0) {  // uma esfera de luz desliza por este fio, sem pular de ponto em ponto
-      const a = k * 2.1 + t * .22 * (k % 2 ? -1 : 1), r = raioFio(k, a);
-      nos.push([cx + ox + Math.cos(a + giro) * r, cy + oy + Math.sin(a + giro) * r]);
-    }
-    pth.closePath();
-    ctx.lineWidth = 3.4 * tamPonto; ctx.strokeStyle = rgba(.05 * brilho); ctx.stroke(pth);
-    ctx.lineWidth = .9 * Math.max(1, tamPonto * .8); ctx.strokeStyle = rgba((.3 + (k % 3) * .12) * brilho); ctx.stroke(pth);
-  }
-  // esferas de luz correndo pelos fios: halo largo + miolo branco-azulado
-  for (const [x, y] of nos) {
-    const h = 18 * tamPonto, gl = ctx.createRadialGradient(x, y, 0, x, y, h);
-    gl.addColorStop(0, rgba(.85 * brilho)); gl.addColorStop(.25, rgba(.35 * brilho)); gl.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = gl; ctx.fillRect(x - h, y - h, h * 2, h * 2);
-    ctx.fillStyle = `rgba(230,248,255,${.9 * brilho})`; ctx.beginPath(); ctx.arc(x, y, 1.8 * tamPonto, 0, Math.PI * 2); ctx.fill();
-  }
-
-  // Poeira de luz
-  ctx.fillStyle = rgba(1);
-  for (const p of parts) {
-    const F = fases[p.k];
-    const onda = Math.sin(p.a * F.f1 + t * F.v + F.ph) * .55 + Math.sin(p.a * F.f2 - t * F.v * 1.6 + F.ph) * .3
-               + Math.sin(p.a * 13 + t * 5 + F.ph) * voz * .8;
-    const r = R * escala * (F.r + (atual.amp * 2 + voz * .12 * atual.esf) * onda + p.j);
-    const a = p.a + t * .04 * atual.giro * (p.k % 2 ? 1 : -1);
-    ponto(cx + mx * 9 + Math.cos(a) * r, cy + my * 6 + Math.sin(a) * r, p.s * tamPonto, (p.poeira ? .18 + p.o * .3 : .22 + p.o * .45) * brilho);
-  }
 
   // Ondas de clique
   ctx.globalAlpha = 1; ctx.lineWidth = 2;

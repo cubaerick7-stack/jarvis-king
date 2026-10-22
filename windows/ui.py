@@ -12,6 +12,7 @@ O painel antigo (título, respostas escritas, cartões e caixa de pedido):  setx
 import json
 import os
 import threading
+import time
 from pathlib import Path
 
 HTML = Path(__file__).resolve().parent / "interface" / "reator.html"
@@ -22,6 +23,11 @@ MARGIN = 16
 _window = None
 _watchers = []  # quem mais acompanha o reator (o celular): fn(tipo, dados)
 card_filter = None  # fn(título) -> True esconde o card (modo visita)
+_estado = "parado"  # o estado que o reator está mostrando
+_nivel = None  # o último volume da voz esperando ir para a tela: (valores, passo_ms, agudo)
+_nivel_cv = threading.Condition()
+_bomba = None
+LEVEL_FPS = 30  # no máximo 30 volumes por segundo para a página
 
 
 def mode():
@@ -194,8 +200,52 @@ def _tell(kind, **data):
 
 
 def state(name):
+    global _estado
+    _estado = name
     _tell("estado", valor=name)
     _js(f"setEstado({json.dumps(name)})")
+
+
+def level(values, step_ms=0, sharp=0.0):
+    """O volume da voz agora, de 0 a 1, para o reator mexer no ritmo dela: o microfone manda 4 valores por bloco
+    de 0,1 s (step_ms = 25, a página toca um depois do outro) e a voz dele manda 1 de cada vez, já na hora certa.
+    sharp = quanto o som é agudo (0 a 1). Só vale ouvindo ou falando, e quem chama (o áudio) nunca espera a tela."""
+    global _nivel
+    if _window is None or _estado not in ("ouvindo", "falando"):
+        return
+    vals = values if isinstance(values, (list, tuple)) else [values]
+    vals = [round(min(1.0, max(0.0, float(v))), 3) for v in vals]
+    with _nivel_cv:
+        _nivel = (vals, max(0, int(step_ms)), round(min(1.0, max(0.0, float(sharp))), 3))
+        _nivel_cv.notify()
+    _liga_bomba()
+
+
+def level_js(dado):
+    vals, step, sharp = dado
+    return f"window.setNivel&&setNivel({json.dumps(vals)},{step},{sharp})"
+
+
+def _liga_bomba():
+    global _bomba
+    if _bomba is None or not _bomba.is_alive():
+        _bomba = threading.Thread(target=_bombeia, daemon=True)
+        _bomba.start()
+
+
+def _bombeia():
+    """Manda o volume para a página numa thread só dela: o evaluate_js espera a página responder, e o microfone e a
+    voz não podem esperar por isso. Volume novo que chega antes do envio substitui o anterior (vale o mais recente)."""
+    global _nivel
+    while _window is not None:
+        with _nivel_cv:
+            if _nivel is None:
+                _nivel_cv.wait(1.0)
+            dado, _nivel = _nivel, None
+        if dado is None:
+            continue
+        _js(level_js(dado))
+        time.sleep(1 / LEVEL_FPS)
 
 
 def heard(text):
