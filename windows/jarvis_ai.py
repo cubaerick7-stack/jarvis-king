@@ -2866,6 +2866,7 @@ AI_EXAMPLES = [
     ("quero jogar omori", '{"actions":[{"name":"open_target","args":{"target":"omori"}}],"reply":"Abrindo o Omori."}'),
     ("bota uma música lofi pra mim", '{"actions":[{"name":"play_youtube","args":{"query":"lofi"}}],"reply":"Tocando lofi."}'),
     ("coloca o volume em 70 e abre a música evidências no youtube", '{"actions":[{"name":"set_volume","args":{"percent":70}},{"name":"play_youtube","args":{"query":"evidências"}}],"reply":"Volume 70 e tocando Evidências."}'),
+    ("alarme 5:50 com eye of the tiger e aumenta o volume pra 100", '{"actions":[{"name":"set_alarm","args":{"hour":"05:50","music":"Eye of the Tiger"}},{"name":"schedule_request","args":{"hour":"05:50","request":"volume em 100"}}],"reply":"Às 5:50 toco Eye of the Tiger com o volume em 100."}'),
     ("pula esse vídeo", '{"actions":[{"name":"youtube_control","args":{"action":"proximo"}}],"reply":"Próximo."}'),
     ("cadê aquele pdf do FO 1102", '{"actions":[{"name":"search_files","args":{"query":"FO 1102"}}],"reply":"Procurando."}'),
     ("me mostra meus downloads", '{"actions":[{"name":"open_folder","args":{"name":"downloads"}}],"reply":"Abrindo Downloads."}'),
@@ -2952,6 +2953,10 @@ Regras:
 - ler/ver mensagens do WhatsApp ("tem mensagem nova?", "o que a Ana mandou?") = whatsapp_read
 - use o perfil, as coisas lembradas e a conversa recente (no começo do pedido) para entender "e amanhã?", "lá", "ele"
 - clima sem cidade = cidade do perfil. Datas relativas ("sexta", "amanhã") viram AAAA-MM-DD a partir de "Agora"
+- HORÁRIO: se o pedido fala de um horário, TUDO o que ele pede acontece naquele horário, nada agora.
+  Separe cada parte: o despertador = set_alarm; cada outra coisa = um schedule_request no MESMO horário
+  ("alarme 5:50 com Eye of the Tiger no volume 100" = set_alarm 05:50 + schedule_request 05:50 "volume em 100").
+  "nesse horário", "nessa hora", "aí" = o horário que acabou de ser combinado na conversa
 - "me acorda às 7h" / "despertador às 6h30 com tal música" = set_alarm (NÃO schedule_request)
 - pedido para FAZER algo num horário ("coloca tal música às 7h", "amanhã 8h abre o Spotify") = schedule_request
   com o pedido escrito como o senhor falaria; só AVISAR de algo ("me lembra da prova") = add_reminder
@@ -3189,7 +3194,7 @@ def _failure_reason(entry):
 
 # ===================== CÉREBRO: quem decide, com quais ferramentas (14) =====================
 # ferramentas que sempre vão para a IA; as outras entram só quando o pedido fala do assunto delas
-CORE_TOOLS = ["open_target", "play_youtube", "set_volume", "change_volume", "media_control", "search_files",
+CORE_TOOLS = ["open_target", "play_youtube", "set_volume", "change_volume", "media_control", "search_files", "set_alarm",
               "open_search_result", "research", "web_search", "weather", "type_text", "press_keys", "window_control",
               "add_reminder", "schedule_request", "remember", "set_profile", "use_skill", "ask_choice", "click_ui",
               "look_screen", "whatsapp_send", "close_app", "open_url", "spotify_play"]
@@ -3294,8 +3299,15 @@ def decide(user_text, prompt, tools):
         try:
             with D.timing("pensar"):
                 data = N.groq_tools(build_ai_prompt(tools, native=True), prompt, tool_schemas(tools))
-            more = False
+            reply = str(data.get("reply") or "").strip()
+            if not data["actions"] and reply.startswith(("{", "```", "[")):
+                # o modelo imitou os exemplos e escreveu o JSON como texto: usa o que ele quis dizer
+                # (antes a Bolha falava '{"actions":[],"reply":...}' em voz alta, ou só "{")
+                data = parse_json(reply)
+            more = bool(data.get("continue"))
             for a in data["actions"]:
+                if not isinstance(a.get("args"), dict):
+                    a["args"] = {}
                 more = more or bool(a["args"].pop("_continuar", False))
             data["continue"] = more
             return data
@@ -3307,8 +3319,9 @@ def decide(user_text, prompt, tools):
 FILLERS = ["Verificando, senhor.", "Um instante, senhor.", "Já vejo, senhor.", "Só um momento, senhor."]
 
 
-def ask_ai_router(user_text, steps=None, agent=False):
-    """Modo ciclo: a IA age, vê o resultado e decide o próximo passo, até terminar."""
+def ask_ai_router(user_text, steps=None, agent=False, fallback=False):
+    """Modo ciclo: a IA age, vê o resultado e decide o próximo passo, até terminar.
+    fallback=True: se nenhuma IA responder, tenta os atalhos de palavra-chave antes de desistir."""
     max_steps = steps or MAX_STEPS
     history, done = [], []
     D.route("ia")
@@ -3333,6 +3346,14 @@ def ask_ai_router(user_text, steps=None, agent=False):
             if not isinstance(data, dict):
                 data = parse_json(data)
         except Exception as e:
+            if fallback and step == 0:
+                try:
+                    if fast_local_router(user_text):
+                        if D.current is not None:
+                            D.current["rota"] = "atalho (sem IA)"
+                        return True
+                except Exception:
+                    pass
             if ai_backends() and not AT.internet():
                 print(f"Jarvis > {AT.OFFLINE_MSG}")  # 108: sem internet só os comandos locais
             else:
@@ -3775,6 +3796,10 @@ def handle(text):
         D.route("nota")
         return handle_feedback(*feedback)
     text = expand_aliases(text)
+    if ai_first():  # tudo passa pela IA; os atalhos de palavra-chave só valem sem IA (sem internet ou sem chave)
+        if not control_words(text):
+            ask_ai_router(text, fallback=True)
+        return
     learned = A.shortcut(text)
     if learned:  # o senhor já corrigiu ou aprovou este pedido: faz igual, sem IA
         D.route("aprendido")
@@ -3806,6 +3831,29 @@ def handle(text):
         D.route("atalho")
         return
     ask_ai_router(text)
+
+
+def ai_first():
+    """Padrão: a IA entende todo pedido, mesmo o que parece simples ("alarme 5:50 e volume 100" não pode virar
+    "volume 100 agora"). setx BOLHA_ATALHOS 1 volta aos atalhos de palavra-chave antes da IA."""
+    return os.environ.get("BOLHA_ATALHOS", "").strip() != "1"
+
+
+def control_words(text):
+    """O que não é pedido e não precisa de IA: "para" e um "sim"/"não" solto sem nada esperando resposta."""
+    clean = normalize(clean_prefix(text)).strip(" .!?")
+    if STOP_ONLY.match(clean) or STOP_ONLY.match(normalize(text)):
+        print(f"Jarvis > {vary(['Parei, senhor.', 'Pronto, parei.', 'Parado, senhor.'])}")
+        D.route("controle")
+        return True
+    lonely = set(re.findall(r"\w+", clean))
+    if lonely and lonely <= (YES_WORDS | NO_WORDS | {"senhor", "obrigado"}) and not lonely & {"cancela", "cancelar"}:
+        D.route("controle")
+        if habit_offer:  # 28: "quer que eu faça sozinho?" -> vira rotina
+            return accept_habit(answer_kind(clean) is not False) or True
+        print("Jarvis > Não há nada esperando confirmação, senhor.")
+        return True
+    return False
 
 
 # verbos de pedidos que fazem sentido sozinhos: só esses são cortados em vários pedidos (17)

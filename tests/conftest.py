@@ -26,6 +26,8 @@ def sem_nuvem(monkeypatch):
     monkeypatch.setattr(nuvem, "_dead", set())
     monkeypatch.setattr(nuvem, "_groq_listed", [])  # nunca pergunta ao Groq de verdade quais modelos existem
     monkeypatch.delenv("JARVIS_TELA", raising=False)
+    # os testes antigos testam os atalhos de palavra-chave; quem testa o "tudo pela IA" tira esta variável
+    monkeypatch.setenv("BOLHA_ATALHOS", "1")
 
 
 @pytest.fixture(autouse=True)
