@@ -354,7 +354,10 @@ def groq_generate(system, user, json_mode=False, max_tokens=2048, temperature=0.
 
 # ------------------------- ouvir (voz -> texto) -------------------------
 GROQ_STT = "https://api.groq.com/openai/v1/audio/transcriptions"
-STT_MODEL = "whisper-large-v3-turbo"
+# o large-v3 erra menos em português que o turbo (a Bolha "parecia surda"); setx BOLHA_WHISPER troca
+STT_MODEL = os.environ.get("BOLHA_WHISPER", "").strip() or "whisper-large-v3"
+STT_BACKUP = "whisper-large-v3-turbo"
+STT_TIMEOUT = 10  # um pedido falado tem poucos segundos: esperar 20 s deixava o "ouvir" em 45 s
 STT_PROMPT = "Bolha"  # o nome do assistente, para o Whisper escrever certo (a voz.py troca)
 
 
@@ -381,13 +384,25 @@ def _plain(text):
 
 
 def _groq_transcribe(wav, key, name="fala.wav", mime="audio/wav"):
-    body, ctype = _multipart({"model": STT_MODEL, "language": "pt", "temperature": "0",
-                              "response_format": "verbose_json", "prompt": STT_PROMPT},
-                             name, wav, mime)
-    req = urllib.request.Request(GROQ_STT, data=body, method="POST", headers={
-        "Content-Type": ctype, "Authorization": f"Bearer {key}", "User-Agent": "jarvis/1.0"})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-        data = json.loads(r.read().decode("utf-8"))
+    data, last = None, None
+    for model in dict.fromkeys([STT_MODEL, STT_BACKUP]):
+        body, ctype = _multipart({"model": model, "language": "pt", "temperature": "0",
+                                  "response_format": "verbose_json", "prompt": STT_PROMPT},
+                                 name, wav, mime)
+        req = urllib.request.Request(GROQ_STT, data=body, method="POST", headers={
+            "Content-Type": ctype, "Authorization": f"Bearer {key}", "User-Agent": "jarvis/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=STT_TIMEOUT) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code not in (400, 404, 429, 503):  # chave errada etc.: o outro modelo não resolve
+                raise
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last = e  # demorou: o turbo responde mais rápido
+    if data is None:
+        raise last
     segments = data.get("segments")
     if segments:  # trechos que o Whisper acha que não são fala ficam de fora (mesma regra do Whisper)
         text = " ".join(str(seg.get("text", "")).strip() for seg in segments

@@ -129,6 +129,9 @@ def behind():
     return _place("atras")
 
 
+on_talk = None  # o botão de falar da tela chama isto (o jarvis_ai liga no microfone)
+
+
 class Api:
     """Funções que a página chama (botões e caixa de pedido)."""
 
@@ -137,6 +140,11 @@ class Api:
 
     def pedido(self, text):
         self._on_text(str(text))
+
+    def falar(self):
+        """Botão do microfone na tela do PC: ouve o pedido agora, sem precisar dizer o nome."""
+        if on_talk is not None:
+            threading.Thread(target=on_talk, daemon=True).start()
 
     def fechar(self):
         # fecha na hora, mesmo com o Jarvis ocupado ou esperando um "sim" (o main() encerra o resto)

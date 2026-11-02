@@ -358,6 +358,15 @@ body.foco #doca { opacity: 0; pointer-events: none; }
   color: var(--ok); white-space: nowrap; text-shadow: 0 0 8px var(--ok); }
 .disco.on:not(.cam) video { visibility: hidden; }
 
+/* Botão de falar no PC: aperta e fala, sem precisar dizer o nome */
+.falar-pc { position: fixed; right: 22px; bottom: 22px; z-index: 6; width: 54px; height: 54px; border-radius: 50%;
+  display: grid; place-items: center; padding: 0; cursor: pointer; border: 1px solid var(--line-strong);
+  background: rgba(95, 230, 240, .12); color: var(--cyan); box-shadow: 0 0 14px rgba(95, 230, 240, .25); }
+.falar-pc svg { width: 24px; height: 24px; }
+.falar-pc:hover { background: rgba(95, 230, 240, .22); }
+.falar-pc.ouvindo { background: #e0505a; border-color: #e0505a; color: #fff; animation: grava .9s ease-in-out infinite alternate; }
+.celular .falar-pc { display: none; }
+
 /* Celular (a página vem do celular.py, pelo ngrok): a mesma tela, com senha, microfone e a voz tocando nele */
 .disse, .mic { display: none; }
 .celular { -webkit-tap-highlight-color: transparent; }
@@ -549,6 +558,7 @@ body { transition: background-color .6s; }
   <p class="voce"><b>Você</b><span id="lv"></span></p>
   <p class="eu"><b id="eu">Bolha</b><span id="lb"></span><span class="nota" id="nota"><button type="button" data-nota="boa" title="Acertou (boa)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v11H4V10zM7 10l4-7a2 2 0 0 1 3 2l-1 5h6a2 2 0 0 1 2 2l-2 7a2 2 0 0 1-2 2H7"/></svg></button><button type="button" class="ruim" data-nota="errou" title="Errou (me ensine)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V3h3v11zM17 14l-4 7a2 2 0 0 1-3-2l1-5H5a2 2 0 0 1-2-2l2-7a2 2 0 0 1 2-2h10"/></svg></button></span></p>
 </div>
+<button type="button" class="falar-pc" id="falarPc" title="Aperte e fale (sem dizer o nome)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
 <form id="form"><button type="button" class="clip" id="clip" title="Mandar um arquivo para o PC"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12l-8.5 8.5a5 5 0 0 1-7-7L14 5a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 8"/></svg></button><input type="file" id="arquivoCel" hidden><input id="pedido" placeholder="Digite um pedido ou diga &quot;Bolha&quot;" autocomplete="off" enterkeyhint="send"><button type="button" class="mic" id="acao" title="Falar"><svg class="i-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><svg class="i-enviar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12l16-8-6 16-2.5-6.5z"/></svg></button></form>
 <div id="entrada" hidden>
   <form class="caixa-senha" id="formSenha">
@@ -1482,6 +1492,7 @@ const lv = document.getElementById('lv'), lb = document.getElementById('lb');
 function muda(s) {
   if (!ESTADOS[s]) return;
   estado = s; elEstado.textContent = ESTADOS[s].txt; document.body.dataset.estado = s;
+  document.getElementById('falarPc').classList.toggle('ouvindo', s === 'ouvindo');
   if (s === 'pensando') { fecha('confirmar'); fecha('despertador'); fecha('escolha'); tiraConfirmar(); }  // a resposta chegou (por voz ou digitada)
 }
 function cartao(rotulo, valor, ms = 7000) {
@@ -1605,6 +1616,7 @@ const api = () => remoto ? celular : (window.pywebview && window.pywebview.api) 
 document.querySelector('.botoes').addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
 document.getElementById('fechar').onclick = () => api() && api().fechar();
 document.getElementById('minimizar').onclick = () => api() && api().minimizar();
+document.getElementById('falarPc').onclick = () => { const a = api(); if (a && a.falar) a.falar(); };
 addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || !cheia) return;
   const topo = [...abertas.values()].filter(j => !j.min).sort((a, b) => b.el.style.zIndex - a.el.style.zIndex)[0];

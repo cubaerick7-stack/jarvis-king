@@ -4991,8 +4991,18 @@ def start_voice():
         return
     listener = candidate
     listener.on_interrupt = interrupt  # "Bolha, para" enquanto ele fala
+    U.on_talk = push_to_talk  # botão de falar na tela: ouve sem precisar dizer o nome
     mic = V.mic_name()
     print(f'Voz ligada{" (" + mic + ")" if mic else ""}: diga "{NAME}" e faça o pedido depois do bipe.')
+
+
+def push_to_talk():
+    """Botão do microfone na tela: para a fala dele (se estiver falando) e ouve o pedido na hora, com bipe."""
+    if listener is None:
+        print(f"Jarvis > A voz está desligada, senhor; digite o pedido.")
+        return
+    V.stop_speaking()
+    listener.follow_up(quiet=False)
 
 
 def hear_phone(audio, name, mime):

@@ -1294,9 +1294,13 @@ class Listener(threading.Thread):
             self.on_state("parado")
             return None
         self.on_state("pensando")
+        recorded = time.perf_counter()
         try:
             text = N.transcribe(wav_bytes(pcm))
             heard_seconds = round(time.perf_counter() - started, 2)
+            took = time.perf_counter() - recorded
+            if DEBUG or took > 4 or recorded - started > MAX_COMMAND - 0.5:  # mostra onde foi o tempo de ouvir
+                print(f"\nJarvis > (ouvir: gravei {recorded - started:.1f} s, entendi em {took:.1f} s: \"{text}\")")
             return text
         except Exception as e:
             print(f"\nJarvis > {e}")
