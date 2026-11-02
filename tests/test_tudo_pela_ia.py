@@ -62,7 +62,7 @@ def test_para_nao_vai_para_a_ia(jarvis, monkeypatch, capsys):
     monkeypatch.setenv("GROQ_API_KEY", "x")
     monkeypatch.setattr(N, "groq_tools", lambda *a, **k: pytest.fail("o para é na hora"))
     jarvis.handle("Bolha, para")
-    assert "Par" in capsys.readouterr().out
+    assert "par" in capsys.readouterr().out.lower()
 
 
 def test_resposta_em_json_nao_e_falada_como_codigo(jarvis, monkeypatch, capsys):

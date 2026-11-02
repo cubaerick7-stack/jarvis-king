@@ -42,6 +42,8 @@ import rotina as R  # noqa: E402
 import integracoes as I  # noqa: E402
 import autoteste as AT  # noqa: E402
 import slides as SL  # noqa: E402
+import visao as VP  # noqa: E402
+import fotos as FO  # noqa: E402
 
 try:
     import pyautogui
@@ -2169,6 +2171,30 @@ def ask_choice(question, options):
     return picked
 
 
+def delete_paths(paths):
+    """Vários itens para a Lixeira com UMA pergunta (a lista e o total); pasta do sistema nunca."""
+    items, total = [], 0
+    for ref in paths if isinstance(paths, list) else [paths]:
+        path = Path(resolve_path(str(ref)))
+        if not path.exists():
+            print(f"Jarvis > Não existe: {path}")
+            continue
+        if F._protected(path) or VP.verdict(path) == "nunca":
+            print(f"Jarvis > {path} é do sistema: esse eu não apago.")
+            continue
+        size = VP.folder_size(path, time.monotonic() + 10)[0] if path.is_dir() else path.stat().st_size
+        items.append(path)
+        total += size
+    if not items:
+        return False
+    names = ", ".join(p.name for p in items[:6]) + (f" e mais {len(items) - 6}" if len(items) > 6 else "")
+    if not confirm_danger(f"Mandar para a Lixeira {names} ({VP._size(total)})?"):
+        print("Jarvis > Ok, não apaguei nada.")
+        return False
+    done = sum(1 for p in items if F.send_to_recycle_bin(p, lambda q: True))
+    return done > 0
+
+
 def summarize_file(ref):
     path = resolve_path(ref)
     text = F.read_file(path, show_chars=0) if path.is_file() else False
@@ -2207,7 +2233,7 @@ def show_help():
 
 
 TOOL_GROUPS = ["mãos", "jogos", "integrações", "som", "programas e sites", "arquivos e pastas", "ler e resumir", "mídia", "navegador", "memória", "janelas e teclado",
-               "sistema", "energia", "informação", "rotinas", "whatsapp", "instagram", "aprendizado", "habilidades"]
+               "sistema", "energia", "informação", "rotinas", "whatsapp", "instagram", "aprendizado", "habilidades", "fotos"]
 
 TOOLS = [
     {"name": "set_volume", "args": '{"percent":0-100}', "group": "som",
@@ -2854,6 +2880,32 @@ TOOLS = [
      "examples": ["faz um slide sobre a Revolução Francesa com 8 slides e manda pra mim no zap"],
      "run": lambda a: make_slides(a.get("topic", ""), a.get("slides", 8), a.get("level", "faculdade"),
                                   a.get("style", "escuro"), a.get("where", ""), a.get("contact", ""), a.get("extra", ""))},
+    # ---- visão do PC (02/11/2026: "enxergar tudo do PC, o que pode e o que não pode ser apagado")
+    {"name": "pc_overview", "args": '{"rapido":false}', "group": "sistema",
+     "desc": "VER O PC INTEIRO: área de trabalho (e atalhos quebrados), discos C/G, as pastas que mais pesam e o que "
+             "pode ou não ser apagado. Use continue:true e depois dê SUA opinião (o que apagaria e por quê)",
+     "examples": ["o que tem no meu pc?", "o que tá pesando no disco c?", "o que eu posso apagar?",
+                  "o que tem na minha área de trabalho?", "analisa meu computador"],
+     "run": lambda a: print("Jarvis > Olhei o PC:\n" + VP.overview(deep=not a.get("rapido"))) or True},
+    {"name": "delete_paths", "args": '{"paths":["caminho 1","caminho 2"]}', "group": "arquivos e pastas",
+     "desc": "mandar vários arquivos ou pastas para a Lixeira de uma vez (pergunta UMA vez, com a lista e o total)",
+     "examples": ["apaga esses instaladores velhos", "pode apagar os que você sugeriu"],
+     "run": lambda a: delete_paths(a.get("paths") or [])},
+    # ---- fotos (PhotoCraft, sem abrir janela)
+    {"name": "photo_edit", "args": '{"file":"caminho ou número do resultado","steps":[["id do comando",{"parâmetro":1}]],"out":"nome do resultado (opcional)"}',
+     "group": "fotos",
+     "desc": "EDITAR FOTO no PhotoCraft (a original fica intacta; sai uma cópia -editada). Comandos: " + FO.CHEAT_SHEET,
+     "examples": ["deixa essa foto preto e branco", "diminui a foto pela metade", "deixa a foto mais clara",
+                  "desfoca o fundo da foto", "gira a foto", "aumenta o contraste da foto"],
+     "run": lambda a: FO.edit(resolve_path(a.get("file", "")), a.get("steps"), a.get("out", ""))},
+    {"name": "photo_commands", "args": '{"filter":"palavra em inglês (blur, crop, sharpen, levels)"}', "group": "fotos",
+     "desc": "listar os comandos do PhotoCraft que combinam (use continue:true quando o comando não estiver na lista do photo_edit)",
+     "examples": ["que efeitos o photocraft tem?"],
+     "run": lambda a: FO.commands(a.get("filter", ""))},
+    {"name": "photo_open", "args": '{"file":"caminho ou número (opcional)"}', "group": "fotos",
+     "desc": "abrir o PhotoCraft (editor de fotos), com a foto se tiver",
+     "examples": ["abre o photocraft", "abre essa foto no editor"],
+     "run": lambda a: FO.open_app(resolve_path(a.get("file", "")) if a.get("file") else "")},
     {"name": "show_help", "args": "{}", "group": "sistema",
      "desc": "mostrar tudo o que eu sei fazer", "examples": ["o que você sabe fazer"],
      "run": lambda a: show_help()},
@@ -2969,6 +3021,12 @@ Regras:
 - uma habilidade combina com o pedido = use_skill com o nome dela e siga a receita que voltar
 - pedidos sobre o que está na tela ("o que é isso?", "qual o erro aqui?") = look_screen com a pergunta
 - botões e campos de programas: click_ui, fill_field, read_window; para tarefas de vários passos num programa = agent_task
+- O PC DELE: você vê os discos e a área de trabalho no começo do pedido. Para olhar mais fundo (o que pesa, o que
+  pode apagar, o que falta ou sobra na área de trabalho) = pc_overview com continue:true; depois PENSE e dê sua
+  opinião como um técnico de confiança: o que você apagaria, o que nunca apagaria e por quê, e ofereça fazer
+  (delete_paths ou cleanup, que perguntam antes). O senhor NÃO usa o disco C para nada: sugira mover/instalar no G
+- editar foto ("deixa preto e branco", "diminui", "mais clara", "desfoca") = photo_edit com os comandos do
+  PhotoCraft; se não souber o id do comando, photo_commands com continue:true e depois photo_edit
 
 Exemplos:
 {examples}
@@ -3018,6 +3076,9 @@ def ai_context(request=""):
     title = F.user_window_title() or active_window_title()
     if title:
         parts.append(f"Janela ativa: {title}")
+    pc = VP.short_context()  # a IA sempre "vê" os discos e a área de trabalho
+    if pc:
+        parts.append(pc)
     if last_results:
         lines = "\n".join(f"{i}. {Path(p).name}" for i, p in enumerate(last_results[:10], 1))
         parts.append(f"Resultados da última busca:\n{lines}")
@@ -3197,7 +3258,7 @@ def _failure_reason(entry):
 CORE_TOOLS = ["open_target", "play_youtube", "set_volume", "change_volume", "media_control", "search_files", "set_alarm",
               "open_search_result", "research", "web_search", "weather", "type_text", "press_keys", "window_control",
               "add_reminder", "schedule_request", "remember", "set_profile", "use_skill", "ask_choice", "click_ui",
-              "look_screen", "whatsapp_send", "close_app", "open_url", "spotify_play"]
+              "look_screen", "whatsapp_send", "close_app", "open_url", "spotify_play", "pc_overview"]
 MAX_TOOLS = 34
 HEAVY = re.compile(r"\b(?:explica|explique|resume|resuma|resumo|escreve|escreva|redacao|texto sobre|carta|traduz|traduza|"
                    r"tela|imagem|foto|documento|contrato|pdf|compara|compare|analisa|analise|detalh|passo a passo|"
@@ -4999,7 +5060,7 @@ def start_voice():
 def push_to_talk():
     """Botão do microfone na tela: para a fala dele (se estiver falando) e ouve o pedido na hora, com bipe."""
     if listener is None:
-        print(f"Jarvis > A voz está desligada, senhor; digite o pedido.")
+        print("Jarvis > A voz está desligada, senhor; digite o pedido.")
         return
     V.stop_speaking()
     listener.follow_up(quiet=False)

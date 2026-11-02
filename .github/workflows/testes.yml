@@ -25,6 +25,6 @@ jobs:
         run: python -c "import pycaw.pycaw, pyautogui, mss, pypdf, psutil, pyperclip, pygetwindow, playwright.sync_api, vosk, sounddevice, edge_tts, webview, clr, webview.platforms.winforms, PIL, comtypes.client, pptx, miniaudio; print('ok')"
       - name: Importa o Jarvis
         working-directory: windows
-        run: python -c "import ferramentas, memoria, navegador, nuvem, ui, voz, diario, aprende, habilidades, maos, documentos, rotina, integracoes, autoteste, slides, jarvis_ai; print('ok')"
+        run: python -c "import ferramentas, memoria, navegador, nuvem, ui, voz, diario, aprende, habilidades, maos, documentos, rotina, integracoes, autoteste, slides, visao, fotos, jarvis_ai; print('ok')"
       - name: Testes no Windows
         run: python -m pytest -q

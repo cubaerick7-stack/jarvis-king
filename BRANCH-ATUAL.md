@@ -1,11 +1,13 @@
-# Qual branch usar (atualizado em 21/10/2026)
+# Qual branch usar (atualizado em 02/11/2026)
 
-**A branch mais nova é `claude/keen-pascal-z4kvji`.** Ela tem tudo o que existe nas outras e mais o que foi
-feito depois de 14/10.
+**A branch mais nova é `claude/project-thread-on1we5`.** Ela tem tudo o que existe nas outras (inclusive o reator
+novo de 22/10) e mais o que foi feito em 02/11: tudo pela IA, botão de falar, visão do PC e fotos no PhotoCraft.
 
 | Branch | Última mudança | O que tem |
 |---|---|---|
-| **claude/keen-pascal-z4kvji** | **21/10/2026** | **Tudo (use esta).** |
+| **claude/project-thread-on1we5** | **02/11/2026** | **Tudo (use esta).** |
+| claude/practical-albattani-k0k5jk | 22/10/2026 | Reator novo (holograma). Já está dentro da de cima. |
+| claude/keen-pascal-z4kvji | 21/10/2026 | Voz do Piper. Já está dentro da de cima. |
 | fix/roteador-e-testes | 14/10/2026 | O trabalho do Codex e do Claude até 14/10. Já está todo dentro da de cima. |
 | claude/project-recognition-4gjax1 | 15/10/2026 | Onde o PLANO-100.md foi escrito. |
 | fix/estabilizar-base-bolha | 13/10/2026 | Antiga. |
@@ -19,12 +21,23 @@ No PowerShell (confira que aparece `PS G:\Jarvis\jarvis-king>`):
 G:
 cd G:\Jarvis\jarvis-king
 git fetch origin
-git checkout claude/keen-pascal-z4kvji
-git pull origin claude/keen-pascal-z4kvji
+git checkout claude/project-thread-on1we5
+git pull origin claude/project-thread-on1we5
 python -m pip install -U --no-cache-dir -r requirements.txt
 ```
 
 Se você usa o Python do G (`G:\Jarvis\venv`), troque `python` por `G:\Jarvis\venv\Scripts\python`.
+
+## O que entrou em 02/11
+
+- Tudo passa pela IA: os atalhos de palavra-chave só funcionam quando nenhuma IA responde (sem internet ou sem
+  chave). "Alarme 5:50 e volume 100" agora agenda as duas coisas para as 5:50. Para voltar aos atalhos:
+  `setx BOLHA_ATALHOS 1`.
+- Botão de falar no canto da tela do PC: aperta e fala, sem dizer "Bolha".
+- Whisper large-v3 (erra menos em português), com o turbo de reserva e espera de 10 s.
+- Visão do PC (pc_overview): área de trabalho, discos, o que mais pesa e o que pode ou não ser apagado.
+  delete_paths apaga vários com uma pergunta só.
+- Fotos no PhotoCraft (photo_edit, photo_commands, photo_open), procurado em G:\Jarvis\apps\photocraft.
 
 ## O que entrou depois de 14/10
 
@@ -40,5 +53,5 @@ Se você usa o Python do G (`G:\Jarvis\venv`), troque `python` por `G:\Jarvis\ve
 ## Para o Codex
 
 O AGENTS.md ainda diz para trabalhar na `fix/roteador-e-testes`, mas ela parou em 14/10. Antes de mudar
-qualquer coisa, comece da `claude/keen-pascal-z4kvji` (ou peça ao João para juntar as duas), senão o
+qualquer coisa, comece da `claude/project-thread-on1we5` (ou peça ao João para juntar as duas), senão o
 trabalho parte de uma versão sem nada do que está acima.
